@@ -59,8 +59,9 @@ uv run pytest                              # tests -- no network or credentials 
   still open, and deletes it once it's gone from that board's feed. Row
   order is never touched, so your own sort/filter setup survives every run.
 
-See `CLAUDE.md`'s Architecture section for the full design rationale
-(edge cases, why each choice was made) — this file only covers usage.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a full component-by-component
+reference (source layout, data flow, what each module does). See `CLAUDE.md`
+for design rationale and edge-case invariants.
 
 ## Scale limits
 

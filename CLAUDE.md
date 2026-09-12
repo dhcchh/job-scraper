@@ -69,6 +69,14 @@ small fake `Worksheet`.
   SWE/DE postings. Send one batched message per successful run; it will need
   bot, chat, and thread secrets, plus access to the newly appended jobs rather
   than only their counts.
+- **Ashby job board support**: add a second board type under
+  `job_boards/ashby/client.py` with its own `fetch_jobs() -> list[Job]`.
+  Ashby's public API serves jobs at
+  `https://api.ashbyhq.com/posting-api/job-board/<board_slug>`, returning
+  JSON similar in shape to Greenhouse. Needs a new `[[ashby_boards]]` section
+  in a config file (or extend `greenhouse_boards.toml` with a `source` field)
+  and a loop in `main.py` that fetches Ashby boards alongside Greenhouse.
+  Firms to add: *(list pending)*.
 - Decide whether worksheets should be created automatically when a new tab is
   configured; today a missing tab raises.
 - Validate each `[[boards]]` entry early and report the specific missing
