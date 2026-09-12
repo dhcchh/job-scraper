@@ -191,7 +191,7 @@ def prune_closed_postings(
         }
         for row_index in reversed(closed_row_indexes)
     ]
-    worksheet.spreadsheet.batch_update({"requests": requests})
+    worksheet.client.batch_update(worksheet.spreadsheet_id, {"requests": requests})
     logger.info("prune: removed %d closed posting(s)", pruned_count)
     return pruned_count
 

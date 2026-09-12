@@ -19,7 +19,8 @@ class _FakeWorksheet:
         self.appended = None
         self.updated_with = None
         self.id = 123
-        self.spreadsheet = _FakeSpreadsheet()
+        self.spreadsheet_id = "sheet-xyz"
+        self.client = _FakeHttpClient()
 
     def get_all_values(self):
         return self._rows
@@ -31,12 +32,19 @@ class _FakeWorksheet:
         self.updated_with = values
 
 
-class _FakeSpreadsheet:
-    def __init__(self):
-        self.batch_update_body = None
+class _FakeHttpClient:
+    """Stands in for gspread's HTTPClient -- writer.py calls batch_update on
+    it directly (worksheet.client.batch_update(worksheet.spreadsheet_id,
+    body)), the same pattern gspread's own Worksheet.delete_dimension uses
+    internally, rather than through the soft-deprecated Worksheet.spreadsheet
+    accessor.
+    """
 
-    def batch_update(self, body):
-        self.batch_update_body = body
+    def __init__(self):
+        self.batch_update_calls = []
+
+    def batch_update(self, spreadsheet_id, body):
+        self.batch_update_calls.append((spreadsheet_id, body))
 
 
 def _row(board, job_id, scraped_date):
@@ -124,20 +132,25 @@ def test_prune_removes_postings_missing_from_current_fetch():
     pruned = writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
 
     assert worksheet.updated_with is None
-    assert worksheet.spreadsheet.batch_update_body == {
-        "requests": [
+    assert worksheet.client.batch_update_calls == [
+        (
+            "sheet-xyz",
             {
-                "deleteDimension": {
-                    "range": {
-                        "sheetId": 123,
-                        "dimension": "ROWS",
-                        "startIndex": 1,
-                        "endIndex": 2,
+                "requests": [
+                    {
+                        "deleteDimension": {
+                            "range": {
+                                "sheetId": 123,
+                                "dimension": "ROWS",
+                                "startIndex": 1,
+                                "endIndex": 2,
+                            }
+                        }
                     }
-                }
-            }
-        ]
-    }
+                ]
+            },
+        )
+    ]
     assert pruned == 1
 
 
@@ -148,7 +161,7 @@ def test_prune_noop_when_nothing_closed():
 
     pruned = writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
 
-    assert worksheet.spreadsheet.batch_update_body is None
+    assert worksheet.client.batch_update_calls == []
     assert pruned == 0
 
 
@@ -160,7 +173,7 @@ def test_prune_leaves_unfetched_board_rows_alone():
 
     writer.prune_closed_postings(worksheet, current_jobs=[], fetched_boards={"acme"})
 
-    assert worksheet.spreadsheet.batch_update_body is None
+    assert worksheet.client.batch_update_calls == []
 
 
 def test_prune_a_board_with_zero_current_postings_removes_all_its_rows():
@@ -171,20 +184,25 @@ def test_prune_a_board_with_zero_current_postings_removes_all_its_rows():
 
     writer.prune_closed_postings(worksheet, current_jobs=[], fetched_boards={"acme"})
 
-    assert worksheet.spreadsheet.batch_update_body == {
-        "requests": [
+    assert worksheet.client.batch_update_calls == [
+        (
+            "sheet-xyz",
             {
-                "deleteDimension": {
-                    "range": {
-                        "sheetId": 123,
-                        "dimension": "ROWS",
-                        "startIndex": 1,
-                        "endIndex": 2,
+                "requests": [
+                    {
+                        "deleteDimension": {
+                            "range": {
+                                "sheetId": 123,
+                                "dimension": "ROWS",
+                                "startIndex": 1,
+                                "endIndex": 2,
+                            }
+                        }
                     }
-                }
-            }
-        ]
-    }
+                ]
+            },
+        )
+    ]
 
 
 def test_prune_deletes_multiple_rows_from_bottom_to_top():
@@ -200,10 +218,9 @@ def test_prune_deletes_multiple_rows_from_bottom_to_top():
         worksheet, current_jobs=[_job("acme", "3")], fetched_boards={"acme"}
     )
 
-    ranges = [
-        request["deleteDimension"]["range"]
-        for request in worksheet.spreadsheet.batch_update_body["requests"]
-    ]
+    (spreadsheet_id, body), = worksheet.client.batch_update_calls
+    assert spreadsheet_id == "sheet-xyz"
+    ranges = [request["deleteDimension"]["range"] for request in body["requests"]]
     assert ranges == [
         {"sheetId": 123, "dimension": "ROWS", "startIndex": 2, "endIndex": 3},
         {"sheetId": 123, "dimension": "ROWS", "startIndex": 1, "endIndex": 2},
