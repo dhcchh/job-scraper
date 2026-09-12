@@ -1,370 +1,83 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Commands
 
 ```bash
-uv sync                        # install dependencies
-cp .env.example .env           # then fill in (see README's Setup section)
+uv sync
+cp .env.example .env
 
-uv run python -m jobscraper.main       # run the scraper once, locally
-uv run python -m jobscraper.sheets.backfill  # full-refresh every existing row/tab (see Architecture)
+uv run python -m jobscraper.main              # live scrape: append new and prune closed jobs
+uv run python -m jobscraper.sheets.backfill   # refresh existing rows after metadata/classifier changes
 
-uv run pytest                              # full test suite
-uv run pytest tests/sheets/test_writer.py  # one test file
-uv run pytest tests/sheets/test_writer.py::test_append_jobs_skips_already_tracked_job  # one test
+uv run pytest
+uv run pytest tests/sheets/test_writer.py
 ```
 
-No linter/formatter is configured in this repo.
+There is no formatter or linter. Tests never use the network or live Google
+credentials: `tests/conftest.py` supplies dummy config and sheet tests use a
+small fake `Worksheet`.
 
-Tests never hit the network or real Google credentials: `tests/conftest.py` sets
-dummy `GOOGLE_SHEET_ID`/`GOOGLE_SERVICE_ACCOUNT_JSON` env vars before
-`jobscraper.config` is ever imported (it reads required env vars at import
-time and raises without them), and `sheets/writer.py`'s tests exercise a
-tiny in-file fake `Worksheet` instead of `gspread`.
+## Architecture and invariants
 
-## Architecture
+- The daily GitHub Actions workflow runs `jobscraper.main`. Each run fetches
+  every configured Greenhouse board, classifies postings into ten tabs (five
+  categories × `PAC`/`RoW`), appends jobs first seen this run, then removes
+  jobs confirmed closed.
+- `config.py` is the only module that reads environment variables and
+  `greenhouse_boards.toml`; import `jobscraper.config` rather than copying its
+  settings at import time. Board tokens are checked in and are not secrets.
+- `Job` in `models.py` is the shared data shape. Keep `FIELDS`,
+  `Job.to_row()`, and the sheet header aligned. The row identity is
+  `(board, job_id)`, not `job_id` alone, because Greenhouse IDs are tenant
+  scoped. `first_published` is the best available Greenhouse "went live"
+  signal; `updated_at` can change after edits and `scraped_date` is only when
+  this project first saw the job.
+- `greenhouse/client.py` fetches the public Job Board API with `content=true`.
+  It retries transient failures three times; `main.py` logs and skips a board
+  that still fails so it cannot trigger false pruning elsewhere.
+- Build locations from Greenhouse's `offices[]`, normalize each office, remove
+  duplicates, then join with `" | "`. Do not split `location.name` by commas:
+  it is free text. `normalize_location.py` intentionally falls back to a
+  cleaned unknown value rather than guessing. Add a canonical mapping before
+  treating a new city as PAC. It also removes `Remote -`, `(Remote)`, `Office`,
+  and Stripe-style `Location(s)` wrappers before lookup.
+- `classify_region` routes a posting to PAC if any normalized office is in a
+  PAC country. `classify_roles.classify_job` returns `None` for recruiter
+  titles before applying category keywords; keyword precedence is intentional.
+- `sheets/writer.py` deduplicates and prunes by `(board, job_id)`. Only prune
+  boards fetched successfully (and all tokens for a multi-token firm). Its
+  `clear()` + `update()` rewrite is non-atomic, so avoid concurrent writers.
+  Use `USER_ENTERED` values so Sheets preserves dates and linkifies URLs.
+- `sheets/backfill.py` is manual only. Run it after changing `FIELDS`,
+  classification metadata, location normalization, or `first_published`.
+  It refreshes cells in place but deliberately does not move rows between tabs
+  or rename board values, which could lose data if interrupted.
+- The scraper logs the spreadsheet title/URL and writes a GitHub Actions job
+  summary. Workflow-level concurrency protects Action-triggered runs; it does
+  not protect a local run pointed at the production sheet.
 
-Single package (`src/jobscraper/`), one entrypoint (`main.py`), run once
-daily by `.github/workflows/daily-scrape.yml` (`uv run python -m
-jobscraper.main`). Per run: fetch every configured board → dedup-append new
-postings to the sheet → prune postings that closed. Read `README.md` for
-full user-facing setup/behavior; this section is the cross-file design that
-isn't obvious from any single file.
+## Open work
 
-**`config.py`** is the only place that reads env vars or
-`greenhouse_boards.toml`, and does so once at import. Everything else reads
-values through the module (`config.GOOGLE_SHEET_ID`, etc.) rather than
-copying them at import elsewhere — this is what lets tests monkeypatch a
-single value and repoint a whole run at test data. Greenhouse board tokens
-live in the checked-in `greenhouse_boards.toml`, not `.env`, since they
-aren't secret and are easier to grow as a TOML array-of-tables than a
-comma-separated env var.
+- Recognize numeric and level-based seniority (for example, `Engineer II`,
+  `SDE II`, and `L4/L5`) rather than classifying it as `Unspecified`.
+- Add an optional Telegram digest for newly appended DA/BI, DS/ML/Algos, and
+  SWE/DE postings. Send one batched message per successful run; it will need
+  bot, chat, and thread secrets, plus access to the newly appended jobs rather
+  than only their counts.
+- Decide whether worksheets should be created automatically when a new tab is
+  configured; today a missing tab raises.
+- Validate each `[[boards]]` entry early and report the specific missing
+  `firm`, `token`, or `company_type` field instead of surfacing `KeyError`.
+- If more than one person operates the production sheet, add a distributed
+  lock; GitHub Actions concurrency cannot prevent an overlapping local run.
+- Consider a way to validate that local and CI `GOOGLE_SHEET_ID` values refer
+  to the intended spreadsheet. The logged title/URL makes drift visible but
+  does not prevent it.
 
-**`models.py`** defines `Job`, the one shape every board client must
-produce, and `FIELDS`, the column order written to (and read back from) the
-sheet — keep `FIELDS` in sync with `sheets.writer.HEADER`. Order is chosen
-for a human scanning the sheet, not for `Job`'s constructor: the columns
-someone actually filters/sorts by (`board`, `title`, `location`,
-`first_published`, `updated_at`, `company_type`) come first, `url` keeps a
-near-front spot since it's the one column meant to be clicked, and
-`job_id`/`scraped_date` (pure bookkeeping) sit last. `first_published` sits
-immediately before `updated_at` deliberately: it's Greenhouse's own "job
-went live" timestamp (from the Job Board API's `first_published` field,
-present in Greenhouse's own API examples though not described in prose
-there) and, unlike `updated_at`, confirmed empirically — across ~5,000 real
-postings on this project's boards — to never move once set, even across a
-later edit. It's the best available answer to "when did this posting
-actually first appear," strictly better than either `updated_at` (an edit
-bumps it same as a new posting) or `scraped_date` (only "when did *we*
-first see it," which lags the real answer by however long a firm went
-un-scraped before being added to `greenhouse_boards.toml`). Best-effort
-still, same as every other Greenhouse-sourced string field: a small
-fraction of real postings (observed on Squarepoint/Tower Research/HRT)
-have it missing, so it defaults to `""` like every other optional `Job`
-field rather than raising. `Job`'s own dataclass field order is untouched
-by any of this — only `FIELDS` and `to_row()` encode sheet column order, so
-reordering columns never means touching every `Job(...)` call site. This is
-also the seam for adding a board: a new `jobscraper/<board>/client.py`
-exposing `fetch_jobs(token) -> list[Job]`, wired into `main.py`'s loop, is
-the only change needed elsewhere.
+## Scale
 
-**`greenhouse/client.py`** has one function, `fetch_jobs`, hitting
-Greenhouse's public unauthenticated Job Board API. Transient failures
-(connection errors, timeouts, 5xx, 429) are retried up to 3 attempts total
-with exponential backoff; anything else (a 4xx like a bad/renamed token)
-raises immediately since retrying can't fix it. `main.py`'s `run()` catches
-per-board on top of that — a board that still fails after retries is
-logged and skipped rather than aborting the whole run, so one bad board or
-a sustained Greenhouse outage no longer takes down every other board's
-update.
-
-**`classifications/classify_region.py`** is the other half of what picks a
-job's spreadsheet tab, alongside `classify_roles.py`'s category: `main.py`
-now writes to 10 tabs (5 categories × `REGIONS`, i.e. `("PAC", "RoW")`),
-named via `tab_name(category, region)` → `"{category} - {region}"` — this
-must match the tabs already in the spreadsheet exactly, since (like every
-other tab) nothing here auto-creates one. `classify_region` reads
-`Job.location` (already normalized/`" | "`-joined by `greenhouse/client.py`
-— see below) and returns `"PAC"` if *any* one of the job's offices is in
-`_PAC_COUNTRIES` (Singapore, Hong Kong, Australia, Japan, South Korea,
-China, Taiwan, New Zealand), else `"RoW"` — "any, not every" is deliberate:
-a posting listing Singapore alongside London still counts as one a
-Singapore-based candidate could get into.
-
-**`classifications/normalize_location.py`** canonicalizes one office name
-via a hand-curated lookup table (same shape/philosophy as
-`classify_seniority.py`'s `LEVELS` — unmapped falls through cleaned but
-unchanged, deliberately, rather than guessing). The non-obvious part lives
-in `greenhouse/client.py`'s `_location`, which is what calls it: a
-Greenhouse job's `location.name` is one free-text string a recruiter typed
-(e.g. `"London, United Kingdom; New York, NY, United States"`) and can't be
-safely split on a delimiter — different boards mix commas *inside* one
-location (city, state, country) with commas *and* semicolons *between*
-locations, inconsistently. `raw["offices"]` (present because `fetch_jobs`
-always requests `content=true`) is Greenhouse's own pre-split per-office
-list instead, so `_location` builds `Job.location` from that — normalizing
-and de-duplicating each office name, then joining with `" | "` — and only
-falls back to the raw `location.name` string if `offices` is ever
-missing/empty. `classify_region` above depends on this: it only ever reads
-the country `normalize_location` already put after the last comma, so a
-new PAC city needs an entry here before it's recognized as PAC there too.
-This bit twice already when non-quant boards were added: Coinbase's
-`"Remote - Singapore"` and OKX's `"Taiwan (Remote)"` are real PAC postings
-that don't exact-match the lookup table as-is, so `normalize_location` now
-also strips a leading `"Remote - "` / trailing `" (Remote)"` annotation
-(same technique as the existing trailing `" office"` strip) before
-looking a name up — without it, both would have silently landed in RoW.
-
-A third time, at real scale: Stripe doesn't list its physical offices
-individually in `offices[]` — it groups every office in one country under a
-single umbrella entry (`"Singapore Locations"`, `"Australia Locations"`,
-`"Japan Locations"`, ..., confirmed across two dozen countries on its live
-board). None of these exact-match the lookup table, so `normalize_location`
-also strips a trailing `" Location"`/`" Locations"` suffix now, same
-technique again. This one wasn't hypothetical: dry-running the fix against
-Stripe's live board turned up 64 postings silently misfiled into RoW before
-it, 8 of them real (non-noise) roles across DA/BI/DS/SWE — not just the one
-Singapore posting that surfaced it.
-
-**`sheets/writer.py`** is the part most likely to surprise someone reading
-only one file at a time — its two functions both key on `(board, job_id)`,
-not on age:
-- `append_jobs` reads the sheet's existing keys first and skips any job
-  already present, so a still-open posting gets exactly one row for its
-  lifetime (its `scraped_date` is therefore "first seen," never updated
-  again).
-- `prune_closed_postings` deletes a row only once its `job_id` no longer
-  comes back in that board's fetch — i.e. actually closed on Greenhouse,
-  not merely old. It takes `fetched_boards` as an explicit argument rather
-  than inferring it from the jobs list, specifically so a board that
-  failed to fetch isn't mistaken for "every one of its postings just
-  closed." `main.py` passes only the firms that actually succeeded this
-  run — and for a firm with more than one board token (Optiver has two),
-  only if *all* of its tokens succeeded, since the two share one dedup key
-  and a partial success would otherwise make the failed token's postings
-  look closed.
-
-Both `append_jobs` and `prune_closed_postings` do their own independent
-`worksheet.get_all_values()` read (two reads per run, not shared) — kept
-that way deliberately so each function stays self-contained and testable
-in isolation, matching the existing pattern rather than threading sheet
-state through `main.py`.
-
-Both functions also return the count of rows they actually touched
-(appended/pruned, `0` if none) rather than `None` — the only consumer is
-`main.py`'s end-of-run job summary (see below), so `backfill.py`, which
-doesn't call either function, is unaffected.
-
-`main.py`'s `run()` opens the spreadsheet before doing anything else and
-logs its title/URL — see "Known gaps" below for why (a `GOOGLE_SHEET_ID`
-that drifts between `.env` and the CI secret). At the end of the run it
-also appends a markdown summary (boards fetched/failed, job counts,
-per-tab appended/pruned) to `$GITHUB_STEP_SUMMARY` via
-`_write_job_summary`, which no-ops when that variable is unset — true for
-every local run and every test, true only inside an actual GitHub Actions
-job otherwise. `_build_summary_markdown` is kept as a separate pure
-function (stats in, markdown string out) specifically so it's testable
-without an env var or filesystem.
-
-Pruning always rewrites the whole sheet in one `clear()` + `update()` call
-rather than deleting rows one at a time, to stay under Sheets API rate
-limits — this makes `clear()`+`update()` two non-atomic calls, so a failure
-between them would briefly leave just the header row. Acceptable for a
-single-writer daily job.
-
-Both `append_jobs` and `prune_closed_postings` write with
-`value_input_option="USER_ENTERED"`, not `"RAW"`, so Sheets parses each
-value the way a human typing it would — `scraped_date` becomes a real date
-(sortable/filterable/formattable as one, not plain text) and `url` gets
-auto-linkified. This is the one piece of "human-readable output" that has
-to live in code rather than be set up by hand in Sheets, since it's about
-how a value is interpreted at write time, not how the sheet looks — see
-"Known gaps" below for the presentation half of that split.
-
-**`sheets/backfill.py`** is the retroactive counterpart to `writer.py`:
-`append_jobs` only ever touches brand-new rows, and `prune_closed_postings`
-rewrites a tab (preserving its existing header/column order as-is) only
-when it actually has a row to delete — so a classification fix, a
-`company_type` re-tag in `greenhouse_boards.toml`, or a `FIELDS` reorder
-never reaches an already-written row on its own, and a quiet tab (nothing
-ever closes) could sit on stale data indefinitely. `refresh_worksheet` reads
-each tab's *current* header (whatever order it happens to be in), recomputes
-`seniority`/`company_type` from each row's own columns, then re-lays every
-row out into the *current* `models.FIELDS` order and overwrites the header
-to match — run by hand (`uv run python -m jobscraper.sheets.backfill`),
-never from `main.py`'s daily loop. Run it once right after any `FIELDS`
-reorder ships, before the next scheduled run, or `append_jobs`'s
-`Job.to_row()` output (always in `FIELDS` order) will land under whatever
-stale header the tab still has. It also re-normalizes `location` through
-`normalize_location.py`'s current table, best-effort: a cell already
-`" | "`-joined by a previous backfill run gets fully re-cleaned per piece,
-but a cell written before location normalization existed at all is one
-un-split legacy string with no `offices` data left to recover — it's
-normalized as one whole string (fixes it if it was a single plain city
-name) and otherwise left alone rather than guessed at, self-healing only
-once that posting naturally closes and reopens through `fetch_jobs`. The
-same fresh re-fetch (`_greenhouse_overrides`, one call shared by both) is
-also the only way `first_published` ever gets filled in for a row written
-before that column existed at all — there's no cell to re-derive it from,
-so a posting that's already closed by the time backfill runs is left with
-whatever it already has (empty, for a pre-migration row) rather than
-guessed at, same philosophy as the location fallback above. It
-deliberately does not re-route a job to a different category *or region*
-tab (moving rows across tabs risks duplicating/losing data if interrupted)
-or rewrite
-`board` after a firm rename (the old firm name is already gone from
-`greenhouse_boards.toml` by the time this runs, so there's nothing to look
-it up against) — see its module docstring.
-
-## Known gaps / next improvements
-
-Not urgent, but worth doing roughly in this order as the project grows —
-especially once non-quant firms are added to `greenhouse_boards.toml`:
-
-- **Seniority levels miss numeric/leveling titles** — `classify_seniority.py`
-  only matches English seniority words (Senior, Manager, ...); big-tech-style
-  titles ("Software Engineer II", "SDE II", "L4/L5") fall through to
-  `Unspecified` today. Confirmed now that non-quant firms are in
-  `greenhouse_boards.toml`: real examples include Coinbase's "Analyst II",
-  Ripple's "Software Engineer II, Platform", and Figma/Roblox's "Product
-  Designer II"/"Product Manager II" — still unfixed, low volume relative to
-  the plain-word-Unspecified rate so not urgent, but no longer hypothetical.
-- **Role classifier needs a validation pass per new firm type** — done once,
-  for the Crypto Exchange/Gaming/Fintech/AI Lab/Data-Cloud
-  Infrastructure/Consumer Comms/Enterprise Productivity/Consumer
-  Marketplace firms added to `greenhouse_boards.toml` alongside the
-  original 15 quant boards: `classify_roles.py`'s SWE/DE keywords were
-  dry-run against ~3,700 of those firms' real postings, which surfaced a
-  systematic miss — big-tech titling favors bare/reordered "Engineer"
-  phrases ("Staff Engineer", "Security Engineer") and engineering
-  *management* ("Engineering Manager", "Director of Engineering") that the
-  quant-tuned keywords never needed to cover. Both were added; customer-
-  facing "Solutions Engineer"/"Forward Deployed Engineer"/"Support
-  Engineer" were deliberately left as noise (pre-sales/support-adjacent,
-  not the IC/engineering-management scope this pass was scoped to) — see
-  `classify_roles.py`'s SWE/DE tuple for the exact keyword list and
-  rationale. The general warning stands for *future* firm types, though:
-  don't assume a new firm's titling Just Works untested.
-
-  Two more misses turned up since, both from real (not dry-run) postings:
-  a title containing a real keyword can still be a Recruiting-org posting,
-  not an IC one for that category — Ripple's "Lead Technical Recruiter
-  (Quant Engineering)" (bare "quant") and Jane Street's "Campus Recruiter,
-  Machine Learning and Quantitative Research" (bare "machine learning")
-  were both landing in a category despite being recruiter postings.
-  `classify_job` now vetoes any title containing "recruiter" before
-  checking CATEGORIES at all — deliberately "recruiter", not "recruiting",
-  since the latter also trails a genuine IC title as a department-style
-  qualifier (Anthropic's "People Research Scientist, Recruiting", a real
-  research scientist role) that a broader veto would wrongly drop too.
-  Separately, "quantitative"/"quant" being broad by design (see the QT/QR
-  tuple's own comment) means it can catch a DS-flavored role at a
-  non-trading firm — Stripe's "Treasury Finance AI and Quantitative
-  Analytics, Americas" was landing in QT/QR despite Stripe not running a
-  trading desk. Rather than gating QT/QR by `company_type` (OKX, a Crypto
-  Exchange rather than a Prop Trading/Hedge Fund, has real "Quantitative
-  Trader" postings that legitimately belong there), DS/ML/Algos gained the
-  more specific "quantitative analytics" phrase, checked before QT/QR's
-  bare "quantitative" — same precedence trick as "algo"/"bi developer"
-  above. Both fixes dry-run validated against all 29 boards' live postings
-  with no other collateral change.
-- ~~No CI test run on push~~ — done: `.github/workflows/test.yml` runs
-  `uv run pytest` on every push to `main` and every PR, separate from
-  `daily-scrape.yml` so a test failure can't block or delay the scheduled
-  scrape.
-- ~~No run notifications~~ — done: `main.py`'s `run()` now appends a
-  markdown summary (boards fetched/failed, job counts, per-tab
-  appended/pruned) to `$GITHUB_STEP_SUMMARY`, so a run's outcome shows up
-  on the GitHub Actions job's own summary page, not just buried in the run
-  log. See `sheets/writer.py` and `main.py` in Architecture above. Still
-  nothing pushed *outside* GitHub (Slack/email) — only worth adding if a
-  failed run needs to page someone rather than wait to be noticed on the
-  Actions tab.
-- ~~No protection against overlapping runs~~ — done for the GitHub-Actions-
-  triggered case: `daily-scrape.yml` now has a `concurrency:` group
-  (`cancel-in-progress: false`) so a manual `workflow_dispatch` can't run
-  at the same time as the scheduled cron (or another manual trigger).
-  Without it, `sheets/writer.py`'s `prune_closed_postings` — a non-atomic
-  `clear()` + `update()` per tab — could have one run's write silently
-  clobber another's just-appended/pruned rows, since each run reads
-  `get_all_values()` independently and neither knows about the other's
-  in-flight changes. Queuing rather than canceling matters specifically
-  because killing a run between `clear()` and `update()` would leave a tab
-  with only its header row. **Still open**: this can't protect against a
-  run triggered *outside* GitHub Actions — e.g. someone's local `uv run
-  python -m jobscraper.main` pointed at the production sheet while the
-  scheduled Action is also running. No code-level fix for that without a
-  real distributed lock (a Sheets-side lock cell/named range, say), which
-  is more machinery than this single-maintainer project's actual usage
-  pattern justifies today — worth revisiting only if this ever becomes a
-  genuinely multi-operator tool.
-- **Telegram digest of new postings** — requested: a Telegram bot posts one
-  batched digest per run (not one message per job) to a supergroup's
-  "jobs" subtopic (`message_thread_id` on `sendMessage`), listing only
-  that run's newly-appended jobs in DA/BI, DS/ML/Algos, and SWE/DE (not
-  QT/QR or SRE/DevOps), one line each — `"{title} in {location} from
-  {company}, {seniority}"` — plus a link back to the sheet ("see the
-  latest"). Needs two new secrets (bot token, target chat id + thread id).
-  Implementation snag: `append_jobs` currently returns only a *count* of
-  newly-appended rows (see Architecture above), not the rows themselves —
-  building the digest needs either changing it to return the new `Job`
-  list too, or `main.py` redoing the same already-tracked-keys filter
-  itself just to know which of a tab's jobs were actually new this run.
-  Also inherits the overlapping-runs gap right above: send the digest from
-  inside the same `run()` (after a successful append), not from a
-  separately-triggered process, or two overlapping runs could each think
-  they found the same "new" job and double-post it to the group.
-- **No worksheet auto-creation** — `sheets/writer.get_worksheet()` raises if
-  a tab doesn't already exist; fine while tabs are managed by hand.
-- **No fail-fast config validation** — a `[[boards]]` entry missing
-  `company_type`/`firm`/`token` surfaces as a bare `KeyError` in `main.py`'s
-  loop, not a message naming the bad entry.
-- ~~Location isn't normalized~~ — done, see `classifications/normalize_location.py`
-  in Architecture above.
-- ~~No visual highlight for a run's newly-scraped rows~~ — done, sheet-side
-  only (nothing in `main.py`/`writer.py` changed): every job tab now has a
-  conditional formatting rule that highlights a row green when `updated_at`
-  falls within the past 7 days. Deliberately `updated_at` (Greenhouse's own
-  last-updated timestamp), not `scraped_date` as originally suggested here —
-  `scraped_date` would flag every row of a newly-added or just-backfilled
-  board as "new" on first sight, even a listing that's actually months old
-  on Greenhouse. Like all sheet formatting, it survives every run for free:
-  `prune_closed_postings`'s `clear()`+`update()` only touches cell values via
-  the Sheets API, never formatting.
-- ~~Region refactor~~ — done, see `classifications/classify_region.py` in
-  Architecture above. Turned out to be 10 tabs (5 categories × PAC/RoW), not
-  8 — confirmed against the actual spreadsheet tab names.
-- ~~No check that `GOOGLE_SHEET_ID` matches between `.env` and the GitHub
-  Actions secret~~ — bit this project once already: the CI secret silently
-  pointed at a stale spreadsheet (old bare-category tab names) for a while
-  after `.env` and the live spreadsheet had both moved on to the
-  PAC/RoW-tab structure, and every scheduled run still reported `success`
-  (it was writing real data, just to the wrong file). Nothing in this repo
-  cross-checks the two automatically — that's still true, and can't fully
-  be fixed from one side alone — but `main.py`'s `run()` now logs the
-  spreadsheet's own title/URL before touching anything (also included in
-  the job summary above), so a `GOOGLE_SHEET_ID` (or tab set) that's
-  drifted between `.env` and the CI secret is at least visible to whoever
-  reads the run log or job summary, instead of a silent CI-green/sheet-stale
-  mismatch.
-
-## Scale limits
-
-This design — sequential per-board fetching, one GitHub Actions run/day, a
-Google Sheet as the datastore — has a real ceiling, roughly **2,000-5,000
-companies**, well before the ~15,000 the raw Actions-minutes math alone
-would suggest (2,000 free min/month ÷ ~0.25s/board observed today). What
-actually pulls that down: retries/backoff on transient failures aren't in
-that math, `get_all_values()` re-reads each tab's *entire* history every
-run (so runtime grows with accumulated postings, not just company count),
-and — the real unknown — Greenhouse's own infrastructure is likely shared
-across board tenants at the network/WAF layer, so thousands of sequential
-requests per run from one CI IP could get throttled independent of
-anything tunable here; untested. Sheets' hard 10M-cell cap (~1M rows at
-`FIELDS`' 10 columns) is a second ceiling whose exact company-count depends
-on postings-per-company — see README's "Scale limits" for the full
-numbers. Past a few hundred boards: concurrent/batched fetching, a real
-database instead of a spreadsheet, and a dedicated scheduler instead of a
-GitHub Actions cron.
+The current sequential fetcher and Google Sheet datastore fit a small-to-
+medium board list. As history and board count grow, full-sheet reads, API
+retries/rate limits, and Sheets' cell cap become the limiting factors. For a
+much larger deployment, move to concurrent/batched fetching, a database, and
+a dedicated scheduler.
