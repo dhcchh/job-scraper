@@ -12,18 +12,25 @@ import dataclasses
 import datetime
 
 # Keep in sync with sheets.writer.HEADER -- this is the column order written
-# to, and read back from, the sheet.
+# to, and read back from, the sheet. Ordered for a human scanning/filtering
+# the sheet, not for how Job is constructed: the columns someone actually
+# filters/sorts by (company, title, location, updated_at, company_type)
+# come first; url still earns a near-front spot since it's the one column
+# whose whole purpose is to be clicked; job_id and scraped_date are pure
+# bookkeeping and sit last. Changing this order is a live-sheet migration,
+# not just a code change -- see sheets/backfill.py, which rewrites every
+# existing row (and the header) into whatever order FIELDS currently is.
 FIELDS: tuple[str, ...] = (
     "board",
-    "job_id",
     "title",
-    "department",
     "location",
-    "url",
     "updated_at",
-    "scraped_date",
-    "seniority",
     "company_type",
+    "url",
+    "seniority",
+    "department",
+    "job_id",
+    "scraped_date",
 )
 
 
@@ -76,13 +83,13 @@ class Job:
         """Render as a flat list of strings, in FIELDS order, for a sheet row."""
         return [
             self.board,
-            self.job_id,
             self.title,
-            self.department,
             self.location,
-            self.url,
             self.updated_at,
-            self.scraped_date.isoformat(),
-            self.seniority,
             self.company_type,
+            self.url,
+            self.seniority,
+            self.department,
+            self.job_id,
+            self.scraped_date.isoformat(),
         ]

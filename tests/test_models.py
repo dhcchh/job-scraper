@@ -18,13 +18,13 @@ def test_job_to_row_matches_fields_order():
     assert len(row) == len(FIELDS)
     assert row == [
         "acme",
-        "1",
         "Engineer",
-        "Eng",
         "Remote",
-        "https://example.com/1",
         "2026-09-01T00:00:00Z",
-        "2026-09-12",
-        "Unspecified",  # seniority defaults when not passed explicitly
         "",  # company_type defaults when not passed explicitly
+        "https://example.com/1",
+        "Unspecified",  # seniority defaults when not passed explicitly
+        "Eng",
+        "1",
+        "2026-09-12",
     ]

@@ -34,7 +34,21 @@ class _FakeWorksheet:
 
 
 def _row(board, job_id, scraped_date):
-    return [board, job_id, "Title", "Dept", "Remote", "https://x", "", scraped_date]
+    # Built by column name, not position, so it doesn't need updating every
+    # time FIELDS' column order changes (see models.FIELDS' docstring).
+    values = {
+        "board": board,
+        "job_id": job_id,
+        "title": "Title",
+        "department": "Dept",
+        "location": "Remote",
+        "url": "https://x",
+        "updated_at": "",
+        "scraped_date": scraped_date,
+        "seniority": "Unspecified",
+        "company_type": "",
+    }
+    return [values[name] for name in writer.HEADER]
 
 
 def test_append_jobs_writes_job_rows():
@@ -100,7 +114,8 @@ def test_prune_removes_postings_missing_from_current_fetch():
     writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
 
     assert worksheet.cleared is True
-    kept_ids = [row[1] for row in worksheet.updated_with[1:]]
+    job_id_index = writer.HEADER.index("job_id")
+    kept_ids = [row[job_id_index] for row in worksheet.updated_with[1:]]
     assert kept_ids == ["2", "3"]
 
 

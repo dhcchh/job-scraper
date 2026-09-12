@@ -87,7 +87,7 @@ def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> None:
         return
 
     rows = [job.to_row() for job in new_jobs]
-    worksheet.append_rows(rows, value_input_option="RAW")
+    worksheet.append_rows(rows, value_input_option="USER_ENTERED")
     logger.info(
         "appended %d new row(s), skipped %d already-tracked", len(rows), skipped
     )
@@ -162,7 +162,7 @@ def prune_closed_postings(
     # first) across versions -- keywords keep this call correct regardless
     # of the exact version installed.
     worksheet.clear()
-    worksheet.update(values=[header] + surviving, value_input_option="RAW")
+    worksheet.update(values=[header] + surviving, value_input_option="USER_ENTERED")
     logger.info("prune: removed %d closed posting(s)", pruned_count)
 
 
