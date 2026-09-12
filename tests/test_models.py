@@ -20,6 +20,7 @@ def test_job_to_row_matches_fields_order():
         "acme",
         "Engineer",
         "Remote",
+        "",  # first_published defaults when not passed explicitly
         "2026-09-01T00:00:00Z",
         "",  # company_type defaults when not passed explicitly
         "https://example.com/1",

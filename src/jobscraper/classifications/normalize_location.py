@@ -41,6 +41,19 @@ _OFFICE_SUFFIX_RE = re.compile(r"\s+office$", re.IGNORECASE)
 _REMOTE_PREFIX_RE = re.compile(r"^remote\s*-\s*", re.IGNORECASE)
 _REMOTE_SUFFIX_RE = re.compile(r"\s*\(remote\)$", re.IGNORECASE)
 
+# Stripe groups several physical offices in one country under a single
+# umbrella `offices[].name` instead of listing them individually -- e.g.
+# "Singapore Locations", "Australia Locations", "Japan Locations" (confirmed
+# against Stripe's live board: two dozen countries use this pattern, several
+# of them PAC). Left unstripped, none of these exact-match the lookup table
+# below (or, for a bare country name with no entry needed, classify_region's
+# own PAC check), so a real PAC posting would silently land in RoW -- same
+# failure shape as the "Remote - "/" (Remote)" annotations above, same fix:
+# strip the noise suffix before lookup so the country name underneath is
+# left to resolve normally (via the table for a city, or unchanged for a
+# bare country classify_region already recognizes).
+_LOCATION_SUFFIX_RE = re.compile(r"\s+locations?$", re.IGNORECASE)
+
 # Keyed by the office name lowercased (after stripping a trailing " office"
 # noise suffix -- covers "Amsterdam office", "Chicago Office", etc. without
 # needing a separate entry per suffix variant). Unmapped names pass through
@@ -137,6 +150,7 @@ def normalize_location(raw: str) -> str:
     "Unspecified": don't fabricate a signal the data doesn't contain.
     """
     cleaned = _OFFICE_SUFFIX_RE.sub("", raw).strip()
+    cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_PREFIX_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_SUFFIX_RE.sub("", cleaned).strip()
     return _CANONICAL_LOCATIONS.get(cleaned.lower(), cleaned)

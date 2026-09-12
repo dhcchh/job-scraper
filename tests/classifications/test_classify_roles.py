@@ -38,6 +38,12 @@ def _job(title, department=""):
         ("Quantitative Strategist", "QT/QR"),
         ("Front Office Pricing Modelling Quant", "QT/QR"),  # bare "quant"
         ("Market Microstructure Researcher", "QT/QR"),
+        # "quantitative analytics" wins over QT/QR's bare "quantitative" --
+        # at a non-trading firm this names a DS/analytics function, not a
+        # trading desk (confirmed against a real Stripe posting).
+        ("Treasury Finance AI and Quantitative Analytics, Americas", "DS/ML/Algos"),
+        # Still correctly QT/QR when the words aren't the adjacent phrase.
+        ("Quantitative Technologist - Treasury Analytics", "QT/QR"),
         ("Site Reliability Engineer", "SRE/DevOps"),
         ("Reliability Engineer", "SRE/DevOps"),
         ("DevOps Engineer", "SRE/DevOps"),
@@ -94,3 +100,19 @@ def test_classify_job_does_not_match_substring_inside_a_longer_word():
     # "engineer" inside "engineering" must not satisfy the whole-word match --
     # a recruiter for an engineering team is noise, not a job for SWE/DE.
     assert classify_job(_job("Data Engineering Recruiter")) is None
+
+
+def test_classify_job_vetoes_recruiter_titles_even_with_a_real_keyword():
+    # A "Recruiter" title must never route anywhere, regardless of what else
+    # it mentions -- both are real postings that were wrongly landing in a
+    # category via a bare "quant"/"machine learning" match before this veto.
+    assert classify_job(_job("Lead Technical Recruiter (Quant Engineering)")) is None
+    assert classify_job(
+        _job("Campus Recruiter, Machine Learning and Quantitative Research")
+    ) is None
+
+
+def test_classify_job_does_not_veto_recruiting_as_a_department_qualifier():
+    # "Recruiting" (not "recruiter") can trail a genuine IC title as a
+    # department-style qualifier -- must not be swept up by the same veto.
+    assert classify_job(_job("People Research Scientist, Recruiting")) == "DS/ML/Algos"

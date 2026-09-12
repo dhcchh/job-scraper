@@ -14,7 +14,7 @@ tab's existing header and column order exactly as found (see its docstring)
 an already-written row can sit on stale classification/formatting/column
 order indefinitely without this.
 
-Four things happen to every row, for every (category, region) tab:
+Five things happen to every row, for every (category, region) tab:
   - `seniority` and `company_type` are recomputed from columns already in
     the row -- `seniority` from the row's own `title`/`department` via the
     *current* classify_seniority.classify_seniority, `company_type` by
@@ -24,14 +24,19 @@ Four things happen to every row, for every (category, region) tab:
     greenhouse_boards.toml, and then running this backfill applies the
     change to every existing row, not just new ones.
   - `location` is corrected using a *fresh* re-fetch of every board in
-    config.GREENHOUSE_BOARDS (see _location_overrides_from_greenhouse) when
-    the row's posting is still open -- that re-fetch has real `offices`
-    data, so it's what actually fixes a legacy, never-split cell like
-    "Chicago, New York City" (written before this project read `offices`
-    at all -- see job_boards/greenhouse/client.py). Only once a posting has
-    actually closed (gone from the API, no override available) does this
-    fall back to _renormalize_location's best-effort re-normalization of
-    whatever string is already in the cell.
+    config.GREENHOUSE_BOARDS (see _greenhouse_overrides) when the row's
+    posting is still open -- that re-fetch has real `offices` data, so it's
+    what actually fixes a legacy, never-split cell like "Chicago, New York
+    City" (written before this project read `offices` at all -- see
+    job_boards/greenhouse/client.py). Only once a posting has actually
+    closed (gone from the API, no override available) does this fall back
+    to _renormalize_location's best-effort re-normalization of whatever
+    string is already in the cell.
+  - `first_published` is filled in from that same fresh re-fetch, for a row
+    still open -- this column has no legacy cell to re-derive it from (it's
+    a genuinely new field, added after most rows already existed), so a
+    closed posting's row is left exactly as it already is (empty, if it
+    predates this column) rather than guessed at.
   - every row is re-laid-out into the *current* jobscraper.models.FIELDS
     column order, and the header row is overwritten with that same order
     (sheets.writer.HEADER) rather than left as whatever the tab already
@@ -78,40 +83,52 @@ from jobscraper.classifications.classify_roles import CATEGORIES
 from jobscraper.classifications.classify_seniority import classify_seniority
 from jobscraper.classifications.normalize_location import normalize_location
 from jobscraper.job_boards.greenhouse.client import fetch_jobs
-from jobscraper.models import FIELDS
-from jobscraper.sheets.writer import HEADER, _column_index, get_spreadsheet, get_worksheet
+from jobscraper.models import FIELDS, Job
+from jobscraper.sheets.writer import HEADER, get_spreadsheet, get_worksheet
 
 logger = logging.getLogger(__name__)
 
 
-def _location_overrides_from_greenhouse() -> dict[tuple[str, str], str]:
-    """Fresh, offices-derived Job.location for every currently open posting,
-    keyed by (board, job_id) -- re-fetches every board in
-    config.GREENHOUSE_BOARDS the same way main.py's daily run does. This is
-    the only way to correctly fix a legacy multi-location cell that was
-    never split (written before job_boards/greenhouse/client.py read
-    `offices`): there's no way to safely re-split e.g. "Chicago, New York
-    City" from the string alone, but Greenhouse's own `offices` array for
-    that same still-open posting has it pre-split, same as any fresh fetch.
+def _greenhouse_overrides() -> dict[tuple[str, str], Job]:
+    """Every currently open posting, freshly re-fetched, keyed by (board,
+    job_id) -- one re-fetch of every board in config.GREENHOUSE_BOARDS (same
+    call main.py's daily run makes) serves two different retroactive fixes
+    without doubling the network cost:
+
+    - `location`: the only way to correctly fix a legacy multi-location cell
+      that was never split (written before job_boards/greenhouse/client.py
+      read `offices`) -- there's no way to safely re-split e.g. "Chicago,
+      New York City" from the string alone, but Greenhouse's own `offices`
+      array for that same still-open posting has it pre-split, same as any
+      fresh fetch.
+    - `first_published`: a column that may not exist at all yet in an
+      already-written tab (added after FIELDS already had rows in it) --
+      there is no cell to re-derive it from, so a fresh fetch is the only
+      source of truth.
+
+    A posting that's since closed has no entry here for either column --
+    refresh_worksheet falls back to best-effort re-normalization for
+    location, and leaves first_published exactly as it already is (which is
+    "" for a row written before this column existed, since there's nothing
+    to recover it from once a posting is gone).
 
     A board that fails to fetch (network error, bad token, ...) is logged
-    and skipped -- its rows just fall back to refresh_worksheet's
-    best-effort re-normalization, same as if this function didn't exist.
+    and skipped -- its rows just get no override for either column this run.
     """
-    overrides: dict[tuple[str, str], str] = {}
+    overrides: dict[tuple[str, str], Job] = {}
     for board in config.GREENHOUSE_BOARDS:
         firm = board["firm"]
         try:
             jobs = fetch_jobs(board["token"], firm, board["company_type"])
         except Exception:
             logger.warning(
-                "refresh: couldn't re-fetch %s for location overrides, its "
-                "rows will fall back to best-effort re-normalization",
+                "refresh: couldn't re-fetch %s for location/first_published "
+                "overrides, its rows keep whatever they already have",
                 firm,
             )
             continue
         for job in jobs:
-            overrides[(job.board, job.job_id)] = job.location
+            overrides[(job.board, job.job_id)] = job
     return overrides
 
 
@@ -146,15 +163,17 @@ def _renormalize_location(value: str) -> str:
 def refresh_worksheet(
     worksheet: gspread.Worksheet,
     *,
-    location_overrides: dict[tuple[str, str], str] | None = None,
+    overrides: dict[tuple[str, str], Job] | None = None,
 ) -> None:
     """Recompute derived columns, re-lay-out, and rewrite every row in this tab.
 
-    `location_overrides` -- (board, job_id) -> fresh Job.location, from
-    _location_overrides_from_greenhouse() -- takes priority over
-    _renormalize_location's best-effort cleanup for any row it has an entry
-    for. Omit it (the default) to fall back to best-effort for every row,
-    e.g. when re-fetching Greenhouse isn't wanted for a given run.
+    `overrides` -- (board, job_id) -> a freshly re-fetched Job, from
+    _greenhouse_overrides() -- takes priority over _renormalize_location's
+    best-effort cleanup for `location`, and is the *only* source for
+    `first_published` (nothing to re-derive that one from an existing cell).
+    Omit it (the default) to fall back to best-effort location cleanup and
+    leave first_published untouched for every row, e.g. when re-fetching
+    Greenhouse isn't wanted for a given run.
 
     Always rewrites (clear() + update()) as long as there's at least one
     data row -- unlike prune_closed_postings, this never skips based on
@@ -175,21 +194,29 @@ def refresh_worksheet(
         return
 
     # Index into the tab's CURRENT header -- which may predate a FIELDS
-    # reorder -- so every field can still be located regardless of the
-    # column order this particular tab happens to be in right now.
-    old_index = {name: _column_index(header, name) for name in FIELDS}
+    # reorder, or (like first_published) predate a column existing at all --
+    # so every field can still be located regardless of the column order (or
+    # column set) this particular tab happens to have right now. A name
+    # FIELDS has that this header doesn't is None, not a KeyError: read()
+    # below treats that exactly like a too-short row.
+    old_index = {
+        name: (header.index(name) if name in header else None) for name in FIELDS
+    }
     company_type_by_firm = {
         board["firm"]: board["company_type"] for board in config.GREENHOUSE_BOARDS
     }
 
     def read(row: list[str], name: str) -> str:
         i = old_index[name]
-        return row[i] if i < len(row) else ""
+        if i is None or i >= len(row):
+            return ""
+        return row[i]
 
     new_rows = []
     seniority_changed = 0
     company_type_changed = 0
     location_changed = 0
+    first_published_changed = 0
     for row in data_rows:
         values = {name: read(row, name) for name in FIELDS}
 
@@ -203,17 +230,18 @@ def refresh_worksheet(
             company_type_changed += 1
             values["company_type"] = new_company_type
 
-        override = (
-            location_overrides.get((values["board"], values["job_id"]))
-            if location_overrides
-            else None
-        )
+        fresh = overrides.get((values["board"], values["job_id"])) if overrides else None
+
         new_location = (
-            override if override is not None else _renormalize_location(values["location"])
+            fresh.location if fresh is not None else _renormalize_location(values["location"])
         )
         if values["location"] != new_location:
             location_changed += 1
             values["location"] = new_location
+
+        if fresh is not None and fresh.first_published and values["first_published"] != fresh.first_published:
+            first_published_changed += 1
+            values["first_published"] = fresh.first_published
 
         new_rows.append([values[name] for name in FIELDS])
 
@@ -221,24 +249,25 @@ def refresh_worksheet(
     worksheet.update(values=[HEADER] + new_rows, value_input_option="USER_ENTERED")
     logger.info(
         "refresh: rewrote %d row(s) into current column order -- "
-        "%d seniority, %d company_type, %d location changed",
+        "%d seniority, %d company_type, %d location, %d first_published changed",
         len(new_rows),
         seniority_changed,
         company_type_changed,
         location_changed,
+        first_published_changed,
     )
 
 
 def refresh_all() -> None:
     """Refresh every (category, region) tab in the spreadsheet, one at a time."""
-    location_overrides = _location_overrides_from_greenhouse()
+    overrides = _greenhouse_overrides()
     spreadsheet = get_spreadsheet()
     for category, _keywords in CATEGORIES:
         for region in REGIONS:
             tab = tab_name(category, region)
             logger.info("refresh: %s", tab)
             worksheet = get_worksheet(spreadsheet, tab)
-            refresh_worksheet(worksheet, location_overrides=location_overrides)
+            refresh_worksheet(worksheet, overrides=overrides)
 
 
 if __name__ == "__main__":

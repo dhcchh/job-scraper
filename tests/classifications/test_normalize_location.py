@@ -83,3 +83,19 @@ def test_normalize_location_leaves_remote_region_codes_unmapped():
 def test_normalize_location_maps_iso_country_code_prefixed_cities():
     assert normalize_location("AU-Sydney") == "Sydney, Australia"
     assert normalize_location("GB-London") == "London, United Kingdom"
+
+
+def test_normalize_location_strips_trailing_locations_suffix():
+    # Stripe groups several physical offices under one umbrella entry per
+    # country instead of listing them individually -- confirmed on its live
+    # board across two dozen countries, several of them PAC. Unstripped,
+    # "Singapore Locations" doesn't exact-match "Singapore" (or, for a bare
+    # country with no lookup entry, classify_region's own PAC check either),
+    # so a real PAC posting would silently land in RoW.
+    assert normalize_location("Singapore Locations") == "Singapore"
+    assert normalize_location("Australia Locations") == "Australia"
+    assert normalize_location("Japan Locations") == "Japan"
+    assert normalize_location("New Zealand Locations") == "New Zealand"
+    # Non-PAC countries pass through the same way -- no lookup entry needed
+    # for a bare country name, only the noise suffix has to go.
+    assert normalize_location("Germany Locations") == "Germany"

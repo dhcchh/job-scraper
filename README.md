@@ -48,7 +48,13 @@ uv run pytest                              # tests -- no network or credentials 
   can't be safely comma-split.
 - **Seniority**: `classify_seniority.py` tags a best-effort level
   (Intern/Junior/.../Unspecified) off the title, computed once at fetch time.
-- **Dedup/pruning**: each posting is tracked by `(board, job_id)` — a run
+- **Identity**: a posting is uniquely identified by `(board, job_id)`, not
+  `job_id` alone — Greenhouse assigns ids per tenant, so two different
+  firms' boards can (and do) reuse the same numeric id. `board` is the
+  firm's readable name from `greenhouse_boards.toml` (not the Greenhouse
+  token), and `job_id` is that board's own id for the posting, kept as a
+  string.
+- **Dedup/pruning**: keyed on that same `(board, job_id)` pair — a run
   appends a row the first time it sees one, never re-appends it while
   still open, and deletes it once it's gone from that board's feed. Row
   order is never touched, so your own sort/filter setup survives every run.

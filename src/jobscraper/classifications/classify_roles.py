@@ -72,6 +72,18 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
             "nlp",
             "computer vision",
             "statistician",
+            # Specific phrase, checked before QT/QR's bare "quantitative" for
+            # the same reason "algo"/"bi developer" are checked before SWE/DE's
+            # bare "developer" above: at a non-trading firm, "Quantitative
+            # Analytics" names a DS/analytics function, not a trading desk --
+            # confirmed against Stripe's "Treasury Finance AI and Quantitative
+            # Analytics, Americas" (a Fintech posting, wrongly landing in
+            # QT/QR without this). Dry-run validated against all 29 boards:
+            # the only other "quant"+"analytics" titles live at actual
+            # trading firms and don't use this adjacent phrasing (e.g. Qube's
+            # "Quantitative Technologist - Treasury Analytics"), so they're
+            # unaffected and correctly stay in QT/QR.
+            "quantitative analytics",
         ),
     ),
     (
@@ -163,6 +175,22 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
+
+# Checked before CATEGORIES, not as another entry in one of its tuples: a
+# "Recruiter" title is never the role itself matching a category, no matter
+# what else the title mentions -- e.g. Ripple's "Lead Technical Recruiter
+# (Quant Engineering)" and Jane Street's "Campus Recruiter, Machine Learning
+# and Quantitative Research" both hit a real keyword (bare "quant"/"machine
+# learning") and were routing into QT/QR and DS/ML/Algos respectively despite
+# being recruiting-org postings, not IC ones. Deliberately "recruiter", not
+# "recruiting" -- the latter also shows up as a trailing department-style
+# qualifier on a genuine IC posting (Anthropic's "People Research Scientist,
+# Recruiting", a real research scientist role for the people/recruiting org)
+# that vetoing on "recruiting" would wrongly drop; "recruiter" never does,
+# confirmed dry-running this against all 29 boards' live postings.
+_RECRUITER_RE = re.compile(r"\brecruiter\b", re.IGNORECASE)
+
+
 def classify_job(job: Job) -> str | None:
     """The category name job routes to, or None if it matches nothing (noise).
 
@@ -170,6 +198,8 @@ def classify_job(job: Job) -> str | None:
     excluded.
     """
     text = job.title
+    if _RECRUITER_RE.search(text):
+        return None
     for category, keywords in CATEGORIES:
         if any(_contains_keyword(text, keyword) for keyword in keywords):
             return category

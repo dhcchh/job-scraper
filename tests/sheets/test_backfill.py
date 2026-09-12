@@ -92,6 +92,7 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
         "board",
         "title",
         "location",
+        "first_published",
         "updated_at",
         "company_type",
         "url",
@@ -104,6 +105,7 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
         "Acme",
         "Junior Engineer",
         "Remote",
+        "",  # first_published: no such column in _OLD_HEADER, no override given
         "2026-09-01T00:00:00Z",
         "Big Tech",
         "https://x/101",
@@ -226,7 +228,7 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     monkeypatch.setattr(
         backfill,
         "refresh_worksheet",
-        lambda worksheet, location_overrides=None: refreshed.append(worksheet),
+        lambda worksheet, overrides=None: refreshed.append(worksheet),
     )
 
     backfill.refresh_all()
@@ -238,7 +240,7 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     ]
 
 
-def test_location_overrides_from_greenhouse_keys_by_board_and_job_id(monkeypatch):
+def test_greenhouse_overrides_keys_by_board_and_job_id(monkeypatch):
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", boards)
 
@@ -247,31 +249,33 @@ def test_location_overrides_from_greenhouse_keys_by_board_and_job_id(monkeypatch
         backfill, "fetch_jobs", lambda token, firm, company_type: fetched
     )
 
-    overrides = backfill._location_overrides_from_greenhouse()
+    overrides = backfill._greenhouse_overrides()
 
     assert overrides == {
-        ("Acme", "1"): "Singapore",
-        ("Acme", "2"): "London, United Kingdom",
+        ("Acme", "1"): fetched[0],
+        ("Acme", "2"): fetched[1],
     }
 
 
-def test_location_overrides_from_greenhouse_skips_a_board_that_fails(monkeypatch):
+def test_greenhouse_overrides_skips_a_board_that_fails(monkeypatch):
     boards = [
         {"token": "good", "firm": "GoodCo", "company_type": "Big Tech"},
         {"token": "bad", "firm": "BadCo", "company_type": "Big Tech"},
     ]
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", boards)
 
+    good_job = _job_stub("GoodCo", "1", "Singapore")
+
     def fake_fetch_jobs(token, firm, company_type):
         if firm == "BadCo":
             raise RuntimeError("greenhouse down")
-        return [_job_stub("GoodCo", "1", "Singapore")]
+        return [good_job]
 
     monkeypatch.setattr(backfill, "fetch_jobs", fake_fetch_jobs)
 
-    overrides = backfill._location_overrides_from_greenhouse()  # must not raise
+    overrides = backfill._greenhouse_overrides()  # must not raise
 
-    assert overrides == {("GoodCo", "1"): "Singapore"}
+    assert overrides == {("GoodCo", "1"): good_job}
 
 
 def test_refresh_prefers_a_location_override_over_best_effort_renormalization():
@@ -285,7 +289,7 @@ def test_refresh_prefers_a_location_override_over_best_effort_renormalization():
 
     backfill.refresh_worksheet(
         worksheet,
-        location_overrides={("Acme", "1"): "Chicago, IL | New York, NY"},
+        overrides={("Acme", "1"): _job_stub("Acme", "1", "Chicago, IL | New York, NY")},
     )
 
     location_index = backfill.HEADER.index("location")
@@ -301,7 +305,7 @@ def test_refresh_falls_back_to_best_effort_when_no_override_for_that_row():
     # Override map has entries, just none for ("Acme", "1") -- e.g. that
     # posting has since closed and dropped out of the fresh fetch.
     backfill.refresh_worksheet(
-        worksheet, location_overrides={("OtherCo", "9"): "Singapore"}
+        worksheet, overrides={("OtherCo", "9"): _job_stub("OtherCo", "9", "Singapore")}
     )
 
     location_index = backfill.HEADER.index("location")
@@ -309,9 +313,53 @@ def test_refresh_falls_back_to_best_effort_when_no_override_for_that_row():
     assert row[location_index] == "Bangalore, India"
 
 
-def _job_stub(board, job_id, location):
+def test_refresh_fills_in_first_published_for_a_header_that_predates_the_column():
+    # _OLD_HEADER/_old_row have no first_published column at all -- the
+    # "column added after rows already existed" shape, not just a reorder.
+    worksheet = _FakeWorksheet(
+        [_OLD_HEADER, _old_row(board="Acme", job_id="1")]
+    )
+
+    backfill.refresh_worksheet(
+        worksheet,
+        overrides={
+            ("Acme", "1"): _job_stub(
+                "Acme", "1", "Remote", first_published="2026-06-01T00:00:00Z"
+            )
+        },
+    )
+
+    header, row = worksheet.updated_with
+    assert "first_published" in header
+    assert row[header.index("first_published")] == "2026-06-01T00:00:00Z"
+
+
+def test_refresh_leaves_first_published_unchanged_when_no_override_for_that_row():
+    # Already-migrated row (has a real first_published value) whose posting
+    # has since closed -- no override available, so it must not be blanked.
+    header_with_fp = _OLD_HEADER + ["first_published"]
+    row_with_fp = _old_row(board="Acme", job_id="1") + ["2026-05-01T00:00:00Z"]
+    worksheet = _FakeWorksheet([header_with_fp, row_with_fp])
+
+    backfill.refresh_worksheet(worksheet, overrides={})
+
+    header, row = worksheet.updated_with
+    assert row[header.index("first_published")] == "2026-05-01T00:00:00Z"
+
+
+def _job_stub(board, job_id, location, first_published=""):
     from datetime import date
 
     from jobscraper.models import Job
 
-    return Job(board, job_id, "Title", "Dept", location, "https://x", "", date(2026, 9, 12))
+    return Job(
+        board,
+        job_id,
+        "Title",
+        "Dept",
+        location,
+        "https://x",
+        "",
+        date(2026, 9, 12),
+        first_published=first_published,
+    )

@@ -24,6 +24,7 @@ FIELDS: tuple[str, ...] = (
     "board",
     "title",
     "location",
+    "first_published",
     "updated_at",
     "company_type",
     "url",
@@ -50,11 +51,23 @@ class Job:
       ids are integers; keeping this as `str` means a board with
       non-numeric ids doesn't need a model change.
     updated_at: the board's own "last updated" timestamp, best-effort only --
-      NOT a reliable "posted date". See scraped_date for what pruning uses.
+      NOT a reliable "posted date" (an edit bumps it same as a new posting
+      would). See first_published for Greenhouse's real "went live"
+      timestamp, and scraped_date for what pruning uses.
+    first_published: Greenhouse's own "job went live" timestamp, straight
+      from the Job Board API's `first_published` field (documented in
+      Greenhouse's own API examples, though not described in prose there).
+      Unlike updated_at, confirmed empirically -- across ~5,000 real
+      postings on this project's boards -- to never move once set, even
+      across later edits: this is the best "when did this posting actually
+      first appear" signal available. Best-effort still, same as every
+      other Greenhouse-sourced string field here: a small fraction of real
+      postings (observed on Squarepoint/Tower Research/HRT) have it
+      missing, so this defaults to "" rather than raising.
     scraped_date: the calendar date *this run* fetched the job. This -- not
-      updated_at -- is what sheets.writer prunes on, because a board's own
-      timestamps aren't a trustworthy signal of when a posting first
-      appeared.
+      updated_at or first_published -- is what sheets.writer prunes on,
+      because it's this project's own signal (never absent, never revised
+      by the board) of whether a posting is still being seen at all.
     seniority: one of jobscraper.seniority.LEVELS, or "Unspecified" if the
       title carries no seniority wording at all -- see that module for why
       "Unspecified" is a real, common outcome rather than a fallback bug.
@@ -78,6 +91,7 @@ class Job:
     scraped_date: datetime.date
     seniority: str = "Unspecified"
     company_type: str = ""
+    first_published: str = ""
 
     def to_row(self) -> list[str]:
         """Render as a flat list of strings, in FIELDS order, for a sheet row."""
@@ -85,6 +99,7 @@ class Job:
             self.board,
             self.title,
             self.location,
+            self.first_published,
             self.updated_at,
             self.company_type,
             self.url,

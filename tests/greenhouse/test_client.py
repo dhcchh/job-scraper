@@ -12,6 +12,7 @@ _SAMPLE_RESPONSE = {
             "id": 12345,
             "title": "Senior Backend Engineer",
             "updated_at": "2026-09-01T10:00:00-04:00",
+            "first_published": "2026-06-15T08:00:00-04:00",
             "absolute_url": "https://boards.greenhouse.io/acme/jobs/12345",
             "location": {"name": "Remote"},
             "departments": [{"id": 1, "name": "Engineering"}],
@@ -65,11 +66,13 @@ def test_fetch_jobs_parses_response(monkeypatch):
     assert first.scraped_date == datetime.date(2026, 9, 12)
     assert first.seniority == "Senior"  # from "Senior Backend Engineer"
     assert first.company_type == "Big Tech"
+    assert first.first_published == "2026-06-15T08:00:00-04:00"
 
     # Missing department/location degrade to "", not a crash.
     assert second.department == ""
     assert second.location == ""
     assert second.seniority == "Unspecified"
+    assert second.first_published == ""  # missing from the raw job, not a crash
 
 
 def test_fetch_jobs_builds_location_from_offices_not_the_raw_location_string(monkeypatch):

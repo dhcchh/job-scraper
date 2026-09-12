@@ -134,6 +134,7 @@ def _to_job(
         location=_location(raw),
         url=raw.get("absolute_url", ""),
         updated_at=raw.get("updated_at", ""),
+        first_published=raw.get("first_published", ""),
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
         company_type=company_type,

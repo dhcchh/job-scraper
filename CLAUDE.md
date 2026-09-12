@@ -47,9 +47,23 @@ produce, and `FIELDS`, the column order written to (and read back from) the
 sheet — keep `FIELDS` in sync with `sheets.writer.HEADER`. Order is chosen
 for a human scanning the sheet, not for `Job`'s constructor: the columns
 someone actually filters/sorts by (`board`, `title`, `location`,
-`updated_at`, `company_type`) come first, `url` keeps a near-front spot
-since it's the one column meant to be clicked, and `job_id`/`scraped_date`
-(pure bookkeeping) sit last. `Job`'s own dataclass field order is untouched
+`first_published`, `updated_at`, `company_type`) come first, `url` keeps a
+near-front spot since it's the one column meant to be clicked, and
+`job_id`/`scraped_date` (pure bookkeeping) sit last. `first_published` sits
+immediately before `updated_at` deliberately: it's Greenhouse's own "job
+went live" timestamp (from the Job Board API's `first_published` field,
+present in Greenhouse's own API examples though not described in prose
+there) and, unlike `updated_at`, confirmed empirically — across ~5,000 real
+postings on this project's boards — to never move once set, even across a
+later edit. It's the best available answer to "when did this posting
+actually first appear," strictly better than either `updated_at` (an edit
+bumps it same as a new posting) or `scraped_date` (only "when did *we*
+first see it," which lags the real answer by however long a firm went
+un-scraped before being added to `greenhouse_boards.toml`). Best-effort
+still, same as every other Greenhouse-sourced string field: a small
+fraction of real postings (observed on Squarepoint/Tower Research/HRT)
+have it missing, so it defaults to `""` like every other optional `Job`
+field rather than raising. `Job`'s own dataclass field order is untouched
 by any of this — only `FIELDS` and `to_row()` encode sheet column order, so
 reordering columns never means touching every `Job(...)` call site. This is
 also the seam for adding a board: a new `jobscraper/<board>/client.py`
@@ -102,6 +116,17 @@ that don't exact-match the lookup table as-is, so `normalize_location` now
 also strips a leading `"Remote - "` / trailing `" (Remote)"` annotation
 (same technique as the existing trailing `" office"` strip) before
 looking a name up — without it, both would have silently landed in RoW.
+
+A third time, at real scale: Stripe doesn't list its physical offices
+individually in `offices[]` — it groups every office in one country under a
+single umbrella entry (`"Singapore Locations"`, `"Australia Locations"`,
+`"Japan Locations"`, ..., confirmed across two dozen countries on its live
+board). None of these exact-match the lookup table, so `normalize_location`
+also strips a trailing `" Location"`/`" Locations"` suffix now, same
+technique again. This one wasn't hypothetical: dry-running the fix against
+Stripe's live board turned up 64 postings silently misfiled into RoW before
+it, 8 of them real (non-noise) roles across DA/BI/DS/SWE — not just the one
+Singapore posting that surfaced it.
 
 **`sheets/writer.py`** is the part most likely to surprise someone reading
 only one file at a time — its two functions both key on `(board, job_id)`,
@@ -179,7 +204,13 @@ but a cell written before location normalization existed at all is one
 un-split legacy string with no `offices` data left to recover — it's
 normalized as one whole string (fixes it if it was a single plain city
 name) and otherwise left alone rather than guessed at, self-healing only
-once that posting naturally closes and reopens through `fetch_jobs`. It
+once that posting naturally closes and reopens through `fetch_jobs`. The
+same fresh re-fetch (`_greenhouse_overrides`, one call shared by both) is
+also the only way `first_published` ever gets filled in for a row written
+before that column existed at all — there's no cell to re-derive it from,
+so a posting that's already closed by the time backfill runs is left with
+whatever it already has (empty, for a pre-migration row) rather than
+guessed at, same philosophy as the location fallback above. It
 deliberately does not re-route a job to a different category *or region*
 tab (moving rows across tabs risks duplicating/losing data if interrupted)
 or rewrite
@@ -216,6 +247,29 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
   `classify_roles.py`'s SWE/DE tuple for the exact keyword list and
   rationale. The general warning stands for *future* firm types, though:
   don't assume a new firm's titling Just Works untested.
+
+  Two more misses turned up since, both from real (not dry-run) postings:
+  a title containing a real keyword can still be a Recruiting-org posting,
+  not an IC one for that category — Ripple's "Lead Technical Recruiter
+  (Quant Engineering)" (bare "quant") and Jane Street's "Campus Recruiter,
+  Machine Learning and Quantitative Research" (bare "machine learning")
+  were both landing in a category despite being recruiter postings.
+  `classify_job` now vetoes any title containing "recruiter" before
+  checking CATEGORIES at all — deliberately "recruiter", not "recruiting",
+  since the latter also trails a genuine IC title as a department-style
+  qualifier (Anthropic's "People Research Scientist, Recruiting", a real
+  research scientist role) that a broader veto would wrongly drop too.
+  Separately, "quantitative"/"quant" being broad by design (see the QT/QR
+  tuple's own comment) means it can catch a DS-flavored role at a
+  non-trading firm — Stripe's "Treasury Finance AI and Quantitative
+  Analytics, Americas" was landing in QT/QR despite Stripe not running a
+  trading desk. Rather than gating QT/QR by `company_type` (OKX, a Crypto
+  Exchange rather than a Prop Trading/Hedge Fund, has real "Quantitative
+  Trader" postings that legitimately belong there), DS/ML/Algos gained the
+  more specific "quantitative analytics" phrase, checked before QT/QR's
+  bare "quantitative" — same precedence trick as "algo"/"bi developer"
+  above. Both fixes dry-run validated against all 29 boards' live postings
+  with no other collateral change.
 - ~~No CI test run on push~~ — done: `.github/workflows/test.yml` runs
   `uv run pytest` on every push to `main` and every PR, separate from
   `daily-scrape.yml` so a test failure can't block or delay the scheduled

@@ -44,6 +44,7 @@ def _row(board, job_id, scraped_date):
         "location": "Remote",
         "url": "https://x",
         "updated_at": "",
+        "first_published": "",
         "scraped_date": scraped_date,
         "seniority": "Unspecified",
         "company_type": "",
