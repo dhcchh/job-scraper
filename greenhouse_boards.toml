@@ -1,14 +1,4 @@
 # Greenhouse job boards to scrape.
-#
-# Add a new firm by appending a [[boards]] entry below -- no code changes
-# needed, just edit this file and commit/push it. These tokens aren't
-# secret: they're just the slug from a company's Greenhouse careers URL
-# (boards.greenhouse.io/<token>), so this lives as a plain checked-in file
-# rather than a GitHub secret or .env variable.
-#
-# `firm` is a human-readable label for your own reference; it isn't used
-# anywhere in the code today (e.g. for tagging by region/role) -- see
-# main.py's TODOs for where that kind of grouping/filtering would plug in.
 
 [[boards]]
 token = "optiverneurips"

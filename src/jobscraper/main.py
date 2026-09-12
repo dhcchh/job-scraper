@@ -1,4 +1,4 @@
-"""Entrypoint: fetch every configured board's jobs, append them, prune stale rows.
+"""Entrypoint: fetch every configured board's jobs, append new ones, prune closed ones.
 
     uv run python -m jobscraper.main
 
@@ -11,12 +11,12 @@ TODO(extension points), roughly in the order you'll likely reach for them:
     fetch_jobs() -> list[Job], and extend all_jobs below the same way.
   - filtering: filter all_jobs by title/department keyword before
     appending.
-  - dedup: skip appending a (board, job_id) already in the sheet from a
-    previous run, rather than getting a fresh row for every still-open
-    posting every single day.
   - retries/backoff: greenhouse.client.fetch_jobs raises immediately on any
     HTTP error, and the loop below doesn't catch per-board either -- one
-    bad board or one Greenhouse hiccup currently aborts the whole run.
+    bad board or one Greenhouse hiccup currently aborts the whole run. Note
+    that prune_closed_postings below assumes every configured board
+    succeeded this run (see its docstring) -- fix that assumption at the
+    same time as adding per-board error handling.
   - notifications: report success/failure/job counts somewhere (Slack,
     email, a GitHub Actions job summary) instead of only the run log.
 """
@@ -26,7 +26,7 @@ import logging
 from jobscraper import config
 from jobscraper.greenhouse.client import fetch_jobs
 from jobscraper.models import Job
-from jobscraper.sheets.writer import append_jobs, get_worksheet, prune_old_rows
+from jobscraper.sheets.writer import append_jobs, get_worksheet, prune_closed_postings
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,9 @@ def run() -> None:
 
     worksheet = get_worksheet()
     append_jobs(worksheet, all_jobs)
-    prune_old_rows(worksheet, older_than_days=config.PRUNE_AFTER_DAYS)
+    prune_closed_postings(
+        worksheet, all_jobs, fetched_boards=set(config.GREENHOUSE_BOARD_TOKENS)
+    )
 
 
 if __name__ == "__main__":

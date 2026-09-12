@@ -42,7 +42,3 @@ GOOGLE_SHEET_WORKSHEET_NAME: str = os.getenv("GOOGLE_SHEET_WORKSHEET_NAME", "Job
 # This is what lets a GitHub Actions secret carry it without a "write secret
 # to a temp file" workflow step. Parsed with json.loads() in sheets/writer.py.
 GOOGLE_SERVICE_ACCOUNT_JSON: str = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
-
-# A run prunes any sheet row whose scraped_date is older than today minus
-# this many days.
-PRUNE_AFTER_DAYS: int = int(os.getenv("PRUNE_AFTER_DAYS", "60"))
