@@ -187,6 +187,23 @@ def test_sort_rows_location_comparison_is_case_insensitive():
     assert ids_in_order == ["2", "1"]
 
 
+def test_sort_rows_location_comparison_ignores_stray_whitespace():
+    # Greenhouse's own multi-location strings sometimes carry a stray
+    # leading space (e.g. " London, Montreal, Singapore"). Unstripped, a
+    # space sorts before every letter and would wrongly put this row first.
+    rows = [
+        writer.HEADER,
+        _row_with_location("acme", "1", "2026-09-12", " London, Montreal"),
+        _row_with_location("acme", "2", "2026-09-12", "Aarhus"),
+    ]
+    worksheet = _FakeWorksheet(rows)
+
+    writer.sort_rows(worksheet)
+
+    ids_in_order = [row[1] for row in worksheet.updated_with[1:]]
+    assert ids_in_order == ["2", "1"]
+
+
 def _row_full(board, job_id, scraped_date, location, company_type):
     return [
         board,

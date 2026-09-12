@@ -200,14 +200,19 @@ def sort_rows(worksheet: gspread.Worksheet) -> None:
     scraped_date_index = _column_index(header, "scraped_date")
 
     sorted_rows = list(data_rows)
-    # .lower() on board/company_type/location so e.g. "APAC" and "Aarhus"
-    # sort as a human would expect -- plain string comparison would put
-    # "APAC" first, since uppercase letters sort before lowercase ones in
-    # ASCII. scraped_date doesn't need this: it's a fixed-format
-    # "YYYY-MM-DD" string, no letters.
-    sorted_rows.sort(key=lambda row: _safe_value(row, board_index).lower())
-    sorted_rows.sort(key=lambda row: _safe_value(row, company_type_index).lower())
-    sorted_rows.sort(key=lambda row: _safe_value(row, location_index).lower())
+    # .strip().lower() on board/company_type/location: .lower() so e.g.
+    # "APAC" and "Aarhus" sort as a human would expect -- plain string
+    # comparison would put "APAC" first, since uppercase letters sort
+    # before lowercase ones in ASCII -- and .strip() because Greenhouse's
+    # own multi-location strings sometimes carry stray leading/trailing
+    # whitespace (e.g. " London, Montreal, Singapore"), which would
+    # otherwise sort before every letter (a space's ASCII value is lower
+    # than any letter's) and bump that row to the top of its group instead
+    # of alphabetizing it under "L". scraped_date doesn't need either: it's
+    # a fixed-format "YYYY-MM-DD" string, no letters or stray whitespace.
+    sorted_rows.sort(key=lambda row: _safe_value(row, board_index).strip().lower())
+    sorted_rows.sort(key=lambda row: _safe_value(row, company_type_index).strip().lower())
+    sorted_rows.sort(key=lambda row: _safe_value(row, location_index).strip().lower())
     sorted_rows.sort(key=lambda row: _safe_value(row, scraped_date_index), reverse=True)
 
     if sorted_rows == data_rows:
