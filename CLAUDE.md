@@ -226,21 +226,28 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
   loop, not a message naming the bad entry.
 - ~~Location isn't normalized~~ — done, see `classifications/normalize_location.py`
   in Architecture above.
-- **No visual highlight for a run's newly-scraped rows** — nothing marks
-  which rows came from today's run vs. an older one. This is presentation,
-  not data, so it belongs in the Sheets UI as a conditional formatting rule
-  keyed on `scraped_date` (e.g. highlight rows where `scraped_date =
-  TODAY()`), set up once by hand rather than in the script. Like all sheet
-  formatting, it survives every run for free: `prune_closed_postings`'s
-  `clear()`+`update()` only touches cell values via the Sheets API, never
-  formatting.
-- **No default sort/visual ordering** — row order is deliberately left to
-  the end user (see commit 99a8568 and `main.py`'s docstring: the script
-  never reorders existing rows, so a user's own sort/filter setup survives
-  every append/prune). A default "most recent first" view should likewise
-  be set up once in the sheet itself — a Sheets sort (Data > Sort range) or
-  a Filter view keyed on `scraped_date` — not code that re-sorts rows on
-  every run, which would undo it.
+- ~~No visual highlight for a run's newly-scraped rows~~ — done, sheet-side
+  only (nothing in `main.py`/`writer.py` changed): every job tab now has a
+  conditional formatting rule that highlights a row green when `updated_at`
+  falls within the past 7 days. Deliberately `updated_at` (Greenhouse's own
+  last-updated timestamp), not `scraped_date` as originally suggested here —
+  `scraped_date` would flag every row of a newly-added or just-backfilled
+  board as "new" on first sight, even a listing that's actually months old
+  on Greenhouse. Like all sheet formatting, it survives every run for free:
+  `prune_closed_postings`'s `clear()`+`update()` only touches cell values via
+  the Sheets API, never formatting.
+- **No default sort/visual ordering** — still open. Row order is
+  deliberately left to the end user (see commit 99a8568 and `main.py`'s
+  docstring: the script never reorders existing rows, so a user's own
+  sort/filter setup survives every append/prune). A default "most recent
+  first" view should likewise be set up once in the sheet itself — a Sheets
+  sort (Data > Sort range) or a Filter view keyed on `scraped_date` — not
+  code that re-sorts rows on every run, which would undo it. Related but
+  distinct, and already done: every job tab now also has 5 saved Filter
+  views (`Filter: Board`, `Filter: Company type`, `Filter: Seniority`,
+  `Filter: Department`, `Filter: Location`) for filtering by the most common
+  dimensions — that's filtering by category, not the "most recent first"
+  ordering this gap is actually about, so it doesn't close this item.
 - ~~Region refactor~~ — done, see `classifications/classify_region.py` in
   Architecture above. Turned out to be 10 tabs (5 categories × PAC/RoW), not
   8 — confirmed against the actual spreadsheet tab names.
