@@ -36,8 +36,9 @@ cp .env.example .env
 
 Fill in `.env`:
 
-1. **Greenhouse board tokens** — the slug in a company's careers URL
-   (`boards.greenhouse.io/<token>`). Public API, no key needed.
+1. **Greenhouse board tokens** — configured separately in
+   `greenhouse_boards.toml` at the repo root, not in `.env` (see "Adding a
+   board" below).
 2. **Google Sheets access** — in Google Cloud Console:
    - Enable the **Google Sheets API** for a project.
    - Create a **service account**, then a JSON key for it (download the
@@ -71,18 +72,28 @@ Tests cover Greenhouse JSON→`Job` parsing and the sheet writer's
 append/prune logic against fakes — no real network or Google credentials
 needed.
 
-## Adding a board token
+## Adding a board
 
-Add it to the comma-separated `GREENHOUSE_BOARD_TOKENS` (locally in `.env`,
-in CI as the `GREENHOUSE_BOARD_TOKENS` GitHub secret).
+Append a `[[boards]]` entry to `greenhouse_boards.toml` at the repo root:
+
+```toml
+[[boards]]
+token = "stripe"
+firm = "Stripe"
+```
+
+`token` is the slug from the company's Greenhouse careers URL
+(`boards.greenhouse.io/<token>`) — that's the only field the code reads;
+`firm` is just a label for your own reference. Commit and push — no other
+config changes needed, since this file (unlike `.env`) is checked into the
+repo and read directly by both local runs and CI.
 
 ## Cron / CI
 
 `.github/workflows/daily-scrape.yml` runs at `0 4 * * *` UTC (12:00
 Singapore time, UTC+8, no DST), plus a manual `workflow_dispatch` trigger for
-testing. It needs three repository secrets:
+testing. It needs two repository secrets:
 
-- `GREENHOUSE_BOARD_TOKENS`
 - `GOOGLE_SHEET_ID`
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
 

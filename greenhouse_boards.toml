@@ -1,0 +1,71 @@
+# Greenhouse job boards to scrape.
+#
+# Add a new firm by appending a [[boards]] entry below -- no code changes
+# needed, just edit this file and commit/push it. These tokens aren't
+# secret: they're just the slug from a company's Greenhouse careers URL
+# (boards.greenhouse.io/<token>), so this lives as a plain checked-in file
+# rather than a GitHub secret or .env variable.
+#
+# `firm` is a human-readable label for your own reference; it isn't used
+# anywhere in the code today (e.g. for tagging by region/role) -- see
+# main.py's TODOs for where that kind of grouping/filtering would plug in.
+
+[[boards]]
+token = "optiverneurips"
+firm = "Optiver"
+
+[[boards]]
+token = "optiverprivate"
+firm = "Optiver"
+
+[[boards]]
+token = "squarepointcapital"
+firm = "Squarepoint"
+
+[[boards]]
+token = "towerresearchcapital"
+firm = "Tower Research"
+
+[[boards]]
+token = "wehrtyou"
+firm = "HRT"
+
+[[boards]]
+token = "drweng"
+firm = "DRW"
+
+[[boards]]
+token = "akunacapital"
+firm = "Akuna Capital"
+
+[[boards]]
+token = "jumptrading"
+firm = "Jump Trading"
+
+[[boards]]
+token = "virtu"
+firm = "Virtu Financial"
+
+[[boards]]
+token = "janestreet"
+firm = "Jane Street"
+
+[[boards]]
+token = "point72"
+firm = "Point72/Cubist"
+
+[[boards]]
+token = "quberesearchandtechnologies"
+firm = "Qube Research & Technologies"
+
+[[boards]]
+token = "xtxmarketstechnologies"
+firm = "XTX Markets"
+
+[[boards]]
+token = "flowtraders"
+firm = "Flow Traders"
+
+[[boards]]
+token = "marshallwace"
+firm = "Marshall Wace"
