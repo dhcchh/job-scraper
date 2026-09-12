@@ -1,0 +1,157 @@
+"""Routes each fetched Job into a role category, or drops it as noise.
+
+Every category is one tab in the Google Sheet -- see sheets.writer.get_worksheet
+and main.py's per-category loop. A job matching none of the keyword lists
+below (HR, Legal, Sales, Accounting, Recruiting, ...) is dropped rather than
+written anywhere; that's a deliberate default, not a bug, since the point of
+these categories is to keep noise out of the sheets.
+
+To extend:
+  - New keyword for an existing category (e.g. a title you're seeing that
+    should route to SWE/DE but doesn't): add the string to that category's
+    tuple in CATEGORIES below.
+  - New category entirely: add a ("Name", (keywords...)) tuple to CATEGORIES,
+    then create a tab with that exact name (and the usual FIELDS header) in
+    the spreadsheet -- main.py discovers categories from this list alone.
+
+Matching is case-insensitive whole-word/whole-phrase (regex \\b...\\b) against
+the job's title ONLY, checked in CATEGORIES order with the first match
+winning. Whole-word matching is deliberately strict rather than a plain
+substring check -- e.g. "data engineer" must NOT match "Data Engineering
+Recruiter" (the "engineer" in "engineering" isn't a word boundary) -- so
+false positives (noise leaking into a category sheet) stay rare. The
+trade-off is false negatives: a real posting can be missed if its exact
+wording isn't in the list yet. That's the safer direction to err in here,
+and it's a one-line fix (add the wording as another keyword) when you spot
+one.
+
+Title-only, not "{title} {department}", is also a false-positive guard: some
+boards' department field is a broad org-unit label rather than a specific
+function -- e.g. "Business Development Manager" and "Business Manager"
+postings both showed up under a department literally named "Quant
+Management" on one real board. Matching department too would have routed
+both into QT/QR despite neither title having anything to do with trading or
+research.
+
+Categories are checked in the order below; put more specific categories
+first if a future keyword could otherwise match more than one category's
+list (today's lists don't overlap, so order doesn't currently change any
+outcome).
+"""
+
+from __future__ import annotations
+
+import re
+
+from jobscraper.models import Job
+
+# Order is a priority list, not just documentation -- first match wins, and
+# three constraints drive it (see test_classify.py for all three as tests):
+#   - DS/ML/Algos before SWE/DE: "algo"/"algorithm" must win over the bare
+#     "developer" keyword below it, so "Algo Developer" lands on DS/ML/Algos
+#     rather than SWE/DE.
+#   - DA/BI before SWE/DE: "bi developer" must win over the same bare
+#     "developer" keyword, so "BI Developer" lands on DA/BI rather than
+#     SWE/DE.
+#   - SWE/DE before QT/QR: the bare "developer" keyword must win over QT/QR's
+#     bare "quant", so "Quant Developer"/"Quantitative Developer" land on
+#     SWE/DE rather than QT/QR.
+CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
+    (
+        "DS/ML/Algos",
+        (
+            "algo",
+            "algorithm",
+            "data scientist",
+            "machine learning",
+            "ml",
+            "applied scientist",
+            "research scientist",
+            "research engineer",
+            "ai engineer",
+            "nlp",
+            "computer vision",
+            "statistician",
+        ),
+    ),
+    (
+        "DA/BI",
+        (
+            "data analyst",
+            "business analyst",
+            "bi analyst",
+            "bi developer",
+            "business intelligence",
+            "reporting analyst",
+            "insights analyst",
+            "product analyst",
+            "marketing analyst",
+            "growth analyst",
+        ),
+    ),
+    (
+        "SWE/DE",
+        (
+            "software engineer",
+            "developer",  # broad on purpose -- covers every "X Developer" title
+            "backend",
+            "frontend",
+            "full stack",
+            "full-stack",
+            "mobile engineer",
+            "application engineer",
+            "data engineer",
+            "etl engineer",
+            "big data engineer",
+            "analytics engineer",
+            "fpga",
+        ),
+    ),
+    (
+        "QT/QR",
+        (
+            # "quant"/"quantitative" are broad on purpose (catches e.g. a bare
+            # "Pricing Quant" title, or "Quantitative Technologist") -- safe
+            # only because SWE/DE (with its own "developer" keyword) is
+            # checked first, so "Quant Developer" never reaches this list
+            "quant",
+            "quantitative",
+            "execution trader",
+            "microstructure researcher",
+        ),
+    ),
+    (
+        "SRE/DevOps",
+        (
+            "site reliability",
+            "reliability engineer",
+            "sre",
+            "devops",
+            "platform engineer",
+            "infrastructure engineer",
+            "systems engineer",
+            "cloud engineer",
+            "release engineer",
+            "build engineer",
+            "production engineer",
+        ),
+    ),
+]
+
+
+def classify_job(job: Job) -> str | None:
+    """The category name job routes to, or None if it matches nothing (noise).
+
+    Title only -- see the module docstring for why department is deliberately
+    excluded.
+    """
+    text = job.title
+    for category, keywords in CATEGORIES:
+        if any(_contains_keyword(text, keyword) for keyword in keywords):
+            return category
+    return None
+
+
+def _contains_keyword(text: str, keyword: str) -> bool:
+    pattern = r"\b" + re.escape(keyword) + r"\b"
+    return re.search(pattern, text, re.IGNORECASE) is not None

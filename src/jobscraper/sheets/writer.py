@@ -43,18 +43,26 @@ _SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 HEADER = list(FIELDS)
 
 
-def get_worksheet() -> gspread.Worksheet:
-    """An authorized handle to the configured worksheet.
+def get_spreadsheet() -> gspread.Spreadsheet:
+    """An authorized handle to the configured spreadsheet.
 
-    TODO(extension point): assumes the worksheet tab already exists in the
-    target spreadsheet -- add .add_worksheet(...) here to create it on first
-    run instead of raising gspread.WorksheetNotFound.
+    Opened once per run and shared across every category's get_worksheet()
+    call below, rather than re-authorizing per tab.
     """
     info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
     credentials = Credentials.from_service_account_info(info, scopes=_SCOPES)
     client = gspread.authorize(credentials)
-    spreadsheet = client.open_by_key(config.GOOGLE_SHEET_ID)
-    return spreadsheet.worksheet(config.GOOGLE_SHEET_WORKSHEET_NAME)
+    return client.open_by_key(config.GOOGLE_SHEET_ID)
+
+
+def get_worksheet(spreadsheet: gspread.Spreadsheet, name: str) -> gspread.Worksheet:
+    """One tab of the spreadsheet, named for a jobscraper.classify category.
+
+    TODO(extension point): assumes the tab already exists -- add
+    spreadsheet.add_worksheet(...) here to create a new category's tab
+    automatically instead of raising gspread.WorksheetNotFound.
+    """
+    return spreadsheet.worksheet(name)
 
 
 def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> None:

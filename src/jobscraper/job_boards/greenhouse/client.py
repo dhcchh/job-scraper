@@ -16,6 +16,7 @@ import logging
 import requests
 
 from jobscraper.models import Job
+from jobscraper.classifications.classify_seniority import classify_seniority
 
 logger = logging.getLogger(__name__)
 
@@ -50,15 +51,18 @@ def fetch_jobs(
 
 
 def _to_job(raw: dict, board_token: str, scraped_date: datetime.date) -> Job:
+    title = raw.get("title", "")
+    department = _first_name(raw.get("departments"))
     return Job(
         board=board_token,
         job_id=str(raw["id"]),
-        title=raw.get("title", ""),
-        department=_first_name(raw.get("departments")),
+        title=title,
+        department=department,
         location=(raw.get("location") or {}).get("name", ""),
         url=raw.get("absolute_url", ""),
         updated_at=raw.get("updated_at", ""),
         scraped_date=scraped_date,
+        seniority=classify_seniority(title, department),
     )
 
 

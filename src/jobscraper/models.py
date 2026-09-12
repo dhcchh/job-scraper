@@ -22,6 +22,7 @@ FIELDS: tuple[str, ...] = (
     "url",
     "updated_at",
     "scraped_date",
+    "seniority",
 )
 
 
@@ -43,6 +44,11 @@ class Job:
       updated_at -- is what sheets.writer prunes on, because a board's own
       timestamps aren't a trustworthy signal of when a posting first
       appeared.
+    seniority: one of jobscraper.seniority.LEVELS, or "Unspecified" if the
+      title carries no seniority wording at all -- see that module for why
+      "Unspecified" is a real, common outcome rather than a fallback bug.
+      Defaults to "Unspecified" so every other Job(...) call site in tests
+      doesn't need to pass it explicitly.
     """
 
     board: str
@@ -53,6 +59,7 @@ class Job:
     url: str
     updated_at: str
     scraped_date: datetime.date
+    seniority: str = "Unspecified"
 
     def to_row(self) -> list[str]:
         """Render as a flat list of strings, in FIELDS order, for a sheet row."""
@@ -65,4 +72,5 @@ class Job:
             self.url,
             self.updated_at,
             self.scraped_date.isoformat(),
+            self.seniority,
         ]

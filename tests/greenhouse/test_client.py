@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from jobscraper.greenhouse import client
+from jobscraper.job_boards.greenhouse import client
 
 _SAMPLE_RESPONSE = {
     "jobs": [
@@ -61,10 +61,12 @@ def test_fetch_jobs_parses_response(monkeypatch):
     assert first.department == "Engineering"
     assert first.location == "Remote"
     assert first.scraped_date == datetime.date(2026, 9, 12)
+    assert first.seniority == "Senior"  # from "Senior Backend Engineer"
 
     # Missing department/location degrade to "", not a crash.
     assert second.department == ""
     assert second.location == ""
+    assert second.seniority == "Unspecified"
 
 
 def test_fetch_jobs_raises_on_http_error(monkeypatch):

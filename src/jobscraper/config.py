@@ -30,13 +30,10 @@ GREENHOUSE_BOARD_TOKENS: list[str] = [board["token"] for board in GREENHOUSE_BOA
 
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit
+#
+# Tab names aren't configured here -- sheets.writer.get_worksheet() opens one
+# tab per jobscraper.classify.CATEGORIES entry, by that category's name.
 GOOGLE_SHEET_ID: str = os.environ["GOOGLE_SHEET_ID"]
-
-# Tab name to write to.
-# TODO(extension point): sheets.writer.get_worksheet() assumes this tab
-# already exists; add .add_worksheet(...) there if you want it created
-# automatically.
-GOOGLE_SHEET_WORKSHEET_NAME: str = os.getenv("GOOGLE_SHEET_WORKSHEET_NAME", "Jobs")
 
 # The full service account JSON key, as one raw string -- not a file path.
 # This is what lets a GitHub Actions secret carry it without a "write secret
