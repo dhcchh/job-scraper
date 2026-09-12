@@ -14,7 +14,7 @@ tab's existing header and column order exactly as found (see its docstring)
 an already-written row can sit on stale classification/formatting/column
 order indefinitely without this.
 
-Five things happen to every row, for every (category, region) tab:
+Six things happen to every row, for every (category, region) tab:
   - `seniority` and `company_type` are recomputed from columns already in
     the row -- `seniority` from the row's own `title`/`department` via the
     *current* classify_seniority.classify_seniority, `company_type` by
@@ -47,10 +47,16 @@ Five things happen to every row, for every (category, region) tab:
     header again. A cell missing because a row was shorter than the header
     (a normal, common shape -- Sheets/gspread trims trailing blank cells)
     is read back as "", not an error.
+  - `url` is re-wrapped in models.hyperlink_formula, whether the cell is
+    still a legacy raw url (written before that existed) or already one of
+    these formulas -- get_all_values()'s ordinary FORMATTED read returns an
+    already-wrapped cell's *label*, not its url, so recovering the real url
+    to re-wrap needs a second, FORMULA-rendered read of just this column
+    (see _url_formula_cells/_extract_url). Without this, a backfill run
+    would silently replace every url with the literal text "Apply".
   - the whole tab is rewritten with value_input_option="USER_ENTERED" (same
-    as sheets.writer's own two functions), so a date/url written back when
-    this repo still used "RAW" gets re-parsed into a real Sheets date / an
-    auto-linked url too.
+    as sheets.writer's own two functions), so a date written back when this
+    repo still used "RAW" gets re-parsed into a real Sheets date too.
 
 Deliberately NOT done here: re-routing a job to a different tab if
 classify_roles.classify_job's category keywords, or classify_region's PAC
@@ -74,8 +80,10 @@ company_type they already have rather than being blanked out.
 from __future__ import annotations
 
 import logging
+import re
 
 import gspread
+from gspread.utils import rowcol_to_a1
 
 from jobscraper import config
 from jobscraper.classifications.classify_region import REGIONS, tab_name
@@ -83,7 +91,7 @@ from jobscraper.classifications.classify_roles import CATEGORIES
 from jobscraper.classifications.classify_seniority import classify_seniority
 from jobscraper.classifications.normalize_location import normalize_location
 from jobscraper.job_boards.greenhouse.client import fetch_jobs
-from jobscraper.models import FIELDS, Job, normalize_date
+from jobscraper.models import FIELDS, Job, hyperlink_formula, normalize_date
 from jobscraper.sheets.writer import (
     HEADER,
     format_date_columns,
@@ -92,6 +100,58 @@ from jobscraper.sheets.writer import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Matches exactly what models.hyperlink_formula produces, to unwrap it back
+# to the real url -- see _extract_url.
+_HYPERLINK_RE = re.compile(
+    r'^=HYPERLINK\(\s*"((?:[^"]|"")*)"\s*,\s*"(?:[^"]|"")*"\s*\)$', re.IGNORECASE
+)
+
+
+def _extract_url(cell: str) -> str:
+    """The real url behind a url-column cell.
+
+    A cell already wrapped by models.hyperlink_formula reads back through
+    get_all_values() as its *label* (e.g. "Apply"), not the url it points
+    to -- Sheets renders a formula, it doesn't echo its source. Only a
+    FORMULA-rendered read (see _url_formula_cells) recovers the original
+    `=HYPERLINK("url", "label")` text this can unwrap. A cell that isn't
+    that formula at all -- a legacy plain url, or "" -- is returned
+    unchanged, since that legacy shape *is* already the real url.
+    """
+    match = _HYPERLINK_RE.match(cell.strip())
+    if not match:
+        return cell
+    return match.group(1).replace('""', '"')
+
+
+def _url_formula_cells(
+    worksheet: gspread.Worksheet, header: list[str], num_rows: int
+) -> list[str]:
+    """Formula text of the url column, one entry per data row.
+
+    Fetched with value_render_option="FORMULA" specifically for this one
+    column -- the ordinary FORMATTED read `all_values` uses for every other
+    column would, for an already-migrated cell, return the label
+    hyperlink_formula wrapped the url in rather than the url itself,
+    permanently losing it on the very next backfill (see _extract_url).
+    Every other column backfill recomputes has no such formula to lose, so
+    only url needs this second, narrower read. Returns num_rows empty
+    strings if this tab's header has no url column at all (shouldn't
+    happen -- url is a core field -- but matches how every other column
+    here degrades rather than raising).
+    """
+    if "url" not in header or num_rows == 0:
+        return [""] * num_rows
+    col = header.index("url") + 1
+    cell_range = f"{rowcol_to_a1(2, col)}:{rowcol_to_a1(num_rows + 1, col)}"
+    rows = worksheet.get(
+        cell_range,
+        value_render_option="FORMULA",
+        pad_values=True,
+        maintain_size=True,
+    )
+    return [row[0] if row else "" for row in rows]
 
 
 def _greenhouse_overrides() -> dict[tuple[str, str], Job]:
@@ -219,12 +279,14 @@ def refresh_worksheet(
             return ""
         return row[i]
 
+    url_formula_cells = _url_formula_cells(worksheet, header, len(data_rows))
+
     new_rows = []
     seniority_changed = 0
     company_type_changed = 0
     location_changed = 0
     first_published_changed = 0
-    for row in data_rows:
+    for row, url_cell in zip(data_rows, url_formula_cells):
         values = {name: read(row, name) for name in FIELDS}
 
         new_seniority = classify_seniority(values["title"], values["department"])
@@ -255,6 +317,7 @@ def refresh_worksheet(
         values["first_published"] = normalize_date(values["first_published"])
         values["updated_at"] = normalize_date(values["updated_at"])
         values["scraped_date"] = normalize_date(values["scraped_date"])
+        values["url"] = hyperlink_formula(_extract_url(url_cell))
 
         new_rows.append([values[name] for name in FIELDS])
 

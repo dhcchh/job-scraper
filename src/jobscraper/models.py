@@ -40,6 +40,32 @@ DATE_FIELDS: tuple[str, ...] = (
     "scraped_date",
 )
 
+# The display text every job posting link uses instead of its raw url --
+# see hyperlink_formula. One constant rather than per-Job text since the
+# point is a short, uniform label a human can scan a column of, not a
+# description of each specific posting (the title/board columns already
+# say what the job is).
+LINK_LABEL = "Apply"
+
+
+def hyperlink_formula(url: str, label: str = LINK_LABEL) -> str:
+    """A Sheets `=HYPERLINK(url, label)` formula, or "" if url is empty.
+
+    Every writer in this project uses value_input_option="USER_ENTERED",
+    which parses a leading "=" as a formula -- so the cell still renders as
+    a real, clickable link, just showing `label` instead of the full raw
+    url. Returns "" for an empty url rather than a formula with nothing to
+    link to, matching how a plain empty url cell has always rendered here.
+
+    A literal `"` in either argument is escaped by doubling it, the way a
+    Sheets formula string literal escapes an embedded quote.
+    """
+    if not url:
+        return ""
+    escaped_url = url.replace('"', '""')
+    escaped_label = label.replace('"', '""')
+    return f'=HYPERLINK("{escaped_url}", "{escaped_label}")'
+
 
 def normalize_date(value: str | datetime.date | datetime.datetime | None) -> str:
     """Normalize any date/datetime/string into an ISO date string (YYYY-MM-DD), or "".
@@ -136,7 +162,15 @@ class Job:
     first_published: str = ""
 
     def to_row(self) -> list[str]:
-        """Render as a flat list of strings, in FIELDS order, for a sheet row."""
+        """Render as a flat list of strings, in FIELDS order, for a sheet row.
+
+        The url column is wrapped in hyperlink_formula() rather than written
+        as a raw url: Sheets auto-linkifies a plain url on USER_ENTERED
+        already, but shows the whole url as the cell's visible text, which
+        is unreadable once the column is more than a few characters wide.
+        `self.url` itself stays the raw url so anything else on this Job
+        (e.g. a future Telegram digest) still has the real link.
+        """
         return [
             self.board,
             self.title,
@@ -144,7 +178,7 @@ class Job:
             normalize_date(self.first_published),
             normalize_date(self.updated_at),
             self.company_type,
-            self.url,
+            hyperlink_formula(self.url),
             self.seniority,
             self.department,
             self.job_id,

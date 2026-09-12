@@ -17,6 +17,16 @@ class _FakeWorksheet:
     def get_all_values(self):
         return self._rows
 
+    def get(self, range_name, value_render_option=None, pad_values=None, maintain_size=None):
+        # Real Sheets FORMULA-rendered read of just the url column (see
+        # backfill._url_formula_cells) -- a fake row's url cell already
+        # holds either a plain legacy url or a literal "=HYPERLINK(...)"
+        # string, so returning it as-is is exactly what a real formula-mode
+        # read of either shape would return.
+        header, *data_rows = self._rows
+        url_index = header.index("url")
+        return [[row[url_index]] if url_index < len(row) and row[url_index] else [] for row in data_rows]
+
     def update(self, values, range_name=None, value_input_option=None):
         self.updated_with = values
 
@@ -103,7 +113,7 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
         "",  # first_published: no such column in _OLD_HEADER, no override given
         "2026-09-01",
         "Big Tech",
-        "https://x/101",
+        '=HYPERLINK("https://x/101", "Apply")',
         "Junior",  # recomputed from "Junior Engineer", was stale "Unspecified"
         "Eng",
         "101",
@@ -150,6 +160,30 @@ def test_refresh_defaults_missing_trailing_cells_to_empty_string():
     scraped_date_index = backfill.HEADER.index("scraped_date")
     assert row[url_index] == ""
     assert row[scraped_date_index] == ""
+
+
+def test_refresh_wraps_a_legacy_plain_url_in_a_hyperlink_formula():
+    worksheet = _FakeWorksheet([_OLD_HEADER, _old_row(url="https://x/101")])
+
+    backfill.refresh_worksheet(worksheet)
+
+    url_index = backfill.HEADER.index("url")
+    _, row = worksheet.updated_with
+    assert row[url_index] == '=HYPERLINK("https://x/101", "Apply")'
+
+
+def test_refresh_preserves_the_real_url_behind_an_already_migrated_hyperlink_cell():
+    # get_all_values() (FORMATTED) would return just the label "Apply" for
+    # this cell -- only the FORMULA-rendered read backfill does specifically
+    # for the url column recovers the real url it points to.
+    already_migrated = '=HYPERLINK("https://x/101", "Apply")'
+    worksheet = _FakeWorksheet([_OLD_HEADER, _old_row(url=already_migrated)])
+
+    backfill.refresh_worksheet(worksheet)
+
+    url_index = backfill.HEADER.index("url")
+    _, row = worksheet.updated_with
+    assert row[url_index] == already_migrated
 
 
 def test_refresh_normalizes_a_legacy_unsplit_single_location():

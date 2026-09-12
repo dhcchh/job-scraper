@@ -1,6 +1,6 @@
 import datetime
 
-from jobscraper.models import FIELDS, Job, normalize_date
+from jobscraper.models import FIELDS, Job, hyperlink_formula, normalize_date
 
 
 def test_normalize_date():
@@ -33,9 +33,27 @@ def test_job_to_row_matches_fields_order():
         "",  # first_published defaults when not passed explicitly
         "2026-09-01",
         "",  # company_type defaults when not passed explicitly
-        "https://example.com/1",
+        '=HYPERLINK("https://example.com/1", "Apply")',
         "Unspecified",  # seniority defaults when not passed explicitly
         "Eng",
         "1",
         "2026-09-12",
     ]
+
+
+def test_hyperlink_formula_wraps_url_with_default_label():
+    assert (
+        hyperlink_formula("https://example.com/1")
+        == '=HYPERLINK("https://example.com/1", "Apply")'
+    )
+
+
+def test_hyperlink_formula_empty_url_is_empty_string():
+    assert hyperlink_formula("") == ""
+
+
+def test_hyperlink_formula_escapes_embedded_quotes():
+    assert (
+        hyperlink_formula('https://example.com/"1"', label='say "hi"')
+        == '=HYPERLINK("https://example.com/""1""", "say ""hi""")'
+    )
