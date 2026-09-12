@@ -18,9 +18,10 @@ Legal, Sales, ...) is dropped rather than written anywhere. Each job's
 seniority level (Intern, Senior, Manager, ... or "Unspecified") is computed
 earlier, at fetch time -- see classify_seniority.classify_seniority and
 job_boards/greenhouse/client.py -- so it's already set on every Job here and
-just rides along as a column. Each category's tab is kept sorted (most
-recent first, then location, then company_type, then firm) by
-sheets.writer.sort_rows after every append/prune.
+just rides along as a column. Row order in each tab is left entirely to the
+end user (Sheets' own Data > Sort range / Filter views) -- this script never
+reorders existing rows, only appends new ones and deletes closed ones, so a
+sort or filter someone sets up in the sheet survives every run.
 
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add e.g. jobscraper/job_boards/lever/client.py with its own
@@ -44,7 +45,6 @@ from jobscraper.sheets.writer import (
     get_spreadsheet,
     get_worksheet,
     prune_closed_postings,
-    sort_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,7 +114,6 @@ def run() -> None:
         worksheet = get_worksheet(spreadsheet, category)
         append_jobs(worksheet, category_jobs)
         prune_closed_postings(worksheet, category_jobs, fetched_boards=fetched_boards)
-        sort_rows(worksheet)
 
 
 if __name__ == "__main__":

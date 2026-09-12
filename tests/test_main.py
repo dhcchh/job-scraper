@@ -1,9 +1,9 @@
 """Tests for main.run()'s per-board error handling.
 
-fetch_jobs, get_spreadsheet, get_worksheet, append_jobs, prune_closed_postings
-and sort_rows are all monkeypatched here -- this exercises only run()'s own
-orchestration (which boards it treats as "fetched" for pruning purposes),
-not gspread or the network.
+fetch_jobs, get_spreadsheet, get_worksheet, append_jobs and
+prune_closed_postings are all monkeypatched here -- this exercises only
+run()'s own orchestration (which boards it treats as "fetched" for pruning
+purposes), not gspread or the network.
 """
 
 import datetime
@@ -21,7 +21,6 @@ def _job(firm, job_id, title="Software Engineer"):
 def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main, "get_spreadsheet", lambda: "SPREADSHEET")
     monkeypatch.setattr(main, "get_worksheet", lambda spreadsheet, name: name)
-    monkeypatch.setattr(main, "sort_rows", lambda worksheet: None)
     monkeypatch.setattr(
         main,
         "append_jobs",

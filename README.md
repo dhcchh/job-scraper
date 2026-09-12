@@ -98,30 +98,6 @@ To extend: same as classification above — add a keyword to an existing tier,
 or a new `(name, keywords)` tuple to `LEVELS`. No spreadsheet change needed
 since `seniority` is already a header column in every tab.
 
-## How sorting works
-
-`sheets/writer.sort_rows` runs after every append/prune (see below) and
-keeps each category's tab ordered by, in priority order: `scraped_date`
-(most recent first), then `location`, then `company_type`, then `board`
-(firm name) — all three text columns alphabetically. So within the same
-date and location, postings group by company type (e.g. every "Prop
-Trading/Hedge Fund" row together), and within a company type, firms sort
-alphabetically. It's a no-op (no rewrite) if the tab is already in that
-order, which is normal on most runs: `prune_closed_postings` only ever
-removes rows, and removing rows from an already-sorted list can't un-sort
-it, so a rewrite is only actually needed on a run where `append_jobs` added
-something (new rows land at the bottom, unsorted relative to what's there).
-
-`scraped_date` is stored as an ISO `YYYY-MM-DD` string, which happens to
-sort correctly as plain text in calendar order, so "most recent first" is
-just a reverse-alphabetical sort on that column — no date parsing needed.
-
-To change the sort order or add another key, edit `sort_rows` directly: it's
-four separate stable sorts, least-significant key first (board, then
-company_type, then location, then scraped_date last) — Python's `sort()` is
-guaranteed stable, so that composes into the 4-level order described above
-without needing a combined sort key.
-
 ## How dedup and pruning work
 
 This is the core loop in `main.py`, per run:
@@ -136,10 +112,11 @@ This is the core loop in `main.py`, per run:
    fetched, any *existing* row in that category's tab whose `job_id` didn't
    come back in today's fetch (for that category) gets deleted — Greenhouse
    no longer lists it, so it's closed. A board isn't considered for pruning
-   at all unless it's in `fetched_boards` (in practice, every board in
-   `greenhouse_boards.toml` — see the retries/backoff caveat below).
-5. Per category: `sort_rows` (see "How sorting works" below) keeps the tab
-   ordered: most recent first, then location, then company_type, then firm.
+   at all unless it's in `fetched_boards` — see the two edge cases below.
+
+Row order is left entirely to you: this script only appends new rows and
+deletes closed ones, it never reorders what's already there, so any sort or
+filter you set up in Sheets survives every run.
 
 Why age-based pruning (delete anything older than N days) was replaced:
 "still open" is the only real "still hiring" signal the Greenhouse API
@@ -151,12 +128,14 @@ closed) and leaves `scraped_date` (first-seen date) as the input for you
 to apply your own judgment on staleness.
 
 Two edge cases worth knowing if you're reading `sheets/writer.py`:
-- A board that fails to fetch (or gets removed from
-  `greenhouse_boards.toml`) must **not** be passed in `fetched_boards`, or
-  every one of its existing rows would look closed and get deleted. Today
-  this is moot in practice, since one board's fetch failure aborts the
-  whole run before pruning ever runs (see retries/backoff below) — so
-  `main.py` currently just passes every configured board.
+- A board that fails to fetch after retries (see below), or gets removed
+  from `greenhouse_boards.toml`, must **not** be passed in `fetched_boards`,
+  or every one of its existing rows would look closed and get deleted.
+  `main.py` builds `fetched_boards` from only the firms whose fetch actually
+  succeeded that run — and for a firm with more than one board token
+  (Optiver has two), only if *all* of its tokens succeeded, since they share
+  one dedup key and a partial success would otherwise make the failed
+  token's postings look closed.
 - A board that's fetched successfully but currently has **zero** open
   postings is still fully pruned — its rows correctly disappear, since an
   empty result is a legitimate "this board's listings are all closed" state,
@@ -177,15 +156,15 @@ Built (working end-to-end):
 - Config/env var loading, orchestration (`config.py`, `main.py`)
 - Daily GitHub Actions cron (`.github/workflows/daily-scrape.yml`)
 
+Also built: retries with backoff on transient Greenhouse errors, and
+per-board error handling — a board that still fails after retries is
+skipped (logged, not raised), so it doesn't abort every other board's
+update for the day.
+
 Deliberately **not** built — the natural next things to add yourself:
 - More job boards (Lever, Workday, ...) — add a sibling package under
   `src/jobscraper/job_boards/`, expose `fetch_jobs(token) -> list[Job]`,
   wire it into `main.py`'s loop.
-- Retries/backoff — a single HTTP error currently aborts the whole run.
-  (Note: `prune_closed_postings` currently assumes every configured board
-  succeeded this run — see its docstring — so per-board error handling
-  needs to fix that assumption too, or a board that fails without raising
-  would look fully closed.)
 - Notifications (Slack/email/a GitHub Actions job summary) on success or
   failure.
 
