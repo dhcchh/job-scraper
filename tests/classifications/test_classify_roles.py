@@ -47,9 +47,10 @@ def _job(title, department=""):
         ("Site Reliability Engineer", "SRE/DevOps"),
         ("Reliability Engineer", "SRE/DevOps"),
         ("DevOps Engineer", "SRE/DevOps"),
+        ("Platform Engineer", "SRE/DevOps"),
         # Big-tech-style titling (validated against real Crypto
-        # Exchange/Gaming/Fintech/big-tech board data -- see CLAUDE.md
-        # Known gaps): bare/reordered "Engineer" phrases and engineering
+        # Exchange/Gaming/Fintech/big-tech board data): bare/reordered
+        # "Engineer" phrases and engineering
         # management, deliberately excluding customer-facing "Solutions
         # Engineer"/"Forward Deployed Engineer" (see the noise test below).
         ("Staff Engineer, Core Infrastructure", "SWE/DE"),

@@ -45,9 +45,14 @@ small fake `Worksheet`.
   PAC country. `classify_roles.classify_job` returns `None` for recruiter
   titles before applying category keywords; keyword precedence is intentional.
 - `sheets/writer.py` deduplicates and prunes by `(board, job_id)`. Only prune
-  boards fetched successfully (and all tokens for a multi-token firm). Its
-  `clear()` + `update()` rewrite is non-atomic, so avoid concurrent writers.
-  Use `USER_ENTERED` values so Sheets preserves dates and linkifies URLs.
+  boards fetched successfully (and all tokens for a multi-token firm).
+  Pruning uses an atomic Sheets batch of row deletions, but concurrent writers
+  can still duplicate appends. Use `USER_ENTERED` values so Sheets preserves
+  dates and linkifies URLs.
+- Each job tab has a conditional formatting rule
+  (`=AND(ISNUMBER($D2), $D2>=TODAY()-7)`) highlighting columns A–K green when
+  `first_published` falls within the past 7 days. Like all sheet formatting, it
+  survives append and prune runs for free.
 - `sheets/backfill.py` is manual only. Run it after changing `FIELDS`,
   classification metadata, location normalization, or `first_published`.
   It refreshes cells in place but deliberately does not move rows between tabs

@@ -180,13 +180,15 @@ def refresh_worksheet(
     leave first_published untouched for every row, e.g. when re-fetching
     Greenhouse isn't wanted for a given run.
 
-    Always rewrites (clear() + update()) as long as there's at least one
+    Always rewrites the managed A:K range as long as there's at least one
     data row -- unlike prune_closed_postings, this never skips based on
     whether a value *looks* unchanged, since e.g. a plain-text date and a
     real Sheets date read back identically from get_all_values()'s string
     output; only re-submitting with USER_ENTERED (and, for column order,
     unconditionally re-laying the row out) actually fixes one written under
-    older logic.
+    older logic. It never clears the worksheet first, so a failed update
+    leaves the previous values intact and columns outside the managed range
+    remain untouched.
     """
     all_values = worksheet.get_all_values()
     if not all_values:
@@ -256,8 +258,11 @@ def refresh_worksheet(
 
         new_rows.append([values[name] for name in FIELDS])
 
-    worksheet.clear()
-    worksheet.update(values=[HEADER] + new_rows, value_input_option="USER_ENTERED")
+    worksheet.update(
+        range_name="A1",
+        values=[HEADER] + new_rows,
+        value_input_option="USER_ENTERED",
+    )
     format_date_columns(worksheet)
     logger.info(
         "refresh: rewrote %d row(s) into current column order -- "

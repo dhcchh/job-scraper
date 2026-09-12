@@ -6,9 +6,8 @@ board) -- "New York", "New York City", "NYC", "New York, NY", "New York, NY
 - 120 Broadway" are all one city. This module's answer is the same one
 classify_roles.py/classify_seniority.py already use for messy title text: a
 hand-curated, lowercase-keyed lookup table, seeded by dry-running against
-every distinct office name across this project's current boards (see
-CLAUDE.md's "Known gaps" -- same kind of tuning pass, and it'll need the
-same ongoing care as new firms are added).
+every distinct office name across this project's current boards. It needs the
+same ongoing care as new firms are added.
 
 Convention: `"City, ST"` (US state abbreviation) for US cities -- matching
 how the raw Greenhouse data already writes them (e.g. "Charleston, SC") --

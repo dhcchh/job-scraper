@@ -14,15 +14,11 @@ a posting has stayed open is left in scraped_date for a human to judge (some
 firms auto-reject on a rolling basis well before they take a listing down,
 which the Greenhouse API has no way to expose).
 
-Design choice -- pruning rewrites the whole sheet in ONE clear()+update()
-call, rather than issuing one delete_rows() call per closed posting: the
-Sheets API rate-limits per minute, a tracking sheet can accumulate hundreds
-of rows, and one call per row risks 429s where one bulk rewrite doesn't.
-
-Trade-off worth knowing: clear() and update() are two separate API calls,
-not one atomic transaction -- a failure between them would leave the sheet
-with just the header for a moment. Acceptable for a personal daily job; not
-for anything with concurrent writers.
+Pruning uses one `spreadsheets.batchUpdate` request containing a
+`deleteDimension` request per closed row. Google applies that batch
+atomically: a failure leaves the worksheet untouched. Deleting only the
+closed rows also preserves formulas and user-managed columns instead of
+reconstructing the entire worksheet from displayed values.
 """
 
 from __future__ import annotations
@@ -168,19 +164,34 @@ def prune_closed_postings(
         board, _job_id = key
         return board in fetched_boards and key not in current_keys
 
-    surviving = [row for row in data_rows if not is_closed(row)]
-
-    pruned_count = len(data_rows) - len(surviving)
+    # Sheet row 1 is the header. `startIndex` in a DeleteDimensionRequest is
+    # zero-based, so the first data row has startIndex 1. Delete bottom-up:
+    # each request is applied in sequence within the atomic batch and must not
+    # shift the index of a row still waiting to be removed.
+    closed_row_indexes = [
+        row_index
+        for row_index, row in enumerate(data_rows, start=1)
+        if is_closed(row)
+    ]
+    pruned_count = len(closed_row_indexes)
     if pruned_count == 0:
         logger.info("prune: no closed postings")
         return 0
 
-    # Explicit keyword args here on purpose: gspread has changed
-    # Worksheet.update's positional argument order (range_name vs values
-    # first) across versions -- keywords keep this call correct regardless
-    # of the exact version installed.
-    worksheet.clear()
-    worksheet.update(values=[header] + surviving, value_input_option="USER_ENTERED")
+    requests = [
+        {
+            "deleteDimension": {
+                "range": {
+                    "sheetId": worksheet.id,
+                    "dimension": "ROWS",
+                    "startIndex": row_index,
+                    "endIndex": row_index + 1,
+                }
+            }
+        }
+        for row_index in reversed(closed_row_indexes)
+    ]
+    worksheet.spreadsheet.batch_update({"requests": requests})
     logger.info("prune: removed %d closed posting(s)", pruned_count)
     return pruned_count
 

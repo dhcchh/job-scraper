@@ -12,16 +12,12 @@ from jobscraper.sheets import backfill
 class _FakeWorksheet:
     def __init__(self, rows=None):
         self._rows = rows or []
-        self.cleared = False
         self.updated_with = None
 
     def get_all_values(self):
         return self._rows
 
-    def clear(self):
-        self.cleared = True
-
-    def update(self, values, value_input_option=None):
+    def update(self, values, range_name=None, value_input_option=None):
         self.updated_with = values
 
 
@@ -71,13 +67,13 @@ def _old_row(
 def test_refresh_noop_on_empty_sheet():
     worksheet = _FakeWorksheet([])
     backfill.refresh_worksheet(worksheet)
-    assert worksheet.cleared is False
+    assert worksheet.updated_with is None
 
 
 def test_refresh_noop_on_header_only():
     worksheet = _FakeWorksheet([_OLD_HEADER])
     backfill.refresh_worksheet(worksheet)
-    assert worksheet.cleared is False
+    assert worksheet.updated_with is None
 
 
 def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
@@ -85,7 +81,6 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
 
     backfill.refresh_worksheet(worksheet)
 
-    assert worksheet.cleared is True
     header, row = worksheet.updated_with
     assert header == backfill.HEADER
     assert header == [
@@ -203,14 +198,18 @@ def test_refresh_uses_user_entered_input_option():
     calls = {}
     original_update = worksheet.update
 
-    def spy_update(values, value_input_option=None):
+    def spy_update(values, range_name=None, value_input_option=None):
+        calls["range_name"] = range_name
         calls["value_input_option"] = value_input_option
-        return original_update(values, value_input_option=value_input_option)
+        return original_update(
+            values, range_name=range_name, value_input_option=value_input_option
+        )
 
     worksheet.update = spy_update
 
     backfill.refresh_worksheet(worksheet)
 
+    assert calls["range_name"] == "A1"
     assert calls["value_input_option"] == "USER_ENTERED"
 
 

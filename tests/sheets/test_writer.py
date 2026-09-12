@@ -17,8 +17,9 @@ class _FakeWorksheet:
     def __init__(self, rows=None):
         self._rows = rows or []
         self.appended = None
-        self.cleared = False
         self.updated_with = None
+        self.id = 123
+        self.spreadsheet = _FakeSpreadsheet()
 
     def get_all_values(self):
         return self._rows
@@ -26,11 +27,16 @@ class _FakeWorksheet:
     def append_rows(self, rows, value_input_option=None):
         self.appended = rows
 
-    def clear(self):
-        self.cleared = True
-
     def update(self, values, value_input_option=None):
         self.updated_with = values
+
+
+class _FakeSpreadsheet:
+    def __init__(self):
+        self.batch_update_body = None
+
+    def batch_update(self, body):
+        self.batch_update_body = body
 
 
 def _row(board, job_id, scraped_date):
@@ -117,10 +123,21 @@ def test_prune_removes_postings_missing_from_current_fetch():
 
     pruned = writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
 
-    assert worksheet.cleared is True
-    job_id_index = writer.HEADER.index("job_id")
-    kept_ids = [row[job_id_index] for row in worksheet.updated_with[1:]]
-    assert kept_ids == ["2", "3"]
+    assert worksheet.updated_with is None
+    assert worksheet.spreadsheet.batch_update_body == {
+        "requests": [
+            {
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": 123,
+                        "dimension": "ROWS",
+                        "startIndex": 1,
+                        "endIndex": 2,
+                    }
+                }
+            }
+        ]
+    }
     assert pruned == 1
 
 
@@ -131,7 +148,7 @@ def test_prune_noop_when_nothing_closed():
 
     pruned = writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
 
-    assert worksheet.cleared is False  # nothing closed, no rewrite needed
+    assert worksheet.spreadsheet.batch_update_body is None
     assert pruned == 0
 
 
@@ -143,7 +160,7 @@ def test_prune_leaves_unfetched_board_rows_alone():
 
     writer.prune_closed_postings(worksheet, current_jobs=[], fetched_boards={"acme"})
 
-    assert worksheet.cleared is False
+    assert worksheet.spreadsheet.batch_update_body is None
 
 
 def test_prune_a_board_with_zero_current_postings_removes_all_its_rows():
@@ -154,8 +171,43 @@ def test_prune_a_board_with_zero_current_postings_removes_all_its_rows():
 
     writer.prune_closed_postings(worksheet, current_jobs=[], fetched_boards={"acme"})
 
-    assert worksheet.cleared is True
-    assert worksheet.updated_with == [writer.HEADER]
+    assert worksheet.spreadsheet.batch_update_body == {
+        "requests": [
+            {
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": 123,
+                        "dimension": "ROWS",
+                        "startIndex": 1,
+                        "endIndex": 2,
+                    }
+                }
+            }
+        ]
+    }
+
+
+def test_prune_deletes_multiple_rows_from_bottom_to_top():
+    rows = [
+        writer.HEADER,
+        _row("acme", "1", "2026-07-01"),
+        _row("acme", "2", "2026-07-01"),
+        _row("acme", "3", "2026-09-12"),
+    ]
+    worksheet = _FakeWorksheet(rows)
+
+    writer.prune_closed_postings(
+        worksheet, current_jobs=[_job("acme", "3")], fetched_boards={"acme"}
+    )
+
+    ranges = [
+        request["deleteDimension"]["range"]
+        for request in worksheet.spreadsheet.batch_update_body["requests"]
+    ]
+    assert ranges == [
+        {"sheetId": 123, "dimension": "ROWS", "startIndex": 2, "endIndex": 3},
+        {"sheetId": 123, "dimension": "ROWS", "startIndex": 1, "endIndex": 2},
+    ]
 
 
 def test_prune_missing_board_column_raises():
@@ -194,6 +246,5 @@ def test_format_date_columns_tolerates_worksheet_without_format():
 
     ws = _WorksheetWithoutFormat()
     writer.format_date_columns(ws)  # does not raise
-
 
 

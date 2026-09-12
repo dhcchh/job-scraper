@@ -29,7 +29,7 @@ uv run pytest                              # tests -- no network or credentials 
    `classify_roles.py` and `REGIONS` in `classify_region.py` for the
    current full list (10 tabs today). Each needs a header row matching
    `jobscraper.models.FIELDS` exactly:
-   `board, title, location, updated_at, company_type, url, seniority, department, job_id, scraped_date`.
+   `board, title, location, first_published, updated_at, company_type, url, seniority, department, job_id, scraped_date`.
    Tabs and header rows aren't auto-created.
 
 ## How it works

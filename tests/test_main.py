@@ -46,7 +46,7 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main, "prune_closed_postings", fake_prune_closed_postings)
 
 
-def test_run_skips_failed_board_and_prunes_only_succeeded_firms(monkeypatch):
+def test_run_fails_after_updating_succeeded_boards(monkeypatch):
     boards = [
         {"token": "good", "firm": "GoodCo", "company_type": "Big Tech"},
         {"token": "bad", "firm": "BadCo", "company_type": "Big Tech"},
@@ -66,7 +66,8 @@ def test_run_skips_failed_board_and_prunes_only_succeeded_firms(monkeypatch):
     append_calls: list[tuple] = []
     _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
 
-    main.run()  # must not raise -- BadCo's failure shouldn't abort the run
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
 
     assert prune_calls  # ran for every category
     assert all(fetched_boards == {"GoodCo"} for fetched_boards in prune_calls)
@@ -125,7 +126,8 @@ def test_run_excludes_firm_from_prune_if_any_of_its_boards_failed(monkeypatch):
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
 
-    main.run()
+    with pytest.raises(RuntimeError, match="Optiver"):
+        main.run()
 
     assert prune_calls
     assert all(fetched_boards == set() for fetched_boards in prune_calls)
@@ -143,7 +145,8 @@ def test_run_completes_when_every_board_fails(monkeypatch):
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
 
-    main.run()  # no board succeeded, but run() still completes
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
 
     assert prune_calls
     assert all(fetched_boards == set() for fetched_boards in prune_calls)
@@ -151,8 +154,8 @@ def test_run_completes_when_every_board_fails(monkeypatch):
 
 def test_run_logs_spreadsheet_identity_at_startup(monkeypatch, caplog):
     # Guards against a GOOGLE_SHEET_ID that's drifted between .env and the
-    # CI secret (see CLAUDE.md's Known gaps) -- this is the only way such a
-    # mismatch becomes visible, so the log line has to actually happen.
+    # CI secret -- the log line is the only way such a mismatch becomes
+    # visible.
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
     monkeypatch.setattr(main, "fetch_jobs", lambda token, firm, company_type: [])
@@ -186,6 +189,33 @@ def test_run_writes_job_summary_when_github_step_summary_is_set(monkeypatch, tmp
     assert _FakeSpreadsheet.title in content
     assert "Boards fetched: 1/1" in content
     assert "SWE/DE - PAC" in content  # job's Singapore location -> PAC tab
+
+
+def test_run_writes_partial_summary_before_failing(monkeypatch, tmp_path):
+    boards = [
+        {"token": "good", "firm": "GoodCo", "company_type": "Big Tech"},
+        {"token": "bad", "firm": "BadCo", "company_type": "Big Tech"},
+    ]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    def fake_fetch_jobs(token, firm, company_type):
+        if token == "bad":
+            raise RuntimeError("greenhouse down")
+        return [_job("GoodCo", "1", location="Singapore")]
+
+    monkeypatch.setattr(main, "fetch_jobs", fake_fetch_jobs)
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+
+    summary_path = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_path))
+
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
+
+    content = summary_path.read_text()
+    assert "Job scraper run: partial failure" in content
+    assert "Boards fetched: 1/2 -- failed: BadCo" in content
 
 
 def test_run_skips_job_summary_without_github_step_summary(monkeypatch):

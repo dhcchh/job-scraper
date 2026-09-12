@@ -9,10 +9,12 @@ Loops over GREENHOUSE_BOARDS from config, one board at a time -- no
 concurrency, since this runs once a day and there's no rate-limit pressure
 at this scale. A board whose fetch fails (greenhouse.client.fetch_jobs
 already retries transient errors -- see that module -- so what reaches here
-has exhausted those) is logged and skipped rather than aborting the whole
-run; its firm is left out of fetched_boards, so prune_closed_postings never
-mistakes "we couldn't check this board" for "everything on it just closed"
-(see that function's docstring). Every job from a board that DID succeed is
+has exhausted those) is skipped for pruning; its firm is left out of
+fetched_boards, so prune_closed_postings never mistakes "we couldn't check
+this board" for "everything on it just closed". Successful boards are still
+updated, then the process fails after writing its summary so GitHub Actions
+cannot report incomplete data as healthy. Every job from a board that DID
+succeed is
 classified by classify_roles.classify_job into a category, then
 classify_region.classify_region into PAC or RoW from its (already
 normalized -- see job_boards/greenhouse/client.py) location; the pair picks
@@ -36,8 +38,7 @@ and URL -- a startup check, not decoration: `GOOGLE_SHEET_ID` is set
 independently in `.env` (local) and the GitHub Actions secret (CI), and
 nothing else here cross-checks the two, so a value that drifts on one side
 silently writes/prunes real data against the wrong file while still
-reporting a clean run (this has happened once already -- see CLAUDE.md's
-Known gaps). Logging the sheet's own identity makes that visible to anyone
+reporting a clean run. Logging the sheet's own identity makes that visible to anyone
 who actually reads the run log, even though it can't be checked
 automatically from here.
 
@@ -172,6 +173,16 @@ def run() -> None:
         tab_stats=tab_stats,
     )
     _write_job_summary(markdown)
+
+    # Keep successful boards current and avoid pruning a failed board, but do
+    # not let the workflow look healthy when its result is incomplete. The
+    # summary is written first so the GitHub Actions failure has enough detail
+    # to diagnose the affected firms.
+    if failed_firms:
+        raise RuntimeError(
+            "scrape completed with failed board fetches: "
+            + ", ".join(sorted(failed_firms))
+        )
 
 
 def _build_summary_markdown(

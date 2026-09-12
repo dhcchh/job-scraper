@@ -119,12 +119,11 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
             "fpga",
             # Added when Crypto Exchange/Gaming/Fintech/big-tech boards joined
             # greenhouse_boards.toml (dry-run validated against ~3,700 real
-            # postings across 14 firms -- see CLAUDE.md Known gaps). Big-tech
+            # postings across 14 firms). Big-tech
             # titling favors bare "Engineer"/reordered phrases the quant-firm
             # keywords above never needed to cover:
             "staff engineer",
             "security engineer",
-            "platform engineer",
             "network engineer",
             "firmware engineer",
             "performance engineer",
@@ -163,6 +162,9 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
             "reliability engineer",
             "sre",
             "devops",
+            # Platform engineering is infrastructure/SRE work in this
+            # taxonomy. Keep it only here: putting it in SWE/DE would make
+            # SRE/DevOps's rule unreachable because categories are first-win.
             "platform engineer",
             "infrastructure engineer",
             "systems engineer",
