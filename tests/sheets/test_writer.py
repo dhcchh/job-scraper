@@ -168,3 +168,32 @@ def test_row_key_tolerates_malformed_row():
     assert writer._row_key(["a"], board_index=0, job_id_index=5) is None
 
 
+def test_format_date_columns_calls_format_when_available():
+    formatted_ranges = []
+
+    class _WorksheetWithFormat:
+        def format(self, range_name, format_dict):
+            formatted_ranges.append((range_name, format_dict))
+
+    ws = _WorksheetWithFormat()
+    writer.format_date_columns(ws)
+    assert len(formatted_ranges) == 2
+    assert formatted_ranges[0] == (
+        "D2:E",
+        {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}},
+    )
+    assert formatted_ranges[1] == (
+        "K2:K",
+        {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}},
+    )
+
+
+def test_format_date_columns_tolerates_worksheet_without_format():
+    class _WorksheetWithoutFormat:
+        pass
+
+    ws = _WorksheetWithoutFormat()
+    writer.format_date_columns(ws)  # does not raise
+
+
+

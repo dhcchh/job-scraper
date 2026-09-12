@@ -106,7 +106,7 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
         "Junior Engineer",
         "Remote",
         "",  # first_published: no such column in _OLD_HEADER, no override given
-        "2026-09-01T00:00:00Z",
+        "2026-09-01",
         "Big Tech",
         "https://x/101",
         "Junior",  # recomputed from "Junior Engineer", was stale "Unspecified"
@@ -331,7 +331,7 @@ def test_refresh_fills_in_first_published_for_a_header_that_predates_the_column(
 
     header, row = worksheet.updated_with
     assert "first_published" in header
-    assert row[header.index("first_published")] == "2026-06-01T00:00:00Z"
+    assert row[header.index("first_published")] == "2026-06-01"
 
 
 def test_refresh_leaves_first_published_unchanged_when_no_override_for_that_row():
@@ -344,7 +344,7 @@ def test_refresh_leaves_first_published_unchanged_when_no_override_for_that_row(
     backfill.refresh_worksheet(worksheet, overrides={})
 
     header, row = worksheet.updated_with
-    assert row[header.index("first_published")] == "2026-05-01T00:00:00Z"
+    assert row[header.index("first_published")] == "2026-05-01"
 
 
 def _job_stub(board, job_id, location, first_published=""):

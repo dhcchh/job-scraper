@@ -66,7 +66,8 @@ def test_fetch_jobs_parses_response(monkeypatch):
     assert first.scraped_date == datetime.date(2026, 9, 12)
     assert first.seniority == "Senior"  # from "Senior Backend Engineer"
     assert first.company_type == "Big Tech"
-    assert first.first_published == "2026-06-15T08:00:00-04:00"
+    assert first.first_published == "2026-06-15"
+    assert first.updated_at == "2026-09-01"
 
     # Missing department/location degrade to "", not a crash.
     assert second.department == ""

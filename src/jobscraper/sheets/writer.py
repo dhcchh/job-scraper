@@ -65,6 +65,17 @@ def get_worksheet(spreadsheet: gspread.Spreadsheet, name: str) -> gspread.Worksh
     return spreadsheet.worksheet(name)
 
 
+def format_date_columns(worksheet: gspread.Worksheet) -> None:
+    """Explicitly format date columns as DATE ('yyyy-mm-dd') in Google Sheets.
+
+    Applies to first_published (D), updated_at (E), and scraped_date (K)
+    data cells so Google Sheets displays them uniformly.
+    """
+    if hasattr(worksheet, "format"):
+        worksheet.format("D2:E", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
+        worksheet.format("K2:K", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
+
+
 def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> int:
     """Append this run's not-yet-seen jobs as new rows.
 

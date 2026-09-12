@@ -28,7 +28,7 @@ import time
 
 import requests
 
-from jobscraper.models import Job
+from jobscraper.models import Job, normalize_date
 from jobscraper.classifications.classify_seniority import classify_seniority
 from jobscraper.classifications.normalize_location import normalize_location
 
@@ -133,8 +133,8 @@ def _to_job(
         department=department,
         location=_location(raw),
         url=raw.get("absolute_url", ""),
-        updated_at=raw.get("updated_at", ""),
-        first_published=raw.get("first_published", ""),
+        updated_at=normalize_date(raw.get("updated_at", "")),
+        first_published=normalize_date(raw.get("first_published", "")),
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
         company_type=company_type,

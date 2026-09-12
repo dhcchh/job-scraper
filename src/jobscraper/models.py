@@ -34,6 +34,48 @@ FIELDS: tuple[str, ...] = (
     "scraped_date",
 )
 
+DATE_FIELDS: tuple[str, ...] = (
+    "first_published",
+    "updated_at",
+    "scraped_date",
+)
+
+
+def normalize_date(value: str | datetime.date | datetime.datetime | None) -> str:
+    """Normalize any date/datetime/string into an ISO date string (YYYY-MM-DD), or "".
+
+    Returns "" for empty/missing values. For ISO 8601 strings (e.g.
+    "2026-09-09T05:54:53-04:00" or "2026-06-01T00:00:00Z"), extracts the
+    calendar date part "YYYY-MM-DD" so Google Sheets USER_ENTERED recognizes
+    it as a true date value rather than a plain string.
+    """
+    if not value:
+        return ""
+    if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, datetime.datetime):
+        return value.date().isoformat()
+    if isinstance(value, str):
+        val = value.strip()
+        if not val:
+            return ""
+        if len(val) == 10 and val[4] == "-" and val[7] == "-":
+            try:
+                return datetime.date.fromisoformat(val).isoformat()
+            except ValueError:
+                pass
+        try:
+            return datetime.datetime.fromisoformat(val).date().isoformat()
+        except ValueError:
+            pass
+        if len(val) >= 10 and val[4] == "-" and val[7] == "-":
+            try:
+                return datetime.date.fromisoformat(val[:10]).isoformat()
+            except ValueError:
+                pass
+        return val
+    return str(value)
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Job:
@@ -99,12 +141,12 @@ class Job:
             self.board,
             self.title,
             self.location,
-            self.first_published,
-            self.updated_at,
+            normalize_date(self.first_published),
+            normalize_date(self.updated_at),
             self.company_type,
             self.url,
             self.seniority,
             self.department,
             self.job_id,
-            self.scraped_date.isoformat(),
+            normalize_date(self.scraped_date),
         ]

@@ -83,8 +83,13 @@ from jobscraper.classifications.classify_roles import CATEGORIES
 from jobscraper.classifications.classify_seniority import classify_seniority
 from jobscraper.classifications.normalize_location import normalize_location
 from jobscraper.job_boards.greenhouse.client import fetch_jobs
-from jobscraper.models import FIELDS, Job
-from jobscraper.sheets.writer import HEADER, get_spreadsheet, get_worksheet
+from jobscraper.models import FIELDS, Job, normalize_date
+from jobscraper.sheets.writer import (
+    HEADER,
+    format_date_columns,
+    get_spreadsheet,
+    get_worksheet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -239,14 +244,21 @@ def refresh_worksheet(
             location_changed += 1
             values["location"] = new_location
 
-        if fresh is not None and fresh.first_published and values["first_published"] != fresh.first_published:
-            first_published_changed += 1
-            values["first_published"] = fresh.first_published
+        if fresh is not None and fresh.first_published:
+            fresh_fp = normalize_date(fresh.first_published)
+            if fresh_fp and values["first_published"] != fresh_fp:
+                first_published_changed += 1
+                values["first_published"] = fresh_fp
+
+        values["first_published"] = normalize_date(values["first_published"])
+        values["updated_at"] = normalize_date(values["updated_at"])
+        values["scraped_date"] = normalize_date(values["scraped_date"])
 
         new_rows.append([values[name] for name in FIELDS])
 
     worksheet.clear()
     worksheet.update(values=[HEADER] + new_rows, value_input_option="USER_ENTERED")
+    format_date_columns(worksheet)
     logger.info(
         "refresh: rewrote %d row(s) into current column order -- "
         "%d seniority, %d company_type, %d location, %d first_published changed",
