@@ -1,6 +1,11 @@
 # Secrets / local env
 .env
 
+# Downloaded GCP service-account key files (e.g. job-scraper-xxxxx.json) --
+# this project has no legitimate json files of its own, so blanket-ignoring
+# is the safer default. `git add -f` if you ever need a real one tracked.
+*.json
+
 # Python
 __pycache__/
 *.py[cod]
