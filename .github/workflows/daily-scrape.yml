@@ -9,6 +9,17 @@ on:
     - cron: "0 4 * * *"
   workflow_dispatch: {}
 
+# Only one scrape at a time. sheets/writer.py's prune_closed_postings does a
+# non-atomic clear()+update() per tab -- a second run (the next scheduled
+# fire landing late, or someone clicking "Run workflow" mid-scrape) that
+# read the sheet before this one finished writing would overwrite this
+# run's just-appended/pruned rows with its own stale snapshot. Queue instead
+# of canceling (cancel-in-progress: false): killing a run between clear()
+# and update() would leave a tab with only its header row.
+concurrency:
+  group: daily-scrape
+  cancel-in-progress: false
+
 jobs:
   scrape:
     runs-on: ubuntu-latest

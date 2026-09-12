@@ -74,3 +74,80 @@ company_type = "Prop Trading/Hedge Fund"
 token = "marshallwace"
 firm = "Marshall Wace"
 company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "jumpcrypto"
+firm = "Jump Crypto"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "okx"
+firm = "OKX"
+company_type = "Crypto Exchange"
+
+[[boards]]
+token = "coinbase"
+firm = "Coinbase"
+company_type = "Crypto Exchange"
+
+[[boards]]
+token = "ripple"
+firm = "Ripple"
+company_type = "Crypto Exchange"
+
+[[boards]]
+token = "hoyoverse"
+firm = "HoYoverse"
+company_type = "Gaming"
+
+# NOTE: the token is "riotgames", not "riotgamesinc" -- both resolve to a
+# valid Greenhouse board ("Riot Games" vs "Riot Games, Inc."), but only this
+# one has any open postings (151 vs 0 at the time this was checked).
+[[boards]]
+token = "riotgames"
+firm = "Riot Games"
+company_type = "Gaming"
+
+[[boards]]
+token = "roblox"
+firm = "Roblox"
+company_type = "Gaming"
+
+[[boards]]
+token = "stripe"
+firm = "Stripe"
+company_type = "Fintech"
+
+[[boards]]
+token = "robinhood"
+firm = "Robinhood"
+company_type = "Fintech"
+
+[[boards]]
+token = "anthropic"
+firm = "Anthropic"
+company_type = "AI Lab"
+
+[[boards]]
+token = "databricks"
+firm = "Databricks"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "discord"
+firm = "Discord"
+company_type = "Consumer Comms/Social"
+
+# NOTE: Notion is NOT on this list -- it migrated off Greenhouse to Ashby
+# (jobs.ashbyhq.com/notion). This scraper only has a Greenhouse client
+# today; adding Notion needs a new job_boards/ashby/client.py first.
+
+[[boards]]
+token = "figma"
+firm = "Figma"
+company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "airbnb"
+firm = "Airbnb"
+company_type = "Consumer/Marketplace"

@@ -62,3 +62,24 @@ def test_normalize_location_collapses_remote_synonyms():
 
 def test_normalize_location_empty_string_stays_empty():
     assert normalize_location("") == ""
+
+
+def test_normalize_location_strips_remote_annotation_around_a_known_place():
+    # "Remote - Singapore"/"Taiwan (Remote)" must resolve to the underlying
+    # place, not fall through unmapped -- classify_region only recognizes an
+    # exact country match, so an unstripped annotation would silently
+    # misroute a real PAC posting into RoW.
+    assert normalize_location("Remote - Singapore") == "Singapore"
+    assert normalize_location("Taiwan (Remote)") == "Taiwan"
+
+
+def test_normalize_location_leaves_remote_region_codes_unmapped():
+    # A "Remote - " prefix is still stripped, but a code with no place-name
+    # entry to resolve to (NAMER, EMEA, CIS) is unmapped, same as any other
+    # unrecognized cleaned string.
+    assert normalize_location("Remote - NAMER") == "NAMER"
+
+
+def test_normalize_location_maps_iso_country_code_prefixed_cities():
+    assert normalize_location("AU-Sydney") == "Sydney, Australia"
+    assert normalize_location("GB-London") == "London, United Kingdom"

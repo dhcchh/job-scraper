@@ -31,6 +31,16 @@ import re
 
 _OFFICE_SUFFIX_RE = re.compile(r"\s+office$", re.IGNORECASE)
 
+# Some boards (Coinbase, OKX) wrap an otherwise-recognizable place name in a
+# "remote" annotation -- "Remote - Singapore", "Taiwan (Remote)" -- which
+# would otherwise dodge both the lookup table AND classify_region's PAC
+# check (neither "Remote - Singapore" nor "Taiwan (Remote)" is an exact
+# match, so a real Singapore/Taiwan posting would silently land in RoW).
+# Stripped before lookup, same as the " office" suffix above, so the place
+# name underneath still gets normalized normally.
+_REMOTE_PREFIX_RE = re.compile(r"^remote\s*-\s*", re.IGNORECASE)
+_REMOTE_SUFFIX_RE = re.compile(r"\s*\(remote\)$", re.IGNORECASE)
+
 # Keyed by the office name lowercased (after stripping a trailing " office"
 # noise suffix -- covers "Amsterdam office", "Chicago Office", etc. without
 # needing a separate entry per suffix variant). Unmapped names pass through
@@ -95,6 +105,18 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "sydney, new south wales, australia": "Sydney, Australia",
     "tel aviv": "Tel Aviv, Israel",
     "apac": "Asia-Pacific",
+    # ISO-3166 country-code-prefixed city names, seeded from Stripe's board
+    # ("AU-Sydney", "GB-London") -- same "City, Country" convention as every
+    # other entry above once decoded.
+    "au-sydney": "Sydney, Australia",
+    "ca-toronto": "Toronto, Canada",
+    "es-barcelona": "Barcelona, Spain",
+    "gb-london": "London, United Kingdom",
+    "ie-dublin": "Dublin, Ireland",
+    "in-bengaluru": "Bengaluru, India",
+    # OKX-specific noise: an internal region-tag suffix on an otherwise
+    # plain country name.
+    "china mainland_internal": "China",
     # -- Not a place: remote/flexible labels some boards use interchangeably --
     "remote": "Remote",
     "virtual": "Remote",
@@ -115,4 +137,6 @@ def normalize_location(raw: str) -> str:
     "Unspecified": don't fabricate a signal the data doesn't contain.
     """
     cleaned = _OFFICE_SUFFIX_RE.sub("", raw).strip()
+    cleaned = _REMOTE_PREFIX_RE.sub("", cleaned).strip()
+    cleaned = _REMOTE_SUFFIX_RE.sub("", cleaned).strip()
     return _CANONICAL_LOCATIONS.get(cleaned.lower(), cleaned)

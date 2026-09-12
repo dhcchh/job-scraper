@@ -96,6 +96,12 @@ falls back to the raw `location.name` string if `offices` is ever
 missing/empty. `classify_region` above depends on this: it only ever reads
 the country `normalize_location` already put after the last comma, so a
 new PAC city needs an entry here before it's recognized as PAC there too.
+This bit twice already when non-quant boards were added: Coinbase's
+`"Remote - Singapore"` and OKX's `"Taiwan (Remote)"` are real PAC postings
+that don't exact-match the lookup table as-is, so `normalize_location` now
+also strips a leading `"Remote - "` / trailing `" (Remote)"` annotation
+(same technique as the existing trailing `" office"` strip) before
+looking a name up — without it, both would have silently landed in RoW.
 
 **`sheets/writer.py`** is the part most likely to surprise someone reading
 only one file at a time — its two functions both key on `(board, job_id)`,
@@ -189,16 +195,31 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
 - **Seniority levels miss numeric/leveling titles** — `classify_seniority.py`
   only matches English seniority words (Senior, Manager, ...); big-tech-style
   titles ("Software Engineer II", "SDE II", "L4/L5") fall through to
-  `Unspecified` today. Likely to matter as soon as non-quant firms are added.
-- **Role classifier needs a validation pass per new firm type** —
-  `classify_roles.py`'s keyword lists were tuned by dry-running against the
-  current 15 quant-firm boards' real postings. A firm with different title
-  conventions for the same 5 categories will likely need the same kind of
-  tuning pass; don't assume it Just Works untested.
-- **No CI test run on push** — tests only run when someone runs
-  `uv run pytest` manually; nothing blocks a broken commit from reaching
-  `main` before the next scheduled scrape. Worth a workflow that runs
-  `uv run pytest` on push/PR.
+  `Unspecified` today. Confirmed now that non-quant firms are in
+  `greenhouse_boards.toml`: real examples include Coinbase's "Analyst II",
+  Ripple's "Software Engineer II, Platform", and Figma/Roblox's "Product
+  Designer II"/"Product Manager II" — still unfixed, low volume relative to
+  the plain-word-Unspecified rate so not urgent, but no longer hypothetical.
+- **Role classifier needs a validation pass per new firm type** — done once,
+  for the Crypto Exchange/Gaming/Fintech/AI Lab/Data-Cloud
+  Infrastructure/Consumer Comms/Enterprise Productivity/Consumer
+  Marketplace firms added to `greenhouse_boards.toml` alongside the
+  original 15 quant boards: `classify_roles.py`'s SWE/DE keywords were
+  dry-run against ~3,700 of those firms' real postings, which surfaced a
+  systematic miss — big-tech titling favors bare/reordered "Engineer"
+  phrases ("Staff Engineer", "Security Engineer") and engineering
+  *management* ("Engineering Manager", "Director of Engineering") that the
+  quant-tuned keywords never needed to cover. Both were added; customer-
+  facing "Solutions Engineer"/"Forward Deployed Engineer"/"Support
+  Engineer" were deliberately left as noise (pre-sales/support-adjacent,
+  not the IC/engineering-management scope this pass was scoped to) — see
+  `classify_roles.py`'s SWE/DE tuple for the exact keyword list and
+  rationale. The general warning stands for *future* firm types, though:
+  don't assume a new firm's titling Just Works untested.
+- ~~No CI test run on push~~ — done: `.github/workflows/test.yml` runs
+  `uv run pytest` on every push to `main` and every PR, separate from
+  `daily-scrape.yml` so a test failure can't block or delay the scheduled
+  scrape.
 - ~~No run notifications~~ — done: `main.py`'s `run()` now appends a
   markdown summary (boards fetched/failed, job counts, per-tab
   appended/pruned) to `$GITHUB_STEP_SUMMARY`, so a run's outcome shows up
@@ -207,6 +228,24 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
   nothing pushed *outside* GitHub (Slack/email) — only worth adding if a
   failed run needs to page someone rather than wait to be noticed on the
   Actions tab.
+- ~~No protection against overlapping runs~~ — done for the GitHub-Actions-
+  triggered case: `daily-scrape.yml` now has a `concurrency:` group
+  (`cancel-in-progress: false`) so a manual `workflow_dispatch` can't run
+  at the same time as the scheduled cron (or another manual trigger).
+  Without it, `sheets/writer.py`'s `prune_closed_postings` — a non-atomic
+  `clear()` + `update()` per tab — could have one run's write silently
+  clobber another's just-appended/pruned rows, since each run reads
+  `get_all_values()` independently and neither knows about the other's
+  in-flight changes. Queuing rather than canceling matters specifically
+  because killing a run between `clear()` and `update()` would leave a tab
+  with only its header row. **Still open**: this can't protect against a
+  run triggered *outside* GitHub Actions — e.g. someone's local `uv run
+  python -m jobscraper.main` pointed at the production sheet while the
+  scheduled Action is also running. No code-level fix for that without a
+  real distributed lock (a Sheets-side lock cell/named range, say), which
+  is more machinery than this single-maintainer project's actual usage
+  pattern justifies today — worth revisiting only if this ever becomes a
+  genuinely multi-operator tool.
 - **Telegram digest of new postings** — requested: a Telegram bot posts one
   batched digest per run (not one message per job) to a supergroup's
   "jobs" subtopic (`message_thread_id` on `sendMessage`), listing only
@@ -219,6 +258,10 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
   building the digest needs either changing it to return the new `Job`
   list too, or `main.py` redoing the same already-tracked-keys filter
   itself just to know which of a tab's jobs were actually new this run.
+  Also inherits the overlapping-runs gap right above: send the digest from
+  inside the same `run()` (after a successful append), not from a
+  separately-triggered process, or two overlapping runs could each think
+  they found the same "new" job and double-post it to the group.
 - **No worksheet auto-creation** — `sheets/writer.get_worksheet()` raises if
   a tab doesn't already exist; fine while tabs are managed by hand.
 - **No fail-fast config validation** — a `[[boards]]` entry missing
@@ -236,18 +279,6 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
   on Greenhouse. Like all sheet formatting, it survives every run for free:
   `prune_closed_postings`'s `clear()`+`update()` only touches cell values via
   the Sheets API, never formatting.
-- **No default sort/visual ordering** — still open. Row order is
-  deliberately left to the end user (see commit 99a8568 and `main.py`'s
-  docstring: the script never reorders existing rows, so a user's own
-  sort/filter setup survives every append/prune). A default "most recent
-  first" view should likewise be set up once in the sheet itself — a Sheets
-  sort (Data > Sort range) or a Filter view keyed on `scraped_date` — not
-  code that re-sorts rows on every run, which would undo it. Related but
-  distinct, and already done: every job tab now also has 5 saved Filter
-  views (`Filter: Board`, `Filter: Company type`, `Filter: Seniority`,
-  `Filter: Department`, `Filter: Location`) for filtering by the most common
-  dimensions — that's filtering by category, not the "most recent first"
-  ordering this gap is actually about, so it doesn't close this item.
 - ~~Region refactor~~ — done, see `classifications/classify_region.py` in
   Architecture above. Turned out to be 10 tabs (5 categories × PAC/RoW), not
   8 — confirmed against the actual spreadsheet tab names.

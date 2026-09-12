@@ -41,6 +41,16 @@ def _job(title, department=""):
         ("Site Reliability Engineer", "SRE/DevOps"),
         ("Reliability Engineer", "SRE/DevOps"),
         ("DevOps Engineer", "SRE/DevOps"),
+        # Big-tech-style titling (validated against real Crypto
+        # Exchange/Gaming/Fintech/big-tech board data -- see CLAUDE.md
+        # Known gaps): bare/reordered "Engineer" phrases and engineering
+        # management, deliberately excluding customer-facing "Solutions
+        # Engineer"/"Forward Deployed Engineer" (see the noise test below).
+        ("Staff Engineer, Core Infrastructure", "SWE/DE"),
+        ("Senior Security Engineer, Detection and Response", "SWE/DE"),
+        ("Engineering Manager, Notifications", "SWE/DE"),
+        ("Director of Engineering, Infrastructure", "SWE/DE"),
+        ("Manager, Software Engineering - Billing", "SWE/DE"),
     ],
 )
 def test_classify_job_routes_to_expected_category(title, expected):
@@ -68,6 +78,12 @@ def test_classify_job_ignores_department():
         "Technical Recruiter",
         "Office Manager",
         "Executive Assistant",
+        # Customer-facing "Engineer" titles stay noise deliberately -- these
+        # are pre-sales/support roles, not the hands-on-code or
+        # engineering-management scope SWE/DE was expanded to cover.
+        "Solutions Engineer, Privy",
+        "Forward Deployed Engineer",
+        "Senior Support Engineer (GovOps)",
     ],
 )
 def test_classify_job_returns_none_for_noise(title):

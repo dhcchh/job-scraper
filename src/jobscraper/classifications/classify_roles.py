@@ -105,6 +105,30 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
             "big data engineer",
             "analytics engineer",
             "fpga",
+            # Added when Crypto Exchange/Gaming/Fintech/big-tech boards joined
+            # greenhouse_boards.toml (dry-run validated against ~3,700 real
+            # postings across 14 firms -- see CLAUDE.md Known gaps). Big-tech
+            # titling favors bare "Engineer"/reordered phrases the quant-firm
+            # keywords above never needed to cover:
+            "staff engineer",
+            "security engineer",
+            "platform engineer",
+            "network engineer",
+            "firmware engineer",
+            "performance engineer",
+            # Engineering *management* -- deliberately included (unlike
+            # customer-facing "Solutions Engineer"/"Forward Deployed
+            # Engineer"/"Support Engineer", deliberately left as noise): an
+            # Engineering Manager or Director of Engineering still manages an
+            # engineering org, not a sales or support one.
+            "engineering manager",
+            "director of engineering",
+            "director, engineering",
+            "vice president of engineering",
+            "vp of engineering",
+            "head of engineering",
+            "manager, engineering",
+            "manager, software engineering",
         ),
     ),
     (
