@@ -76,7 +76,9 @@ small fake `Worksheet`.
   JSON similar in shape to Greenhouse. Needs a new `[[ashby_boards]]` section
   in a config file (or extend `greenhouse_boards.toml` with a `source` field)
   and a loop in `main.py` that fetches Ashby boards alongside Greenhouse.
-  Firms to add: *(list pending)*.
+  Firms to add: OpenAI (`openai`), Notion (`notion`), Airwallex
+  (`airwallex`), Snowflake (`snowflake`), Exa (`exa`), Sierra (`sierra`),
+  BlockTech (`blocktech`) — all confirmed live on `jobs.ashbyhq.com`.
 - Decide whether worksheets should be created automatically when a new tab is
   configured; today a missing tab raises.
 - Validate each `[[boards]]` entry early and report the specific missing
