@@ -74,9 +74,27 @@ def fetch_jobs(
 
     payload = response.json()
     raw_jobs = payload.get("jobs", [])
-    logger.info("greenhouse[%s]: fetched %d jobs", board_token, len(raw_jobs))
 
-    return [_to_job(raw, firm, company_type, scraped_date) for raw in raw_jobs]
+    # `id` is the one field _to_job doesn't already default via .get() --
+    # every other field degrades to "" on a malformed record, so this
+    # matches that same defensive posture rather than letting one bad
+    # record (no id at all) raise and cost this whole board's ~hundreds of
+    # otherwise-good postings for the day (main.py treats any exception
+    # from fetch_jobs as the entire board failing, not per-job).
+    jobs = []
+    skipped = 0
+    for raw in raw_jobs:
+        if "id" not in raw:
+            skipped += 1
+            continue
+        jobs.append(_to_job(raw, firm, company_type, scraped_date))
+    if skipped:
+        logger.warning(
+            "greenhouse[%s]: skipped %d job(s) missing an id", board_token, skipped
+        )
+    logger.info("greenhouse[%s]: fetched %d jobs", board_token, len(jobs))
+
+    return jobs
 
 
 def _get_with_retries(board_token: str, url: str, *, params: dict) -> requests.Response:

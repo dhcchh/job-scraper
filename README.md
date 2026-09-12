@@ -65,13 +65,13 @@ See `CLAUDE.md`'s Architecture section for the full design rationale
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~15 boards. Realistic
+Google Sheet as the datastore — works fine at today's ~29 boards. Realistic
 ceiling: **somewhere around 2,000-5,000 companies**, not the 10,000+ the
 raw minutes math alone would suggest:
 
 - **GitHub Actions minutes, idealized**: fetching is sequential (see
-  `job_boards/greenhouse/client.py`), ~0.25s/board observed (15 boards ≈
-  4s total). This repo is a private GitHub repo, so its free tier is 2,000
+  `job_boards/greenhouse/client.py`), ~0.25s/board observed (29 boards ≈
+  7s total). This repo is a private GitHub repo, so its free tier is 2,000
   Actions minutes/month, shared across every private repo on the account.
   At 0.25s/board with negligible fixed overhead, that budget alone isn't
   exhausted until roughly **~15,000 companies** — higher than you'd guess.
@@ -87,7 +87,7 @@ raw minutes math alone would suggest:
   whether/when that starts looking like abusive traffic and gets
   throttled, independent of anything on this side.
 - **Sheets' own hard cap**: a spreadsheet holds at most 10,000,000 cells
-  (~1,000,000 rows at `FIELDS`' 10 columns). Where this binds depends on
+  (~900,000 rows at `FIELDS`' 11 columns). Where this binds depends on
   postings-per-company; today's sample (large quant/trading firms, ~45
   classified postings/board average) would hit it well under 10,000
   companies, but a broader, smaller-company mix would likely push this

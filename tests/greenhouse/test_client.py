@@ -76,6 +76,39 @@ def test_fetch_jobs_parses_response(monkeypatch):
     assert second.first_published == ""  # missing from the raw job, not a crash
 
 
+def test_fetch_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):
+    # A malformed record with no id at all must not cost the whole board's
+    # otherwise-good postings for the day -- main.py treats any exception
+    # from fetch_jobs as this entire board having failed to fetch.
+    response = {
+        "jobs": [
+            {
+                "title": "No id field",
+                "updated_at": "",
+                "absolute_url": "https://x/bad",
+                "location": {},
+                "departments": [],
+            },
+            {
+                "id": 99,
+                "title": "Software Engineer",
+                "updated_at": "",
+                "absolute_url": "https://x/99",
+                "location": {},
+                "departments": [],
+            },
+        ]
+    }
+    monkeypatch.setattr(
+        client.requests, "get", lambda *a, **k: _FakeResponse(response)
+    )
+
+    jobs = client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+
+    assert len(jobs) == 1
+    assert jobs[0].job_id == "99"
+
+
 def test_fetch_jobs_builds_location_from_offices_not_the_raw_location_string(monkeypatch):
     # location.name is one free-text string a recruiter typed and can't be
     # safely split ("London, United Kingdom; New York, NY, United States");
