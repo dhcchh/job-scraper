@@ -54,7 +54,7 @@ LEVELS: list[tuple[str, tuple[str, ...]]] = [
     ("Mid", ("mid level", "mid-level", "midlevel")),
     ("Junior", ("junior", "jr")),
     ("Intern", ("intern", "internship", "co-op", "working student")),
-    ("Graduate", ("graduate", "new grad", "entry level", "entry-level", "trainee")),
+    ("Graduate", ("graduate", "new grad", "entry level", "entry-level", "trainee", "campus", "grads")),
 ]
 
 
