@@ -59,18 +59,33 @@ See `CLAUDE.md`'s Architecture section for the full design rationale
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~15 boards, but
-breaks down well before **10,000 companies**:
+Google Sheet as the datastore — works fine at today's ~15 boards. Realistic
+ceiling: **somewhere around 2,000-5,000 companies**, not the 10,000+ the
+raw minutes math alone would suggest:
 
-- **Sheets' own cap**: a spreadsheet holds at most 10,000,000 cells total.
-  At `FIELDS`' 10 columns, that's ~1,000,000 rows across every tab
-  combined — reachable by a few thousand companies' worth of tracked
-  postings, let alone 10,000.
-- **No concurrency**: boards are fetched sequentially (see
-  `job_boards/greenhouse/client.py`). Fine for 15 boards (~4s total); at
-  10,000 it's hours, not seconds, with no retry/backoff budget to spare.
-- **GitHub Actions minutes**: a run that takes hours, every day, burns
-  through the free-tier Actions budget in days.
+- **GitHub Actions minutes, idealized**: fetching is sequential (see
+  `job_boards/greenhouse/client.py`), ~0.25s/board observed (15 boards ≈
+  4s total). This repo is a private GitHub repo, so its free tier is 2,000
+  Actions minutes/month, shared across every private repo on the account.
+  At 0.25s/board with negligible fixed overhead, that budget alone isn't
+  exhausted until roughly **~15,000 companies** — higher than you'd guess.
+- **...but that's optimistic.** Retries/backoff on transient failures
+  (2s/4s each) aren't in that math, and at real scale some % of boards
+  fail transiently every run. `get_all_values()` also re-reads each tab's
+  *entire* accumulated history every run, so runtime grows with total
+  tracked postings over time, not just company count that day.
+- **The real unknown: Greenhouse itself.** This design hits thousands of
+  different Greenhouse-hosted board subdomains sequentially from one CI
+  runner IP. Each board is a different tenant, but Greenhouse's own
+  infrastructure is likely shared at the network/WAF layer — untested
+  whether/when that starts looking like abusive traffic and gets
+  throttled, independent of anything on this side.
+- **Sheets' own hard cap**: a spreadsheet holds at most 10,000,000 cells
+  (~1,000,000 rows at `FIELDS`' 10 columns). Where this binds depends on
+  postings-per-company; today's sample (large quant/trading firms, ~45
+  classified postings/board average) would hit it well under 10,000
+  companies, but a broader, smaller-company mix would likely push this
+  ceiling out past 10,000.
 
 Past a few hundred boards, this needs concurrent/batched fetching, a real
 database instead of a spreadsheet, and a dedicated scheduler/worker instead

@@ -181,7 +181,7 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
   tuning pass; don't assume it Just Works untested.
 - **No CI test run on push** — tests only run when someone runs
   `uv run pytest` manually; nothing blocks a broken commit from reaching
-  `master` before the next scheduled scrape. Worth a workflow that runs
+  `main` before the next scheduled scrape. Worth a workflow that runs
   `uv run pytest` on push/PR.
 - **No run notifications** — success/failure/job-counts aren't reported
   anywhere but the run log; a silent failure is only caught by manually
@@ -211,3 +211,32 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
 - ~~Region refactor~~ — done, see `classifications/classify_region.py` in
   Architecture above. Turned out to be 10 tabs (5 categories × PAC/RoW), not
   8 — confirmed against the actual spreadsheet tab names.
+- **No check that `GOOGLE_SHEET_ID` matches between `.env` and the GitHub
+  Actions secret** — bit this project once already: the CI secret silently
+  pointed at a stale spreadsheet (old bare-category tab names) for a while
+  after `.env` and the live spreadsheet had both moved on to the
+  PAC/RoW-tab structure, and every scheduled run still reported `success`
+  (it was writing real data, just to the wrong file). Nothing in this repo
+  cross-checks the two — if `GOOGLE_SHEET_ID` (or the tab set) ever gets
+  changed on one side without the other, expect the same failure mode:
+  CI green, sheet stale. Worth a startup check in `main.py` (e.g. log the
+  sheet's own title/URL) so a mismatch is at least visible in the run log.
+
+## Scale limits
+
+This design — sequential per-board fetching, one GitHub Actions run/day, a
+Google Sheet as the datastore — has a real ceiling, roughly **2,000-5,000
+companies**, well before the ~15,000 the raw Actions-minutes math alone
+would suggest (2,000 free min/month ÷ ~0.25s/board observed today). What
+actually pulls that down: retries/backoff on transient failures aren't in
+that math, `get_all_values()` re-reads each tab's *entire* history every
+run (so runtime grows with accumulated postings, not just company count),
+and — the real unknown — Greenhouse's own infrastructure is likely shared
+across board tenants at the network/WAF layer, so thousands of sequential
+requests per run from one CI IP could get throttled independent of
+anything tunable here; untested. Sheets' hard 10M-cell cap (~1M rows at
+`FIELDS`' 10 columns) is a second ceiling whose exact company-count depends
+on postings-per-company — see README's "Scale limits" for the full
+numbers. Past a few hundred boards: concurrent/batched fetching, a real
+database instead of a spreadsheet, and a dedicated scheduler instead of a
+GitHub Actions cron.
