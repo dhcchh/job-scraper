@@ -2,6 +2,16 @@
 
 One function: give it a board token, get back this run's Job objects.
 
+`firm` (not `board_token`) is what ends up in Job.board -- the token is only
+needed to hit the right Greenhouse URL. This keeps the sheet's board column
+readable ("HRT", "Optiver") instead of the raw career-page slug
+("wehrtyou", "optiverneurips") -- see greenhouse_boards.toml for the
+token->firm mapping. Because Job.board (not the token) is also half of the
+(board, job_id) dedup/prune key in sheets.writer, changing what firm maps to
+for an existing token would make every already-tracked job under that token
+look new again next run -- rename firms there with care, and re-key any
+already-written rows to match if you do.
+
 TODO(retries): no retry/backoff here -- a transient network blip or a
 Greenhouse 5xx fails the whole run (see main.py, which doesn't catch this
 per board either). Fine for a personal daily job at this scale; add a retry
@@ -24,9 +34,13 @@ BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
 
 
 def fetch_jobs(
-    board_token: str, *, scraped_date: datetime.date | None = None
+    board_token: str, firm: str, *, scraped_date: datetime.date | None = None
 ) -> list[Job]:
     """Fetch every open job posted on one company's Greenhouse board.
+
+    `board_token` is the Greenhouse career-page slug used to hit the API;
+    `firm` is the human-readable name (from greenhouse_boards.toml) stored on
+    every returned Job instead of the token -- see the module docstring.
 
     `scraped_date` defaults to today and is stamped on every Job returned --
     it's what sheets.writer prunes on later, not anything from Greenhouse.
@@ -47,14 +61,14 @@ def fetch_jobs(
     raw_jobs = payload.get("jobs", [])
     logger.info("greenhouse[%s]: fetched %d jobs", board_token, len(raw_jobs))
 
-    return [_to_job(raw, board_token, scraped_date) for raw in raw_jobs]
+    return [_to_job(raw, firm, scraped_date) for raw in raw_jobs]
 
 
-def _to_job(raw: dict, board_token: str, scraped_date: datetime.date) -> Job:
+def _to_job(raw: dict, firm: str, scraped_date: datetime.date) -> Job:
     title = raw.get("title", "")
     department = _first_name(raw.get("departments"))
     return Job(
-        board=board_token,
+        board=firm,
         job_id=str(raw["id"]),
         title=title,
         department=department,

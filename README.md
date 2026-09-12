@@ -19,6 +19,16 @@ you to judge how stale a still-open listing is (some firms auto-reject on a
 rolling basis well before taking a listing down, which isn't something the
 Greenhouse API exposes either way).
 
+The `board` column shows the readable `firm` name from `greenhouse_boards.toml`
+(e.g. "HRT", "Optiver"), not the raw Greenhouse career-page slug (e.g.
+"wehrtyou", "optiverneurips") used to hit the API — see `job_boards/greenhouse/client.py`.
+Because `firm` (not the token) is half of the `(board, job_id)` dedup/prune
+key, renaming a firm in `greenhouse_boards.toml` makes every already-tracked
+job under that entry look new again on the next run; if you ever do that,
+also rewrite the `board` column of already-written rows to match, the same
+way this project's own migration to firm names did (bulk `update()` per tab,
+not `append`/`clear`).
+
 ## How classification works
 
 `jobscraper/classifications/classify_roles.py` holds `CATEGORIES`: an ordered

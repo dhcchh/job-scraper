@@ -4,7 +4,7 @@ new postings per category, prune closed ones.
 
     uv run python -m jobscraper.main
 
-Loops over GREENHOUSE_BOARD_TOKENS from config, one board at a time -- no
+Loops over GREENHOUSE_BOARDS from config, one board at a time -- no
 concurrency, since this runs once a day and there's no rate-limit pressure
 at this scale. Every fetched job is then classified by
 classify_roles.classify_job into a category, each of which is its own tab in
@@ -48,14 +48,14 @@ logger = logging.getLogger(__name__)
 
 def run() -> None:
     all_jobs: list[Job] = []
-    for board_token in config.GREENHOUSE_BOARD_TOKENS:
-        jobs = fetch_jobs(board_token)
+    for board in config.GREENHOUSE_BOARDS:
+        jobs = fetch_jobs(board["token"], board["firm"])
         all_jobs.extend(jobs)
 
     logger.info(
         "fetched %d jobs total across %d board(s)",
         len(all_jobs),
-        len(config.GREENHOUSE_BOARD_TOKENS),
+        len(config.GREENHOUSE_BOARDS),
     )
 
     jobs_by_category: dict[str, list[Job]] = {name: [] for name, _ in CATEGORIES}
@@ -75,7 +75,7 @@ def run() -> None:
     )
 
     spreadsheet = get_spreadsheet()
-    fetched_boards = set(config.GREENHOUSE_BOARD_TOKENS)
+    fetched_boards = {board["firm"] for board in config.GREENHOUSE_BOARDS}
     for category, _keywords in CATEGORIES:
         category_jobs = jobs_by_category[category]
         worksheet = get_worksheet(spreadsheet, category)

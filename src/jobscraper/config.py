@@ -26,13 +26,13 @@ def _load_boards(path: Path) -> list[dict]:
 
 
 GREENHOUSE_BOARDS: list[dict] = _load_boards(_BOARDS_FILE)
-GREENHOUSE_BOARD_TOKENS: list[str] = [board["token"] for board in GREENHOUSE_BOARDS]
 
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit
 #
 # Tab names aren't configured here -- sheets.writer.get_worksheet() opens one
-# tab per jobscraper.classify.CATEGORIES entry, by that category's name.
+# tab per jobscraper.classifications.classify_roles.CATEGORIES entry, by
+# that category's name.
 GOOGLE_SHEET_ID: str = os.environ["GOOGLE_SHEET_ID"]
 
 # The full service account JSON key, as one raw string -- not a file path.

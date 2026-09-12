@@ -49,14 +49,14 @@ def test_fetch_jobs_parses_response(monkeypatch):
 
     monkeypatch.setattr(client.requests, "get", fake_get)
 
-    jobs = client.fetch_jobs("acme", scraped_date=datetime.date(2026, 9, 12))
+    jobs = client.fetch_jobs("acme", "Acme Corp", scraped_date=datetime.date(2026, 9, 12))
 
     assert captured["url"] == f"{client.BASE_URL}/acme/jobs"
     assert captured["params"] == {"content": "true"}
     assert len(jobs) == 2
 
     first, second = jobs
-    assert first.board == "acme"
+    assert first.board == "Acme Corp"  # firm name, not the "acme" board token
     assert first.job_id == "12345"
     assert first.department == "Engineering"
     assert first.location == "Remote"
@@ -77,4 +77,4 @@ def test_fetch_jobs_raises_on_http_error(monkeypatch):
     monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FailingResponse())
 
     with pytest.raises(client.requests.HTTPError):
-        client.fetch_jobs("acme")
+        client.fetch_jobs("acme", "Acme Corp")
