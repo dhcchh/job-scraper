@@ -61,6 +61,16 @@ firm = "Qube Research & Technologies"
 company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
+token = "worldquant"
+firm = "WorldQuant"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "mangroup"
+firm = "Man Group"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
 token = "xtxmarketstechnologies"
 firm = "XTX Markets"
 company_type = "Prop Trading/Hedge Fund"
