@@ -1,6 +1,7 @@
 """Entrypoint: fetch every configured board's jobs, classify + route each into
-one of jobscraper.classifications.classify_roles's role categories, append
-new postings per category, prune closed ones.
+one of jobscraper.classifications.classify_roles's role categories crossed
+with classify_region's region, append new postings per (category, region)
+tab, prune closed ones.
 
     uv run python -m jobscraper.main
 
@@ -12,23 +13,32 @@ has exhausted those) is logged and skipped rather than aborting the whole
 run; its firm is left out of fetched_boards, so prune_closed_postings never
 mistakes "we couldn't check this board" for "everything on it just closed"
 (see that function's docstring). Every job from a board that DID succeed is
-then classified by classify_roles.classify_job into a category, each of
-which is its own tab in the spreadsheet; a job matching no category (HR,
-Legal, Sales, ...) is dropped rather than written anywhere. Each job's
-seniority level (Intern, Senior, Manager, ... or "Unspecified") is computed
-earlier, at fetch time -- see classify_seniority.classify_seniority and
-job_boards/greenhouse/client.py -- so it's already set on every Job here and
-just rides along as a column. Row order in each tab is left entirely to the
-end user (Sheets' own Data > Sort range / Filter views) -- this script never
-reorders existing rows, only appends new ones and deletes closed ones, so a
-sort or filter someone sets up in the sheet survives every run.
+classified by classify_roles.classify_job into a category, then
+classify_region.classify_region into PAC or RoW from its (already
+normalized -- see job_boards/greenhouse/client.py) location; the pair picks
+one of 10 spreadsheet tabs (5 categories x 2 regions, see
+classify_region.tab_name), added because the target audience is based in
+Singapore and wants local/regional roles easy to find rather than mixed in
+with everything else. A job matching no category (HR, Legal, Sales, ...) is
+dropped rather than written anywhere -- region is only ever computed for a
+job that already has a category, so a noise job's location is never
+classified at all. Each job's seniority level (Intern, Senior, Manager,
+... or "Unspecified") is computed earlier, at fetch time -- see
+classify_seniority.classify_seniority and job_boards/greenhouse/client.py
+-- so it's already set on every Job here and just rides along as a column.
+Row order in each tab is left entirely to the end user (Sheets' own Data >
+Sort range / Filter views) -- this script never reorders existing rows,
+only appends new ones and deletes closed ones, so a sort or filter someone
+sets up in the sheet survives every run.
 
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add e.g. jobscraper/job_boards/lever/client.py with its own
     fetch_jobs() -> list[Job], and extend the fetch loop below the same way.
   - more/edited categories: see classifications/classify_roles.py's
     CATEGORIES -- add a keyword there, or a whole new category + matching
-    spreadsheet tab. Same idea for seniority levels, in classify_seniority.py.
+    spreadsheet tab (x2, one per region -- see classify_region.tab_name).
+    Same idea for seniority levels, in classify_seniority.py, and for the
+    PAC/RoW split itself in classify_region.py's _PAC_COUNTRIES.
   - notifications: report success/failure/job counts somewhere (Slack,
     email, a GitHub Actions job summary) instead of only the run log --
     failed_firms below already has the list, just not sent anywhere yet.
@@ -37,6 +47,11 @@ TODO(extension points), roughly in the order you'll likely reach for them:
 import logging
 
 from jobscraper import config
+from jobscraper.classifications.classify_region import (
+    REGIONS,
+    classify_region,
+    tab_name,
+)
 from jobscraper.classifications.classify_roles import CATEGORIES, classify_job
 from jobscraper.job_boards.greenhouse.client import fetch_jobs
 from jobscraper.models import Job
@@ -92,28 +107,35 @@ def run() -> None:
         f" -- failed: {', '.join(sorted(failed_firms))}" if failed_firms else "",
     )
 
-    jobs_by_category: dict[str, list[Job]] = {name: [] for name, _ in CATEGORIES}
+    jobs_by_tab: dict[str, list[Job]] = {
+        tab_name(category, region): []
+        for category, _keywords in CATEGORIES
+        for region in REGIONS
+    }
     noise_count = 0
     for job in all_jobs:
         category = classify_job(job)
         if category is None:
             noise_count += 1
-        else:
-            jobs_by_category[category].append(job)
+            continue
+        region = classify_region(job.location)
+        jobs_by_tab[tab_name(category, region)].append(job)
 
     logger.info(
-        "classified %d job(s) across %d categor(y/ies), filtered %d as noise",
+        "classified %d job(s) across %d tab(s), filtered %d as noise",
         len(all_jobs) - noise_count,
-        len(CATEGORIES),
+        len(jobs_by_tab),
         noise_count,
     )
 
     spreadsheet = get_spreadsheet()
     for category, _keywords in CATEGORIES:
-        category_jobs = jobs_by_category[category]
-        worksheet = get_worksheet(spreadsheet, category)
-        append_jobs(worksheet, category_jobs)
-        prune_closed_postings(worksheet, category_jobs, fetched_boards=fetched_boards)
+        for region in REGIONS:
+            tab = tab_name(category, region)
+            tab_jobs = jobs_by_tab[tab]
+            worksheet = get_worksheet(spreadsheet, tab)
+            append_jobs(worksheet, tab_jobs)
+            prune_closed_postings(worksheet, tab_jobs, fetched_boards=fetched_boards)
 
 
 if __name__ == "__main__":

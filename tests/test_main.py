@@ -14,8 +14,8 @@ from jobscraper import main
 from jobscraper.models import Job
 
 
-def _job(firm, job_id, title="Software Engineer"):
-    return Job(firm, job_id, title, "Eng", "Remote", "https://x", "", datetime.date(2026, 9, 12))
+def _job(firm, job_id, title="Software Engineer", location="Remote"):
+    return Job(firm, job_id, title, "Eng", location, "https://x", "", datetime.date(2026, 9, 12))
 
 
 def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
@@ -60,8 +60,38 @@ def test_run_skips_failed_board_and_prunes_only_succeeded_firms(monkeypatch):
     assert prune_calls  # ran for every category
     assert all(fetched_boards == {"GoodCo"} for fetched_boards in prune_calls)
 
-    swe_jobs = next(jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE")
+    # good_job's location ("Remote") isn't a PAC country -- lands in RoW.
+    swe_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - RoW"
+    )
     assert swe_jobs == [good_job]
+
+
+def test_run_routes_jobs_to_category_and_region_tabs(monkeypatch):
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    pac_job = _job("Acme", "1", location="Singapore")
+    row_job = _job("Acme", "2", location="London, United Kingdom")
+
+    monkeypatch.setattr(
+        main, "fetch_jobs", lambda token, firm, company_type: [pac_job, row_job]
+    )
+
+    prune_calls: list[set[str]] = []
+    append_calls: list[tuple] = []
+    _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
+
+    main.run()
+
+    pac_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - PAC"
+    )
+    row_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - RoW"
+    )
+    assert pac_jobs == [pac_job]
+    assert row_jobs == [row_job]
 
 
 def test_run_excludes_firm_from_prune_if_any_of_its_boards_failed(monkeypatch):
