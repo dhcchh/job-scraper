@@ -31,6 +31,24 @@ Sort range / Filter views) -- this script never reorders existing rows,
 only appends new ones and deletes closed ones, so a sort or filter someone
 sets up in the sheet survives every run.
 
+Before touching any board, run() opens the spreadsheet and logs its title
+and URL -- a startup check, not decoration: `GOOGLE_SHEET_ID` is set
+independently in `.env` (local) and the GitHub Actions secret (CI), and
+nothing else here cross-checks the two, so a value that drifts on one side
+silently writes/prunes real data against the wrong file while still
+reporting a clean run (this has happened once already -- see CLAUDE.md's
+Known gaps). Logging the sheet's own identity makes that visible to anyone
+who actually reads the run log, even though it can't be checked
+automatically from here.
+
+At the end of the run, _build_summary_markdown/_write_job_summary append a
+run summary -- boards fetched/failed, jobs fetched/classified/filtered,
+and per-tab appended/pruned counts -- to `$GITHUB_STEP_SUMMARY`. That
+variable is only set inside a GitHub Actions run (it names a file the
+runner renders on the workflow's summary page); _write_job_summary no-ops
+when it's unset, which is always true for a local `uv run python -m
+jobscraper.main`.
+
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add e.g. jobscraper/job_boards/lever/client.py with its own
     fetch_jobs() -> list[Job], and extend the fetch loop below the same way.
@@ -39,12 +57,10 @@ TODO(extension points), roughly in the order you'll likely reach for them:
     spreadsheet tab (x2, one per region -- see classify_region.tab_name).
     Same idea for seniority levels, in classify_seniority.py, and for the
     PAC/RoW split itself in classify_region.py's _PAC_COUNTRIES.
-  - notifications: report success/failure/job counts somewhere (Slack,
-    email, a GitHub Actions job summary) instead of only the run log --
-    failed_firms below already has the list, just not sent anywhere yet.
 """
 
 import logging
+import os
 
 from jobscraper import config
 from jobscraper.classifications.classify_region import (
@@ -66,6 +82,11 @@ logger = logging.getLogger(__name__)
 
 
 def run() -> None:
+    spreadsheet = get_spreadsheet()
+    logger.info(
+        "writing to spreadsheet %r (%s)", spreadsheet.title, spreadsheet.url
+    )
+
     all_jobs: list[Job] = []
     succeeded_firms: set[str] = set()
     failed_firms: set[str] = set()
@@ -128,14 +149,83 @@ def run() -> None:
         noise_count,
     )
 
-    spreadsheet = get_spreadsheet()
+    tab_stats: dict[str, tuple[int, int, int]] = {}
     for category, _keywords in CATEGORIES:
         for region in REGIONS:
             tab = tab_name(category, region)
             tab_jobs = jobs_by_tab[tab]
             worksheet = get_worksheet(spreadsheet, tab)
-            append_jobs(worksheet, tab_jobs)
-            prune_closed_postings(worksheet, tab_jobs, fetched_boards=fetched_boards)
+            appended = append_jobs(worksheet, tab_jobs)
+            pruned = prune_closed_postings(
+                worksheet, tab_jobs, fetched_boards=fetched_boards
+            )
+            tab_stats[tab] = (len(tab_jobs), appended, pruned)
+
+    markdown = _build_summary_markdown(
+        spreadsheet_title=spreadsheet.title,
+        spreadsheet_url=spreadsheet.url,
+        succeeded_firms=succeeded_firms,
+        failed_firms=failed_firms,
+        total_boards=len(config.GREENHOUSE_BOARDS),
+        total_jobs=len(all_jobs),
+        noise_count=noise_count,
+        tab_stats=tab_stats,
+    )
+    _write_job_summary(markdown)
+
+
+def _build_summary_markdown(
+    *,
+    spreadsheet_title: str,
+    spreadsheet_url: str,
+    succeeded_firms: set[str],
+    failed_firms: set[str],
+    total_boards: int,
+    total_jobs: int,
+    noise_count: int,
+    tab_stats: dict[str, tuple[int, int, int]],
+) -> str:
+    """The run summary as GitHub-flavored Markdown, for _write_job_summary.
+
+    Kept separate from _write_job_summary so it can be tested as a plain
+    string-in/string-out function, with no env var or filesystem involved.
+    """
+    total_appended = sum(appended for _count, appended, _pruned in tab_stats.values())
+    total_pruned = sum(pruned for _count, _appended, pruned in tab_stats.values())
+
+    lines = [
+        f"## Job scraper run: {'success' if not failed_firms else 'partial failure'}",
+        "",
+        f"Spreadsheet: [{spreadsheet_title}]({spreadsheet_url})",
+        "",
+        f"- Boards fetched: {len(succeeded_firms)}/{total_boards}"
+        + (f" -- failed: {', '.join(sorted(failed_firms))}" if failed_firms else ""),
+        f"- Jobs fetched: {total_jobs} ({noise_count} filtered as noise)",
+        f"- Appended: {total_appended} new row(s)",
+        f"- Pruned: {total_pruned} closed posting(s)",
+        "",
+        "| Tab | Jobs this run | Appended | Pruned |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for tab, (job_count, appended, pruned) in sorted(tab_stats.items()):
+        lines.append(f"| {tab} | {job_count} | {appended} | {pruned} |")
+
+    return "\n".join(lines) + "\n"
+
+
+def _write_job_summary(markdown: str) -> None:
+    """Append markdown to $GITHUB_STEP_SUMMARY, if set.
+
+    That variable only exists inside a GitHub Actions run -- it names a
+    file the runner renders on the workflow's own summary page. A local
+    `uv run python -m jobscraper.main` (and every test) has no such env
+    var, so this is a no-op there rather than an error.
+    """
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+    with open(summary_path, "a") as f:
+        f.write(markdown)
 
 
 if __name__ == "__main__":

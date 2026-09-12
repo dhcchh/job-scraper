@@ -65,7 +65,7 @@ def get_worksheet(spreadsheet: gspread.Spreadsheet, name: str) -> gspread.Worksh
     return spreadsheet.worksheet(name)
 
 
-def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> None:
+def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> int:
     """Append this run's not-yet-seen jobs as new rows.
 
     A job already present in the sheet -- matched by (board, job_id) -- is
@@ -73,10 +73,13 @@ def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> None:
     would get a fresh row every single day it's fetched. A side effect
     worth knowing: since a job's row is now written exactly once, its
     scraped_date is effectively "first seen", not "last confirmed open".
+
+    Returns the number of rows actually appended (0 if none) -- main.py
+    rolls this up into its per-run summary.
     """
     if not jobs:
         logger.info("no jobs to append")
-        return
+        return 0
 
     existing = _existing_keys(worksheet)
     new_jobs = [job for job in jobs if (job.board, job.job_id) not in existing]
@@ -84,13 +87,14 @@ def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> None:
 
     if not new_jobs:
         logger.info("no new jobs to append (%d already tracked)", skipped)
-        return
+        return 0
 
     rows = [job.to_row() for job in new_jobs]
     worksheet.append_rows(rows, value_input_option="USER_ENTERED")
     logger.info(
         "appended %d new row(s), skipped %d already-tracked", len(rows), skipped
     )
+    return len(rows)
 
 
 def _existing_keys(worksheet: gspread.Worksheet) -> set[tuple[str, str]]:
@@ -115,7 +119,7 @@ def prune_closed_postings(
     worksheet: gspread.Worksheet,
     current_jobs: list[Job],
     fetched_boards: set[str],
-) -> None:
+) -> int:
     """Delete every row for a posting that's no longer open.
 
     A row is closed -- and removed -- when its board is in fetched_boards
@@ -133,10 +137,13 @@ def prune_closed_postings(
     (and, for a firm with more than one board token, only if ALL of its
     tokens succeeded) -- a board that failed after retries is left out, so
     its still-open postings are correctly left alone rather than deleted.
+
+    Returns the number of rows actually removed (0 if none) -- main.py
+    rolls this up into its per-run summary.
     """
     all_values = worksheet.get_all_values()
     if not all_values:
-        return  # empty sheet -- nothing to prune, no header to preserve either
+        return 0  # empty sheet -- nothing to prune, no header to preserve either
 
     header, *data_rows = all_values
     board_index = _column_index(header, "board")
@@ -155,7 +162,7 @@ def prune_closed_postings(
     pruned_count = len(data_rows) - len(surviving)
     if pruned_count == 0:
         logger.info("prune: no closed postings")
-        return
+        return 0
 
     # Explicit keyword args here on purpose: gspread has changed
     # Worksheet.update's positional argument order (range_name vs values
@@ -164,6 +171,7 @@ def prune_closed_postings(
     worksheet.clear()
     worksheet.update(values=[header] + surviving, value_input_option="USER_ENTERED")
     logger.info("prune: removed %d closed posting(s)", pruned_count)
+    return pruned_count
 
 
 def _row_key(

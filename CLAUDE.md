@@ -121,6 +121,22 @@ that way deliberately so each function stays self-contained and testable
 in isolation, matching the existing pattern rather than threading sheet
 state through `main.py`.
 
+Both functions also return the count of rows they actually touched
+(appended/pruned, `0` if none) rather than `None` — the only consumer is
+`main.py`'s end-of-run job summary (see below), so `backfill.py`, which
+doesn't call either function, is unaffected.
+
+`main.py`'s `run()` opens the spreadsheet before doing anything else and
+logs its title/URL — see "Known gaps" below for why (a `GOOGLE_SHEET_ID`
+that drifts between `.env` and the CI secret). At the end of the run it
+also appends a markdown summary (boards fetched/failed, job counts,
+per-tab appended/pruned) to `$GITHUB_STEP_SUMMARY` via
+`_write_job_summary`, which no-ops when that variable is unset — true for
+every local run and every test, true only inside an actual GitHub Actions
+job otherwise. `_build_summary_markdown` is kept as a separate pure
+function (stats in, markdown string out) specifically so it's testable
+without an env var or filesystem.
+
 Pruning always rewrites the whole sheet in one `clear()` + `update()` call
 rather than deleting rows one at a time, to stay under Sheets API rate
 limits — this makes `clear()`+`update()` two non-atomic calls, so a failure
@@ -183,9 +199,14 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
   `uv run pytest` manually; nothing blocks a broken commit from reaching
   `main` before the next scheduled scrape. Worth a workflow that runs
   `uv run pytest` on push/PR.
-- **No run notifications** — success/failure/job-counts aren't reported
-  anywhere but the run log; a silent failure is only caught by manually
-  checking the sheet or GitHub Actions.
+- ~~No run notifications~~ — done: `main.py`'s `run()` now appends a
+  markdown summary (boards fetched/failed, job counts, per-tab
+  appended/pruned) to `$GITHUB_STEP_SUMMARY`, so a run's outcome shows up
+  on the GitHub Actions job's own summary page, not just buried in the run
+  log. See `sheets/writer.py` and `main.py` in Architecture above. Still
+  nothing pushed *outside* GitHub (Slack/email) — only worth adding if a
+  failed run needs to page someone rather than wait to be noticed on the
+  Actions tab.
 - **No worksheet auto-creation** — `sheets/writer.get_worksheet()` raises if
   a tab doesn't already exist; fine while tabs are managed by hand.
 - **No fail-fast config validation** — a `[[boards]]` entry missing
@@ -211,16 +232,19 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
 - ~~Region refactor~~ — done, see `classifications/classify_region.py` in
   Architecture above. Turned out to be 10 tabs (5 categories × PAC/RoW), not
   8 — confirmed against the actual spreadsheet tab names.
-- **No check that `GOOGLE_SHEET_ID` matches between `.env` and the GitHub
-  Actions secret** — bit this project once already: the CI secret silently
+- ~~No check that `GOOGLE_SHEET_ID` matches between `.env` and the GitHub
+  Actions secret~~ — bit this project once already: the CI secret silently
   pointed at a stale spreadsheet (old bare-category tab names) for a while
   after `.env` and the live spreadsheet had both moved on to the
   PAC/RoW-tab structure, and every scheduled run still reported `success`
   (it was writing real data, just to the wrong file). Nothing in this repo
-  cross-checks the two — if `GOOGLE_SHEET_ID` (or the tab set) ever gets
-  changed on one side without the other, expect the same failure mode:
-  CI green, sheet stale. Worth a startup check in `main.py` (e.g. log the
-  sheet's own title/URL) so a mismatch is at least visible in the run log.
+  cross-checks the two automatically — that's still true, and can't fully
+  be fixed from one side alone — but `main.py`'s `run()` now logs the
+  spreadsheet's own title/URL before touching anything (also included in
+  the job summary above), so a `GOOGLE_SHEET_ID` (or tab set) that's
+  drifted between `.env` and the CI secret is at least visible to whoever
+  reads the run log or job summary, instead of a silent CI-green/sheet-stale
+  mismatch.
 
 ## Scale limits
 

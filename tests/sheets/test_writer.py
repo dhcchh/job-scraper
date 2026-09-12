@@ -55,15 +55,17 @@ def test_append_jobs_writes_job_rows():
     worksheet = _FakeWorksheet()
     job = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
-    writer.append_jobs(worksheet, [job])
+    appended = writer.append_jobs(worksheet, [job])
 
     assert worksheet.appended == [job.to_row()]
+    assert appended == 1
 
 
 def test_append_jobs_noop_on_empty_list():
     worksheet = _FakeWorksheet()
-    writer.append_jobs(worksheet, [])
+    appended = writer.append_jobs(worksheet, [])
     assert worksheet.appended is None
+    assert appended == 0
 
 
 def test_append_jobs_skips_already_tracked_job():
@@ -71,9 +73,10 @@ def test_append_jobs_skips_already_tracked_job():
     worksheet = _FakeWorksheet(rows)
     job = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
-    writer.append_jobs(worksheet, [job])
+    appended = writer.append_jobs(worksheet, [job])
 
     assert worksheet.appended is None  # already tracked -- not re-appended
+    assert appended == 0
 
 
 def test_append_jobs_appends_only_the_new_ones():
@@ -111,12 +114,13 @@ def test_prune_removes_postings_missing_from_current_fetch():
     worksheet = _FakeWorksheet(rows)
     current_jobs = [_job("acme", "2"), _job("acme", "3")]
 
-    writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
+    pruned = writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
 
     assert worksheet.cleared is True
     job_id_index = writer.HEADER.index("job_id")
     kept_ids = [row[job_id_index] for row in worksheet.updated_with[1:]]
     assert kept_ids == ["2", "3"]
+    assert pruned == 1
 
 
 def test_prune_noop_when_nothing_closed():
@@ -124,9 +128,10 @@ def test_prune_noop_when_nothing_closed():
     worksheet = _FakeWorksheet(rows)
     current_jobs = [_job("acme", "1")]
 
-    writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
+    pruned = writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
 
     assert worksheet.cleared is False  # nothing closed, no rewrite needed
+    assert pruned == 0
 
 
 def test_prune_leaves_unfetched_board_rows_alone():
