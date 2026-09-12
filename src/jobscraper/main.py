@@ -54,6 +54,7 @@ def run() -> None:
     all_jobs: list[Job] = []
     succeeded_firms: set[str] = set()
     failed_firms: set[str] = set()
+    succeeded_entries = 0
     for board in config.GREENHOUSE_BOARDS:
         firm = board["firm"]
         try:
@@ -68,6 +69,7 @@ def run() -> None:
             continue
         all_jobs.extend(jobs)
         succeeded_firms.add(firm)
+        succeeded_entries += 1
 
     # A firm can have more than one board token (e.g. Optiver has two) --
     # only treat a firm as "fully fetched" this run if every one of its
@@ -78,9 +80,14 @@ def run() -> None:
     fetched_boards = succeeded_firms - failed_firms
 
     logger.info(
+        # succeeded_entries/total counts board TOKENS (matches
+        # config.GREENHOUSE_BOARDS 1:1); fetched_boards counts distinct
+        # FIRMS, which is smaller whenever one firm has multiple tokens
+        # (e.g. Optiver) -- comparing that against the token count would
+        # make a fully successful run misleadingly print e.g. "14/15".
         "fetched %d jobs total across %d/%d board(s)%s",
         len(all_jobs),
-        len(fetched_boards),
+        succeeded_entries,
         len(config.GREENHOUSE_BOARDS),
         f" -- failed: {', '.join(sorted(failed_firms))}" if failed_firms else "",
     )
