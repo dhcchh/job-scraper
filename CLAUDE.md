@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync                        # install dependencies
 cp .env.example .env           # then fill in (see README's Setup section)
 
-uv run python -m jobscraper.main   # run the scraper once, locally
+uv run python -m jobscraper.main       # run the scraper once, locally
+uv run python -m jobscraper.sheets.backfill  # full-refresh every existing row/tab (see Architecture)
 
 uv run pytest                              # full test suite
 uv run pytest tests/sheets/test_writer.py  # one test file
@@ -43,10 +44,17 @@ comma-separated env var.
 
 **`models.py`** defines `Job`, the one shape every board client must
 produce, and `FIELDS`, the column order written to (and read back from) the
-sheet — keep `FIELDS` in sync with `sheets.writer.HEADER`. This is the
-seam for adding a board: a new `jobscraper/<board>/client.py` exposing
-`fetch_jobs(token) -> list[Job]`, wired into `main.py`'s loop, is the only
-change needed elsewhere.
+sheet — keep `FIELDS` in sync with `sheets.writer.HEADER`. Order is chosen
+for a human scanning the sheet, not for `Job`'s constructor: the columns
+someone actually filters/sorts by (`board`, `title`, `location`,
+`updated_at`, `company_type`) come first, `url` keeps a near-front spot
+since it's the one column meant to be clicked, and `job_id`/`scraped_date`
+(pure bookkeeping) sit last. `Job`'s own dataclass field order is untouched
+by any of this — only `FIELDS` and `to_row()` encode sheet column order, so
+reordering columns never means touching every `Job(...)` call site. This is
+also the seam for adding a board: a new `jobscraper/<board>/client.py`
+exposing `fetch_jobs(token) -> list[Job]`, wired into `main.py`'s loop, is
+the only change needed elsewhere.
 
 **`greenhouse/client.py`** has one function, `fetch_jobs`, hitting
 Greenhouse's public unauthenticated Job Board API. Transient failures
@@ -57,6 +65,37 @@ per-board on top of that — a board that still fails after retries is
 logged and skipped rather than aborting the whole run, so one bad board or
 a sustained Greenhouse outage no longer takes down every other board's
 update.
+
+**`classifications/classify_region.py`** is the other half of what picks a
+job's spreadsheet tab, alongside `classify_roles.py`'s category: `main.py`
+now writes to 10 tabs (5 categories × `REGIONS`, i.e. `("PAC", "RoW")`),
+named via `tab_name(category, region)` → `"{category} - {region}"` — this
+must match the tabs already in the spreadsheet exactly, since (like every
+other tab) nothing here auto-creates one. `classify_region` reads
+`Job.location` (already normalized/`" | "`-joined by `greenhouse/client.py`
+— see below) and returns `"PAC"` if *any* one of the job's offices is in
+`_PAC_COUNTRIES` (Singapore, Hong Kong, Australia, Japan, South Korea,
+China, Taiwan, New Zealand), else `"RoW"` — "any, not every" is deliberate:
+a posting listing Singapore alongside London still counts as one a
+Singapore-based candidate could get into.
+
+**`classifications/normalize_location.py`** canonicalizes one office name
+via a hand-curated lookup table (same shape/philosophy as
+`classify_seniority.py`'s `LEVELS` — unmapped falls through cleaned but
+unchanged, deliberately, rather than guessing). The non-obvious part lives
+in `greenhouse/client.py`'s `_location`, which is what calls it: a
+Greenhouse job's `location.name` is one free-text string a recruiter typed
+(e.g. `"London, United Kingdom; New York, NY, United States"`) and can't be
+safely split on a delimiter — different boards mix commas *inside* one
+location (city, state, country) with commas *and* semicolons *between*
+locations, inconsistently. `raw["offices"]` (present because `fetch_jobs`
+always requests `content=true`) is Greenhouse's own pre-split per-office
+list instead, so `_location` builds `Job.location` from that — normalizing
+and de-duplicating each office name, then joining with `" | "` — and only
+falls back to the raw `location.name` string if `offices` is ever
+missing/empty. `classify_region` above depends on this: it only ever reads
+the country `normalize_location` already put after the last comma, so a
+new PAC city needs an entry here before it's recognized as PAC there too.
 
 **`sheets/writer.py`** is the part most likely to surprise someone reading
 only one file at a time — its two functions both key on `(board, job_id)`,
@@ -88,6 +127,44 @@ limits — this makes `clear()`+`update()` two non-atomic calls, so a failure
 between them would briefly leave just the header row. Acceptable for a
 single-writer daily job.
 
+Both `append_jobs` and `prune_closed_postings` write with
+`value_input_option="USER_ENTERED"`, not `"RAW"`, so Sheets parses each
+value the way a human typing it would — `scraped_date` becomes a real date
+(sortable/filterable/formattable as one, not plain text) and `url` gets
+auto-linkified. This is the one piece of "human-readable output" that has
+to live in code rather than be set up by hand in Sheets, since it's about
+how a value is interpreted at write time, not how the sheet looks — see
+"Known gaps" below for the presentation half of that split.
+
+**`sheets/backfill.py`** is the retroactive counterpart to `writer.py`:
+`append_jobs` only ever touches brand-new rows, and `prune_closed_postings`
+rewrites a tab (preserving its existing header/column order as-is) only
+when it actually has a row to delete — so a classification fix, a
+`company_type` re-tag in `greenhouse_boards.toml`, or a `FIELDS` reorder
+never reaches an already-written row on its own, and a quiet tab (nothing
+ever closes) could sit on stale data indefinitely. `refresh_worksheet` reads
+each tab's *current* header (whatever order it happens to be in), recomputes
+`seniority`/`company_type` from each row's own columns, then re-lays every
+row out into the *current* `models.FIELDS` order and overwrites the header
+to match — run by hand (`uv run python -m jobscraper.sheets.backfill`),
+never from `main.py`'s daily loop. Run it once right after any `FIELDS`
+reorder ships, before the next scheduled run, or `append_jobs`'s
+`Job.to_row()` output (always in `FIELDS` order) will land under whatever
+stale header the tab still has. It also re-normalizes `location` through
+`normalize_location.py`'s current table, best-effort: a cell already
+`" | "`-joined by a previous backfill run gets fully re-cleaned per piece,
+but a cell written before location normalization existed at all is one
+un-split legacy string with no `offices` data left to recover — it's
+normalized as one whole string (fixes it if it was a single plain city
+name) and otherwise left alone rather than guessed at, self-healing only
+once that posting naturally closes and reopens through `fetch_jobs`. It
+deliberately does not re-route a job to a different category *or region*
+tab (moving rows across tabs risks duplicating/losing data if interrupted)
+or rewrite
+`board` after a firm rename (the old firm name is already gone from
+`greenhouse_boards.toml` by the time this runs, so there's nothing to look
+it up against) — see its module docstring.
+
 ## Known gaps / next improvements
 
 Not urgent, but worth doing roughly in this order as the project grows —
@@ -114,6 +191,23 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
 - **No fail-fast config validation** — a `[[boards]]` entry missing
   `company_type`/`firm`/`token` surfaces as a bare `KeyError` in `main.py`'s
   loop, not a message naming the bad entry.
-- **Location isn't normalized** — multi-location postings are one combined
-  string (e.g. "London, Montreal, Singapore"), sometimes with stray leading
-  whitespace; fine today, would matter for per-city filtering later.
+- ~~Location isn't normalized~~ — done, see `classifications/normalize_location.py`
+  in Architecture above.
+- **No visual highlight for a run's newly-scraped rows** — nothing marks
+  which rows came from today's run vs. an older one. This is presentation,
+  not data, so it belongs in the Sheets UI as a conditional formatting rule
+  keyed on `scraped_date` (e.g. highlight rows where `scraped_date =
+  TODAY()`), set up once by hand rather than in the script. Like all sheet
+  formatting, it survives every run for free: `prune_closed_postings`'s
+  `clear()`+`update()` only touches cell values via the Sheets API, never
+  formatting.
+- **No default sort/visual ordering** — row order is deliberately left to
+  the end user (see commit 99a8568 and `main.py`'s docstring: the script
+  never reorders existing rows, so a user's own sort/filter setup survives
+  every append/prune). A default "most recent first" view should likewise
+  be set up once in the sheet itself — a Sheets sort (Data > Sort range) or
+  a Filter view keyed on `scraped_date` — not code that re-sorts rows on
+  every run, which would undo it.
+- ~~Region refactor~~ — done, see `classifications/classify_region.py` in
+  Architecture above. Turned out to be 10 tabs (5 categories × PAC/RoW), not
+  8 — confirmed against the actual spreadsheet tab names.
