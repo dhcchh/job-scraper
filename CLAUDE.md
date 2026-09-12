@@ -207,6 +207,18 @@ especially once non-quant firms are added to `greenhouse_boards.toml`:
   nothing pushed *outside* GitHub (Slack/email) — only worth adding if a
   failed run needs to page someone rather than wait to be noticed on the
   Actions tab.
+- **Telegram digest of new postings** — requested: a Telegram bot posts one
+  batched digest per run (not one message per job) to a supergroup's
+  "jobs" subtopic (`message_thread_id` on `sendMessage`), listing only
+  that run's newly-appended jobs in DA/BI, DS/ML/Algos, and SWE/DE (not
+  QT/QR or SRE/DevOps), one line each — `"{title} in {location} from
+  {company}, {seniority}"` — plus a link back to the sheet ("see the
+  latest"). Needs two new secrets (bot token, target chat id + thread id).
+  Implementation snag: `append_jobs` currently returns only a *count* of
+  newly-appended rows (see Architecture above), not the rows themselves —
+  building the digest needs either changing it to return the new `Job`
+  list too, or `main.py` redoing the same already-tracked-keys filter
+  itself just to know which of a tab's jobs were actually new this run.
 - **No worksheet auto-creation** — `sheets/writer.get_worksheet()` raises if
   a tab doesn't already exist; fine while tabs are managed by hand.
 - **No fail-fast config validation** — a `[[boards]]` entry missing
