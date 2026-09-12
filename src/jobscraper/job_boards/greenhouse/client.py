@@ -12,16 +12,19 @@ for an existing token would make every already-tracked job under that token
 look new again next run -- rename firms there with care, and re-key any
 already-written rows to match if you do.
 
-TODO(retries): no retry/backoff here -- a transient network blip or a
-Greenhouse 5xx fails the whole run (see main.py, which doesn't catch this
-per board either). Fine for a personal daily job at this scale; add a retry
-loop here if it turns out to be flaky in practice.
+Transient failures (connection errors, timeouts, 5xx, 429) are retried with
+exponential backoff -- see _get_with_retries. Anything else (a 4xx other
+than 429) raises immediately: retrying a bad request/board token can't
+possibly succeed. Exhausting all retries still raises, same as before this
+existed -- main.py is what decides a failed board shouldn't abort the whole
+run (it catches per-board and skips), not this module.
 """
 
 from __future__ import annotations
 
 import datetime
 import logging
+import time
 
 import requests
 
@@ -31,6 +34,12 @@ from jobscraper.classifications.classify_seniority import classify_seniority
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
+
+# 3 attempts total (1 initial + 2 retries), 2s/4s backoff between them --
+# enough to ride out a brief network blip or a Greenhouse hiccup without
+# stalling a daily run for long if it's not going to recover.
+_MAX_ATTEMPTS = 3
+_BACKOFF_SECONDS = 2.0
 
 
 def fetch_jobs(
@@ -60,14 +69,55 @@ def fetch_jobs(
         scraped_date = datetime.date.today()
 
     url = f"{BASE_URL}/{board_token}/jobs"
-    response = requests.get(url, params={"content": "true"}, timeout=30)
-    response.raise_for_status()  # no retry loop -- see module docstring
+    response = _get_with_retries(board_token, url, params={"content": "true"})
 
     payload = response.json()
     raw_jobs = payload.get("jobs", [])
     logger.info("greenhouse[%s]: fetched %d jobs", board_token, len(raw_jobs))
 
     return [_to_job(raw, firm, company_type, scraped_date) for raw in raw_jobs]
+
+
+def _get_with_retries(board_token: str, url: str, *, params: dict) -> requests.Response:
+    """GET url, retrying transient failures with exponential backoff.
+
+    Retries a connection error/timeout (no response at all) or an HTTPError
+    whose response is a 5xx or 429 (server trouble/rate-limited -- worth
+    trying again) up to _MAX_ATTEMPTS times total. Any other HTTPError (a
+    4xx like a bad/renamed board token) raises immediately: the request
+    itself is wrong, so retrying it changes nothing.
+    """
+    attempt = 1
+    while True:
+        try:
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            return response
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.HTTPError,
+        ) as exc:
+            if attempt >= _MAX_ATTEMPTS or not _is_retryable(exc):
+                raise
+            delay = _BACKOFF_SECONDS * (2 ** (attempt - 1))
+            logger.warning(
+                "greenhouse[%s]: attempt %d/%d failed (%s), retrying in %.0fs",
+                board_token,
+                attempt,
+                _MAX_ATTEMPTS,
+                exc,
+                delay,
+            )
+            time.sleep(delay)
+            attempt += 1
+
+
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, requests.exceptions.HTTPError):
+        status = exc.response.status_code if exc.response is not None else None
+        return status is not None and (status >= 500 or status == 429)
+    return isinstance(exc, (requests.exceptions.ConnectionError, requests.exceptions.Timeout))
 
 
 def _to_job(

@@ -6,30 +6,31 @@ new postings per category, prune closed ones.
 
 Loops over GREENHOUSE_BOARDS from config, one board at a time -- no
 concurrency, since this runs once a day and there's no rate-limit pressure
-at this scale. Every fetched job is then classified by
-classify_roles.classify_job into a category, each of which is its own tab in
-the spreadsheet; a job matching no category (HR, Legal, Sales, ...) is
-dropped rather than written anywhere. Each job's seniority level (Intern,
-Senior, Manager, ... or "Unspecified") is computed earlier, at fetch time --
-see classify_seniority.classify_seniority and job_boards/greenhouse/client.py
--- so it's already set on every Job here and just rides along as a column.
-Each category's tab is kept sorted (most recent first, then location, then
-company_type, then firm) by sheets.writer.sort_rows after every append/prune.
+at this scale. A board whose fetch fails (greenhouse.client.fetch_jobs
+already retries transient errors -- see that module -- so what reaches here
+has exhausted those) is logged and skipped rather than aborting the whole
+run; its firm is left out of fetched_boards, so prune_closed_postings never
+mistakes "we couldn't check this board" for "everything on it just closed"
+(see that function's docstring). Every job from a board that DID succeed is
+then classified by classify_roles.classify_job into a category, each of
+which is its own tab in the spreadsheet; a job matching no category (HR,
+Legal, Sales, ...) is dropped rather than written anywhere. Each job's
+seniority level (Intern, Senior, Manager, ... or "Unspecified") is computed
+earlier, at fetch time -- see classify_seniority.classify_seniority and
+job_boards/greenhouse/client.py -- so it's already set on every Job here and
+just rides along as a column. Each category's tab is kept sorted (most
+recent first, then location, then company_type, then firm) by
+sheets.writer.sort_rows after every append/prune.
 
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add e.g. jobscraper/job_boards/lever/client.py with its own
-    fetch_jobs() -> list[Job], and extend all_jobs below the same way.
+    fetch_jobs() -> list[Job], and extend the fetch loop below the same way.
   - more/edited categories: see classifications/classify_roles.py's
     CATEGORIES -- add a keyword there, or a whole new category + matching
     spreadsheet tab. Same idea for seniority levels, in classify_seniority.py.
-  - retries/backoff: greenhouse.client.fetch_jobs raises immediately on any
-    HTTP error, and the loop below doesn't catch per-board either -- one
-    bad board or one Greenhouse hiccup currently aborts the whole run. Note
-    that prune_closed_postings below assumes every configured board
-    succeeded this run (see its docstring) -- fix that assumption at the
-    same time as adding per-board error handling.
   - notifications: report success/failure/job counts somewhere (Slack,
-    email, a GitHub Actions job summary) instead of only the run log.
+    email, a GitHub Actions job summary) instead of only the run log --
+    failed_firms below already has the list, just not sent anywhere yet.
 """
 
 import logging
@@ -51,14 +52,37 @@ logger = logging.getLogger(__name__)
 
 def run() -> None:
     all_jobs: list[Job] = []
+    succeeded_firms: set[str] = set()
+    failed_firms: set[str] = set()
     for board in config.GREENHOUSE_BOARDS:
-        jobs = fetch_jobs(board["token"], board["firm"], board["company_type"])
+        firm = board["firm"]
+        try:
+            jobs = fetch_jobs(board["token"], firm, board["company_type"])
+        except Exception:
+            logger.exception(
+                "greenhouse[%s]: failed to fetch after retries, skipping this "
+                "board for the rest of the run",
+                firm,
+            )
+            failed_firms.add(firm)
+            continue
         all_jobs.extend(jobs)
+        succeeded_firms.add(firm)
+
+    # A firm can have more than one board token (e.g. Optiver has two) --
+    # only treat a firm as "fully fetched" this run if every one of its
+    # boards succeeded. Otherwise the failed board's still-open postings
+    # would look closed to prune_closed_postings below (its jobs are
+    # missing from current_jobs) purely because a *different* token for the
+    # same firm happened to succeed.
+    fetched_boards = succeeded_firms - failed_firms
 
     logger.info(
-        "fetched %d jobs total across %d board(s)",
+        "fetched %d jobs total across %d/%d board(s)%s",
         len(all_jobs),
+        len(fetched_boards),
         len(config.GREENHOUSE_BOARDS),
+        f" -- failed: {', '.join(sorted(failed_firms))}" if failed_firms else "",
     )
 
     jobs_by_category: dict[str, list[Job]] = {name: [] for name, _ in CATEGORIES}
@@ -78,7 +102,6 @@ def run() -> None:
     )
 
     spreadsheet = get_spreadsheet()
-    fetched_boards = {board["firm"] for board in config.GREENHOUSE_BOARDS}
     for category, _keywords in CATEGORIES:
         category_jobs = jobs_by_category[category]
         worksheet = get_worksheet(spreadsheet, category)

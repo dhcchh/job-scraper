@@ -49,10 +49,14 @@ seam for adding a board: a new `jobscraper/<board>/client.py` exposing
 change needed elsewhere.
 
 **`greenhouse/client.py`** has one function, `fetch_jobs`, hitting
-Greenhouse's public unauthenticated Job Board API. No retry/backoff: any
-HTTP error propagates straight up and aborts the whole run (see
-`main.py`'s `run()`, which doesn't catch per-board either). This is a
-known, deliberate gap at the project's current scale, not an oversight.
+Greenhouse's public unauthenticated Job Board API. Transient failures
+(connection errors, timeouts, 5xx, 429) are retried up to 3 attempts total
+with exponential backoff; anything else (a 4xx like a bad/renamed token)
+raises immediately since retrying can't fix it. `main.py`'s `run()` catches
+per-board on top of that — a board that still fails after retries is
+logged and skipped rather than aborting the whole run, so one bad board or
+a sustained Greenhouse outage no longer takes down every other board's
+update.
 
 **`sheets/writer.py`** is the part most likely to surprise someone reading
 only one file at a time — its two functions both key on `(board, job_id)`,
@@ -66,12 +70,11 @@ not on age:
   not merely old. It takes `fetched_boards` as an explicit argument rather
   than inferring it from the jobs list, specifically so a board that
   failed to fetch isn't mistaken for "every one of its postings just
-  closed." `main.py` currently passes every configured board as
-  `fetched_boards`, which is only safe because a single board's fetch
-  failure today aborts the run before pruning is ever reached — if
-  per-board retry/error-handling is added later, this needs to become the
-  set of boards that actually succeeded that run, or a silently-failed
-  board would have its still-open postings deleted.
+  closed." `main.py` passes only the firms that actually succeeded this
+  run — and for a firm with more than one board token (Optiver has two),
+  only if *all* of its tokens succeeded, since the two share one dedup key
+  and a partial success would otherwise make the failed token's postings
+  look closed.
 
 Both `append_jobs` and `prune_closed_postings` do their own independent
 `worksheet.get_all_values()` read (two reads per run, not shared) — kept
@@ -84,3 +87,33 @@ rather than deleting rows one at a time, to stay under Sheets API rate
 limits — this makes `clear()`+`update()` two non-atomic calls, so a failure
 between them would briefly leave just the header row. Acceptable for a
 single-writer daily job.
+
+## Known gaps / next improvements
+
+Not urgent, but worth doing roughly in this order as the project grows —
+especially once non-quant firms are added to `greenhouse_boards.toml`:
+
+- **Seniority levels miss numeric/leveling titles** — `classify_seniority.py`
+  only matches English seniority words (Senior, Manager, ...); big-tech-style
+  titles ("Software Engineer II", "SDE II", "L4/L5") fall through to
+  `Unspecified` today. Likely to matter as soon as non-quant firms are added.
+- **Role classifier needs a validation pass per new firm type** —
+  `classify_roles.py`'s keyword lists were tuned by dry-running against the
+  current 15 quant-firm boards' real postings. A firm with different title
+  conventions for the same 5 categories will likely need the same kind of
+  tuning pass; don't assume it Just Works untested.
+- **No CI test run on push** — tests only run when someone runs
+  `uv run pytest` manually; nothing blocks a broken commit from reaching
+  `master` before the next scheduled scrape. Worth a workflow that runs
+  `uv run pytest` on push/PR.
+- **No run notifications** — success/failure/job-counts aren't reported
+  anywhere but the run log; a silent failure is only caught by manually
+  checking the sheet or GitHub Actions.
+- **No worksheet auto-creation** — `sheets/writer.get_worksheet()` raises if
+  a tab doesn't already exist; fine while tabs are managed by hand.
+- **No fail-fast config validation** — a `[[boards]]` entry missing
+  `company_type`/`firm`/`token` surfaces as a bare `KeyError` in `main.py`'s
+  loop, not a message naming the bad entry.
+- **Location isn't normalized** — multi-location postings are one combined
+  string (e.g. "London, Montreal, Singapore"), sometimes with stray leading
+  whitespace; fine today, would matter for per-city filtering later.

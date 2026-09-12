@@ -129,12 +129,10 @@ def prune_closed_postings(
     would otherwise be invisible in current_jobs and look unfetched, so its
     (actually closed) rows would wrongly survive.
 
-    TODO(retries): main.py currently aborts the whole run on any board's
-    fetch failure, so reaching this call always means every configured
-    board succeeded -- passing every configured board as fetched_boards is
-    safe today. If per-board error handling is added later, pass only the
-    boards that actually succeeded this run, or a board that failed without
-    raising would have its still-open postings deleted here.
+    main.py passes only the firms whose fetch actually succeeded this run
+    (and, for a firm with more than one board token, only if ALL of its
+    tokens succeeded) -- a board that failed after retries is left out, so
+    its still-open postings are correctly left alone rather than deleted.
     """
     all_values = worksheet.get_all_values()
     if not all_values:
