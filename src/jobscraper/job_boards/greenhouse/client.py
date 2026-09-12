@@ -30,6 +30,7 @@ import requests
 
 from jobscraper.models import Job
 from jobscraper.classifications.classify_seniority import classify_seniority
+from jobscraper.classifications.normalize_location import normalize_location
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ def _to_job(
         job_id=str(raw["id"]),
         title=title,
         department=department,
-        location=(raw.get("location") or {}).get("name", ""),
+        location=_location(raw),
         url=raw.get("absolute_url", ""),
         updated_at=raw.get("updated_at", ""),
         scraped_date=scraped_date,
@@ -149,3 +150,32 @@ def _first_name(items: list[dict] | None) -> str:
     if not items:
         return ""
     return items[0].get("name", "")
+
+
+def _location(raw: dict) -> str:
+    """Every office this posting is open in, normalized and " | "-joined.
+
+    `raw["offices"]` (present because fetch_jobs always requests
+    content=true) is Greenhouse's own *pre-split* per-office list -- each
+    entry's `name` is one office, with none of the comma-inside-a-city-vs-
+    comma-between-cities ambiguity `location.name` has (that field is one
+    free-text string a recruiter typed, e.g. "London, United Kingdom; New
+    York, NY, United States" -- not safely splittable by this code, only
+    by Greenhouse's own admin UI). Falls back to `location.name`
+    (stripped) only if `offices` is ever missing/empty.
+
+    " | " (not ",") is the join delimiter deliberately: a comma can appear
+    inside a single normalized name (none do today, but nothing guarantees
+    that for every future city), so it can't double as the between-offices
+    separator without reintroducing the exact ambiguity this function
+    exists to avoid.
+    """
+    offices = raw.get("offices") or []
+    names: list[str] = []
+    for office in offices:
+        name = normalize_location(office.get("name", ""))
+        if name and name not in names:
+            names.append(name)
+    if names:
+        return " | ".join(names)
+    return normalize_location((raw.get("location") or {}).get("name", ""))

@@ -72,6 +72,60 @@ def test_fetch_jobs_parses_response(monkeypatch):
     assert second.seniority == "Unspecified"
 
 
+def test_fetch_jobs_builds_location_from_offices_not_the_raw_location_string(monkeypatch):
+    # location.name is one free-text string a recruiter typed and can't be
+    # safely split ("London, United Kingdom; New York, NY, United States");
+    # offices is Greenhouse's own pre-split, per-office list -- that's what
+    # should drive Job.location, normalized and " | "-joined.
+    response = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Software Engineer",
+                "updated_at": "",
+                "absolute_url": "https://x/1",
+                "location": {"name": "London, United Kingdom; New York, NY, United States"},
+                "departments": [],
+                "offices": [
+                    {"name": "London"},
+                    {"name": "New York City"},  # normalizes to the same
+                    {"name": "NYC"},            # city as the entry above --
+                ],                              # must be de-duplicated
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        client.requests, "get", lambda *a, **k: _FakeResponse(response)
+    )
+
+    (job,) = client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+
+    assert job.location == "London, United Kingdom | New York, NY"
+
+
+def test_fetch_jobs_falls_back_to_location_name_when_offices_missing(monkeypatch):
+    response = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Software Engineer",
+                "updated_at": "",
+                "absolute_url": "https://x/1",
+                "location": {"name": "Bangalore"},
+                "departments": [],
+                "offices": [],
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        client.requests, "get", lambda *a, **k: _FakeResponse(response)
+    )
+
+    (job,) = client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+
+    assert job.location == "Bangalore, India"  # still normalized via the fallback
+
+
 def test_fetch_jobs_raises_on_http_error(monkeypatch):
     class _FailingResponse:
         def raise_for_status(self):
