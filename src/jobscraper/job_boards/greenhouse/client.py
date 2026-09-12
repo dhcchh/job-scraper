@@ -34,13 +34,19 @@ BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
 
 
 def fetch_jobs(
-    board_token: str, firm: str, *, scraped_date: datetime.date | None = None
+    board_token: str,
+    firm: str,
+    company_type: str,
+    *,
+    scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch every open job posted on one company's Greenhouse board.
 
     `board_token` is the Greenhouse career-page slug used to hit the API;
-    `firm` is the human-readable name (from greenhouse_boards.toml) stored on
-    every returned Job instead of the token -- see the module docstring.
+    `firm` and `company_type` (both from greenhouse_boards.toml) are stored
+    as-is on every returned Job -- `firm` instead of the token (see the
+    module docstring), `company_type` because it's a fact about the firm,
+    not something derivable from a posting's title.
 
     `scraped_date` defaults to today and is stamped on every Job returned --
     it's what sheets.writer prunes on later, not anything from Greenhouse.
@@ -61,10 +67,12 @@ def fetch_jobs(
     raw_jobs = payload.get("jobs", [])
     logger.info("greenhouse[%s]: fetched %d jobs", board_token, len(raw_jobs))
 
-    return [_to_job(raw, firm, scraped_date) for raw in raw_jobs]
+    return [_to_job(raw, firm, company_type, scraped_date) for raw in raw_jobs]
 
 
-def _to_job(raw: dict, firm: str, scraped_date: datetime.date) -> Job:
+def _to_job(
+    raw: dict, firm: str, company_type: str, scraped_date: datetime.date
+) -> Job:
     title = raw.get("title", "")
     department = _first_name(raw.get("departments"))
     return Job(
@@ -77,6 +85,7 @@ def _to_job(raw: dict, firm: str, scraped_date: datetime.date) -> Job:
         updated_at=raw.get("updated_at", ""),
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
+        company_type=company_type,
     )
 
 

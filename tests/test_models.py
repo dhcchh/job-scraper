@@ -26,4 +26,5 @@ def test_job_to_row_matches_fields_order():
         "2026-09-01T00:00:00Z",
         "2026-09-12",
         "Unspecified",  # seniority defaults when not passed explicitly
+        "",  # company_type defaults when not passed explicitly
     ]

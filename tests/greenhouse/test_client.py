@@ -49,7 +49,9 @@ def test_fetch_jobs_parses_response(monkeypatch):
 
     monkeypatch.setattr(client.requests, "get", fake_get)
 
-    jobs = client.fetch_jobs("acme", "Acme Corp", scraped_date=datetime.date(2026, 9, 12))
+    jobs = client.fetch_jobs(
+        "acme", "Acme Corp", "Big Tech", scraped_date=datetime.date(2026, 9, 12)
+    )
 
     assert captured["url"] == f"{client.BASE_URL}/acme/jobs"
     assert captured["params"] == {"content": "true"}
@@ -62,6 +64,7 @@ def test_fetch_jobs_parses_response(monkeypatch):
     assert first.location == "Remote"
     assert first.scraped_date == datetime.date(2026, 9, 12)
     assert first.seniority == "Senior"  # from "Senior Backend Engineer"
+    assert first.company_type == "Big Tech"
 
     # Missing department/location degrade to "", not a crash.
     assert second.department == ""
@@ -77,4 +80,4 @@ def test_fetch_jobs_raises_on_http_error(monkeypatch):
     monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FailingResponse())
 
     with pytest.raises(client.requests.HTTPError):
-        client.fetch_jobs("acme", "Acme Corp")
+        client.fetch_jobs("acme", "Acme Corp", "Big Tech")

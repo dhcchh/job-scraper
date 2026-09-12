@@ -187,6 +187,38 @@ def test_sort_rows_location_comparison_is_case_insensitive():
     assert ids_in_order == ["2", "1"]
 
 
+def _row_full(board, job_id, scraped_date, location, company_type):
+    return [
+        board,
+        job_id,
+        "Title",
+        "Dept",
+        location,
+        "https://x",
+        "",
+        scraped_date,
+        "Unspecified",
+        company_type,
+    ]
+
+
+def test_sort_rows_orders_by_company_type_before_board():
+    rows = [
+        writer.HEADER,
+        _row_full("Zeta Corp", "1", "2026-09-12", "NYC", "Startup"),
+        _row_full("Acme Fund", "2", "2026-09-12", "NYC", "Hedge Fund"),
+        _row_full("Beta Fund", "3", "2026-09-12", "NYC", "Hedge Fund"),
+    ]
+    worksheet = _FakeWorksheet(rows)
+
+    writer.sort_rows(worksheet)
+
+    ids_in_order = [row[1] for row in worksheet.updated_with[1:]]
+    # Same date & location for all three -- "Hedge Fund" sorts before
+    # "Startup"; within Hedge Fund, "Acme Fund" before "Beta Fund".
+    assert ids_in_order == ["2", "3", "1"]
+
+
 def test_sort_rows_noop_when_already_sorted():
     rows = [
         writer.HEADER,

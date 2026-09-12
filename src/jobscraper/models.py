@@ -23,6 +23,7 @@ FIELDS: tuple[str, ...] = (
     "updated_at",
     "scraped_date",
     "seniority",
+    "company_type",
 )
 
 
@@ -30,7 +31,10 @@ FIELDS: tuple[str, ...] = (
 class Job:
     """One job posting, normalized across job boards.
 
-    board: the board token / company slug this came from (e.g. "stripe").
+    board: the firm's human-readable name (e.g. "Jane Street"), from
+      greenhouse_boards.toml's `firm` -- NOT the Greenhouse career-page slug
+      used to fetch it. See job_boards/greenhouse/client.py's docstring for
+      why, and the consequence for renaming a firm later.
       TODO(multi-board): once a second *type* of board exists, a company
       could in principle appear on two different board systems under the
       same token. Not a concern with Greenhouse only -- revisit (e.g. add a
@@ -49,6 +53,12 @@ class Job:
       "Unspecified" is a real, common outcome rather than a fallback bug.
       Defaults to "Unspecified" so every other Job(...) call site in tests
       doesn't need to pass it explicitly.
+    company_type: from greenhouse_boards.toml's `company_type` (e.g. "Prop
+      Trading/Hedge Fund") -- a fact about the firm, not something inferred
+      from the title, so unlike seniority/board there's no classifier module
+      for it: main.py reads it straight from config and passes it through
+      job_boards/greenhouse/client.py. Defaults to "" for the same reason as
+      seniority's default -- test Job(...) calls that don't care about it.
     """
 
     board: str
@@ -60,6 +70,7 @@ class Job:
     updated_at: str
     scraped_date: datetime.date
     seniority: str = "Unspecified"
+    company_type: str = ""
 
     def to_row(self) -> list[str]:
         """Render as a flat list of strings, in FIELDS order, for a sheet row."""
@@ -73,4 +84,5 @@ class Job:
             self.updated_at,
             self.scraped_date.isoformat(),
             self.seniority,
+            self.company_type,
         ]

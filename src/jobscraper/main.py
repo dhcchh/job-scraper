@@ -14,7 +14,7 @@ Senior, Manager, ... or "Unspecified") is computed earlier, at fetch time --
 see classify_seniority.classify_seniority and job_boards/greenhouse/client.py
 -- so it's already set on every Job here and just rides along as a column.
 Each category's tab is kept sorted (most recent first, then location, then
-firm) by sheets.writer.sort_rows after every append/prune.
+company_type, then firm) by sheets.writer.sort_rows after every append/prune.
 
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add e.g. jobscraper/job_boards/lever/client.py with its own
@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 def run() -> None:
     all_jobs: list[Job] = []
     for board in config.GREENHOUSE_BOARDS:
-        jobs = fetch_jobs(board["token"], board["firm"])
+        jobs = fetch_jobs(board["token"], board["firm"], board["company_type"])
         all_jobs.extend(jobs)
 
     logger.info(

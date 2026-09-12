@@ -3,59 +3,74 @@
 [[boards]]
 token = "optiverneurips"
 firm = "Optiver"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "optiverprivate"
 firm = "Optiver"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "squarepointcapital"
 firm = "Squarepoint"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "towerresearchcapital"
 firm = "Tower Research"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "wehrtyou"
 firm = "HRT"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "drweng"
 firm = "DRW"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "akunacapital"
 firm = "Akuna Capital"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "jumptrading"
 firm = "Jump Trading"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "virtu"
 firm = "Virtu Financial"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "janestreet"
 firm = "Jane Street"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "point72"
 firm = "Point72/Cubist"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "quberesearchandtechnologies"
 firm = "Qube Research & Technologies"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "xtxmarketstechnologies"
 firm = "XTX Markets"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "flowtraders"
 firm = "Flow Traders"
+company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
 token = "marshallwace"
 firm = "Marshall Wace"
+company_type = "Prop Trading/Hedge Fund"

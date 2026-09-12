@@ -170,7 +170,7 @@ def prune_closed_postings(
 
 def sort_rows(worksheet: gspread.Worksheet) -> None:
     """Sort every data row: most recent scraped_date first, then location,
-    then board (firm name), both alphabetically.
+    then company_type, then board (firm name) -- alphabetically within each.
 
     Only needs calling after append_jobs actually added rows -- those land at
     the bottom, unsorted relative to what's already there. prune_closed_postings
@@ -184,11 +184,12 @@ def sort_rows(worksheet: gspread.Worksheet) -> None:
     "most recent first" is just reverse alphabetical on that column -- no
     date parsing needed.
 
-    Implemented as three separate stable sorts, least significant key first
-    (board, then location, then scraped_date last) rather than one sort with
-    a combined key -- Python's sort() is guaranteed stable, so this composes
-    correctly into "recency, then location, then board" and reads as plainly
-    as the three-level ordering it produces.
+    Implemented as four separate stable sorts, least significant key first
+    (board, then company_type, then location, then scraped_date last) rather
+    than one sort with a combined key -- Python's sort() is guaranteed
+    stable, so this composes correctly into "recency, then location, then
+    company_type, then board" and reads as plainly as the four-level
+    ordering it produces.
     """
     all_values = worksheet.get_all_values()
     if not all_values:
@@ -196,15 +197,18 @@ def sort_rows(worksheet: gspread.Worksheet) -> None:
 
     header, *data_rows = all_values
     board_index = _column_index(header, "board")
+    company_type_index = _column_index(header, "company_type")
     location_index = _column_index(header, "location")
     scraped_date_index = _column_index(header, "scraped_date")
 
     sorted_rows = list(data_rows)
-    # .lower() on board/location so e.g. "APAC" and "Aarhus" sort as a human
-    # would expect -- plain string comparison would put "APAC" first, since
-    # uppercase letters sort before lowercase ones in ASCII. scraped_date
-    # doesn't need this: it's a fixed-format "YYYY-MM-DD" string, no letters.
+    # .lower() on board/company_type/location so e.g. "APAC" and "Aarhus"
+    # sort as a human would expect -- plain string comparison would put
+    # "APAC" first, since uppercase letters sort before lowercase ones in
+    # ASCII. scraped_date doesn't need this: it's a fixed-format
+    # "YYYY-MM-DD" string, no letters.
     sorted_rows.sort(key=lambda row: _safe_value(row, board_index).lower())
+    sorted_rows.sort(key=lambda row: _safe_value(row, company_type_index).lower())
     sorted_rows.sort(key=lambda row: _safe_value(row, location_index).lower())
     sorted_rows.sort(key=lambda row: _safe_value(row, scraped_date_index), reverse=True)
 

@@ -29,6 +29,12 @@ also rewrite the `board` column of already-written rows to match, the same
 way this project's own migration to firm names did (bulk `update()` per tab,
 not `append`/`clear`).
 
+Every row also carries `company_type` — also from `greenhouse_boards.toml`,
+same "fact about the firm, not the posting" treatment as `firm`. Every board
+configured today is `"Prop Trading/Hedge Fund"`; adding a non-quant firm just
+means giving its `[[boards]]` entry a different `company_type` string (see
+"Adding a board" below) — there's no fixed list to extend anywhere in code.
+
 ## How classification works
 
 `jobscraper/classifications/classify_roles.py` holds `CATEGORIES`: an ordered
@@ -96,7 +102,10 @@ since `seniority` is already a header column in every tab.
 
 `sheets/writer.sort_rows` runs after every append/prune (see below) and
 keeps each category's tab ordered by, in priority order: `scraped_date`
-(most recent first), then `location`, then `board` (firm name) — both
+(most recent first), then `location`, then `company_type`, then `board`
+(firm name) — all three text columns alphabetically. So within the same
+date and location, postings group by company type (e.g. every "Prop
+Trading/Hedge Fund" row together), and within a company type, firms sort
 alphabetically. It's a no-op (no rewrite) if the tab is already in that
 order, which is normal on most runs: `prune_closed_postings` only ever
 removes rows, and removing rows from an already-sorted list can't un-sort
@@ -108,10 +117,10 @@ sort correctly as plain text in calendar order, so "most recent first" is
 just a reverse-alphabetical sort on that column — no date parsing needed.
 
 To change the sort order or add another key, edit `sort_rows` directly: it's
-three separate stable sorts, least-significant key first (board, then
-location, then scraped_date last) — Python's `sort()` is guaranteed stable,
-so that composes into the 3-level order described above without needing a
-combined sort key.
+four separate stable sorts, least-significant key first (board, then
+company_type, then location, then scraped_date last) — Python's `sort()` is
+guaranteed stable, so that composes into the 4-level order described above
+without needing a combined sort key.
 
 ## How dedup and pruning work
 
@@ -130,7 +139,7 @@ This is the core loop in `main.py`, per run:
    at all unless it's in `fetched_boards` (in practice, every board in
    `greenhouse_boards.toml` — see the retries/backoff caveat below).
 5. Per category: `sort_rows` (see "How sorting works" below) keeps the tab
-   ordered: most recent first, then location, then firm.
+   ordered: most recent first, then location, then company_type, then firm.
 
 Why age-based pruning (delete anything older than N days) was replaced:
 "still open" is the only real "still hiring" signal the Greenhouse API
@@ -209,7 +218,7 @@ Fill in `.env`:
    `jobscraper/classifications/classify_roles.py`'s `CATEGORIES` (currently
    `SWE/DE`, `DA/BI`, `DS/ML/Algos`, `QT/QR`, `SRE/DevOps`), named exactly
    that, each with a header row exactly matching `jobscraper.models.FIELDS`:
-   `board, job_id, title, department, location, url, updated_at, scraped_date, seniority`
+   `board, job_id, title, department, location, url, updated_at, scraped_date, seniority, company_type`
    This project does not create tabs (or missing header columns) for you.
 
 ## Running locally
@@ -236,13 +245,19 @@ Append a `[[boards]]` entry to `greenhouse_boards.toml` at the repo root:
 [[boards]]
 token = "stripe"
 firm = "Stripe"
+company_type = "Big Tech"
 ```
 
 `token` is the slug from the company's Greenhouse careers URL
-(`boards.greenhouse.io/<token>`) — that's the only field the code reads;
-`firm` is just a label for your own reference. Commit and push — no other
-config changes needed, since this file (unlike `.env`) is checked into the
-repo and read directly by both local runs and CI.
+(`boards.greenhouse.io/<token>`) — that's what's used to fetch the board.
+`firm` and `company_type` both end up as columns on every job from this
+board (see "The `board` column..." above) — `firm` is the readable name
+shown instead of `token`, and `company_type` is a free-form label (every
+board today is `"Prop Trading/Hedge Fund"`; a non-quant firm might be
+`"Big Tech"`, `"Startup"`, or anything else you find useful to sort/filter
+by later — there's no fixed list to update anywhere in code). Commit and
+push — no other config changes needed, since this file (unlike `.env`) is
+checked into the repo and read directly by both local runs and CI.
 
 ## Cron / CI
 
