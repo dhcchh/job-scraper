@@ -92,6 +92,27 @@ To extend: same as classification above — add a keyword to an existing tier,
 or a new `(name, keywords)` tuple to `LEVELS`. No spreadsheet change needed
 since `seniority` is already a header column in every tab.
 
+## How sorting works
+
+`sheets/writer.sort_rows` runs after every append/prune (see below) and
+keeps each category's tab ordered by, in priority order: `scraped_date`
+(most recent first), then `location`, then `board` (firm name) — both
+alphabetically. It's a no-op (no rewrite) if the tab is already in that
+order, which is normal on most runs: `prune_closed_postings` only ever
+removes rows, and removing rows from an already-sorted list can't un-sort
+it, so a rewrite is only actually needed on a run where `append_jobs` added
+something (new rows land at the bottom, unsorted relative to what's there).
+
+`scraped_date` is stored as an ISO `YYYY-MM-DD` string, which happens to
+sort correctly as plain text in calendar order, so "most recent first" is
+just a reverse-alphabetical sort on that column — no date parsing needed.
+
+To change the sort order or add another key, edit `sort_rows` directly: it's
+three separate stable sorts, least-significant key first (board, then
+location, then scraped_date last) — Python's `sort()` is guaranteed stable,
+so that composes into the 3-level order described above without needing a
+combined sort key.
+
 ## How dedup and pruning work
 
 This is the core loop in `main.py`, per run:
@@ -108,6 +129,8 @@ This is the core loop in `main.py`, per run:
    no longer lists it, so it's closed. A board isn't considered for pruning
    at all unless it's in `fetched_boards` (in practice, every board in
    `greenhouse_boards.toml` — see the retries/backoff caveat below).
+5. Per category: `sort_rows` (see "How sorting works" below) keeps the tab
+   ordered: most recent first, then location, then firm.
 
 Why age-based pruning (delete anything older than N days) was replaced:
 "still open" is the only real "still hiring" signal the Greenhouse API

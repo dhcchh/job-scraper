@@ -145,3 +145,66 @@ def test_prune_missing_board_column_raises():
 
 def test_row_key_tolerates_malformed_row():
     assert writer._row_key(["a"], board_index=0, job_id_index=5) is None
+
+
+def _row_with_location(board, job_id, scraped_date, location):
+    return [board, job_id, "Title", "Dept", location, "https://x", "", scraped_date]
+
+
+def test_sort_rows_orders_by_recency_then_location_then_board():
+    rows = [
+        writer.HEADER,
+        _row_with_location("beta", "1", "2026-09-10", "NYC"),
+        _row_with_location("acme", "2", "2026-09-12", "London"),
+        _row_with_location("acme", "3", "2026-09-12", "Chicago"),
+        _row_with_location("zeta", "4", "2026-09-12", "Chicago"),
+    ]
+    worksheet = _FakeWorksheet(rows)
+
+    writer.sort_rows(worksheet)
+
+    assert worksheet.updated_with is not None
+    ids_in_order = [row[1] for row in worksheet.updated_with[1:]]
+    # 2026-09-12 (recent) before 2026-09-10; within 2026-09-12, Chicago before
+    # London; within Chicago, "acme" before "zeta".
+    assert ids_in_order == ["3", "4", "2", "1"]
+
+
+def test_sort_rows_location_comparison_is_case_insensitive():
+    # Plain string comparison would put "APAC" (all-caps) before "Aarhus",
+    # since uppercase letters sort before lowercase in ASCII -- not what a
+    # human reading the sheet would expect.
+    rows = [
+        writer.HEADER,
+        _row_with_location("acme", "1", "2026-09-12", "APAC"),
+        _row_with_location("acme", "2", "2026-09-12", "Aarhus"),
+    ]
+    worksheet = _FakeWorksheet(rows)
+
+    writer.sort_rows(worksheet)
+
+    ids_in_order = [row[1] for row in worksheet.updated_with[1:]]
+    assert ids_in_order == ["2", "1"]
+
+
+def test_sort_rows_noop_when_already_sorted():
+    rows = [
+        writer.HEADER,
+        _row_with_location("acme", "1", "2026-09-12", "Chicago"),
+        _row_with_location("beta", "2", "2026-09-10", "NYC"),
+    ]
+    worksheet = _FakeWorksheet(rows)
+
+    writer.sort_rows(worksheet)
+
+    assert worksheet.updated_with is None  # already in order, no rewrite
+
+
+def test_sort_rows_noop_on_empty_sheet():
+    worksheet = _FakeWorksheet([])
+    writer.sort_rows(worksheet)
+    assert worksheet.updated_with is None
+
+
+def test_safe_value_tolerates_malformed_row():
+    assert writer._safe_value(["a"], 5) == ""

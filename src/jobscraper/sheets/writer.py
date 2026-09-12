@@ -168,6 +168,64 @@ def prune_closed_postings(
     logger.info("prune: removed %d closed posting(s)", pruned_count)
 
 
+def sort_rows(worksheet: gspread.Worksheet) -> None:
+    """Sort every data row: most recent scraped_date first, then location,
+    then board (firm name), both alphabetically.
+
+    Only needs calling after append_jobs actually added rows -- those land at
+    the bottom, unsorted relative to what's already there. prune_closed_postings
+    only ever removes rows, which can't un-sort a list that was already
+    sorted, so there's no need to re-sort after every prune too (this
+    function is cheap to call unconditionally anyway: it no-ops if the sheet
+    is already in order).
+
+    scraped_date is stored as an ISO "YYYY-MM-DD" string, which happens to
+    sort correctly as plain text in the same order as chronologically, so
+    "most recent first" is just reverse alphabetical on that column -- no
+    date parsing needed.
+
+    Implemented as three separate stable sorts, least significant key first
+    (board, then location, then scraped_date last) rather than one sort with
+    a combined key -- Python's sort() is guaranteed stable, so this composes
+    correctly into "recency, then location, then board" and reads as plainly
+    as the three-level ordering it produces.
+    """
+    all_values = worksheet.get_all_values()
+    if not all_values:
+        return
+
+    header, *data_rows = all_values
+    board_index = _column_index(header, "board")
+    location_index = _column_index(header, "location")
+    scraped_date_index = _column_index(header, "scraped_date")
+
+    sorted_rows = list(data_rows)
+    # .lower() on board/location so e.g. "APAC" and "Aarhus" sort as a human
+    # would expect -- plain string comparison would put "APAC" first, since
+    # uppercase letters sort before lowercase ones in ASCII. scraped_date
+    # doesn't need this: it's a fixed-format "YYYY-MM-DD" string, no letters.
+    sorted_rows.sort(key=lambda row: _safe_value(row, board_index).lower())
+    sorted_rows.sort(key=lambda row: _safe_value(row, location_index).lower())
+    sorted_rows.sort(key=lambda row: _safe_value(row, scraped_date_index), reverse=True)
+
+    if sorted_rows == data_rows:
+        logger.info("sort: already in order")
+        return
+
+    worksheet.update(values=[header] + sorted_rows, value_input_option="RAW")
+    logger.info("sort: reordered %d row(s)", len(sorted_rows))
+
+
+def _safe_value(row: list[str], index: int) -> str:
+    """row[index], or "" if the row is too short to have it.
+
+    A malformed row shouldn't crash a sort -- "" sorts first ascending (board,
+    location) and last on the reversed scraped_date sort, i.e. to the bottom
+    either way, a safe default for a row we can't fully read.
+    """
+    return row[index] if index < len(row) else ""
+
+
 def _row_key(
     row: list[str], board_index: int, job_id_index: int
 ) -> tuple[str, str] | None:
