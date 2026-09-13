@@ -23,7 +23,11 @@ uv run pytest                              # tests -- no network or credentials 
    one line and paste it as `GOOGLE_SERVICE_ACCOUNT_JSON` in `.env`:
    `python -c "import json;print(json.dumps(json.load(open('key.json'))))"`
 3. **Sheet ID** — the id segment of the sheet's URL, as `GOOGLE_SHEET_ID`
-   in `.env`.
+   in `.env`. Optionally also set `GOOGLE_SHEET_TITLE` to the sheet's exact
+   display title — since this id is set independently in `.env` and in the
+   GitHub Actions secret, this catches the two drifting apart (a typo'd or
+   stale id pointing at the wrong file) as a startup failure instead of a
+   silent write to the wrong spreadsheet.
 4. **Tabs** — one per (role category × region) pair, named exactly
    `"{category} - {region}"` (e.g. `"SWE/DE - PAC"`) — see `CATEGORIES` in
    `classify_roles.py` and `REGIONS` in `classify_region.py` for the

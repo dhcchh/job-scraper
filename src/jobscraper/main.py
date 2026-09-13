@@ -37,10 +37,11 @@ Before touching any board, run() opens the spreadsheet and logs its title
 and URL -- a startup check, not decoration: `GOOGLE_SHEET_ID` is set
 independently in `.env` (local) and the GitHub Actions secret (CI), and
 nothing else here cross-checks the two, so a value that drifts on one side
-silently writes/prunes real data against the wrong file while still
-reporting a clean run. Logging the sheet's own identity makes that visible to anyone
-who actually reads the run log, even though it can't be checked
-automatically from here.
+could otherwise silently write/prune real data against the wrong file while
+still reporting a clean run. If the optional `GOOGLE_SHEET_TITLE` is also
+set, sheets.writer.get_spreadsheet() raises before this line runs when the
+opened spreadsheet's title doesn't match, turning that drift into a hard
+failure instead of something only visible to someone who reads the log.
 
 At the end of the run, _build_summary_markdown/_write_job_summary append a
 run summary -- boards fetched/failed, jobs fetched/classified/filtered,

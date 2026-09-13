@@ -39,16 +39,36 @@ _SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 HEADER = list(FIELDS)
 
 
+def _check_expected_title(spreadsheet: gspread.Spreadsheet) -> None:
+    """Fail fast if GOOGLE_SHEET_TITLE is set and doesn't match.
+
+    GOOGLE_SHEET_ID is set independently in .env (local) and the GitHub
+    Actions secret (CI); nothing else cross-checks the two, so a value that
+    drifts on one side would otherwise write/prune real data against the
+    wrong file while still reporting a clean run. This is an opt-in second
+    check -- skipped entirely when GOOGLE_SHEET_TITLE isn't set.
+    """
+    if config.GOOGLE_SHEET_TITLE and spreadsheet.title != config.GOOGLE_SHEET_TITLE:
+        raise RuntimeError(
+            f"GOOGLE_SHEET_ID resolved to spreadsheet {spreadsheet.title!r}, "
+            f"but GOOGLE_SHEET_TITLE expects {config.GOOGLE_SHEET_TITLE!r} -- "
+            "refusing to write to what looks like the wrong spreadsheet"
+        )
+
+
 def get_spreadsheet() -> gspread.Spreadsheet:
     """An authorized handle to the configured spreadsheet.
 
     Opened once per run and shared across every category's get_worksheet()
-    call below, rather than re-authorizing per tab.
+    call below, rather than re-authorizing per tab. See _check_expected_title
+    for the optional GOOGLE_SHEET_TITLE drift check applied before returning.
     """
     info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
     credentials = Credentials.from_service_account_info(info, scopes=_SCOPES)
     client = gspread.authorize(credentials)
-    return client.open_by_key(config.GOOGLE_SHEET_ID)
+    spreadsheet = client.open_by_key(config.GOOGLE_SHEET_ID)
+    _check_expected_title(spreadsheet)
+    return spreadsheet
 
 
 def get_worksheet(spreadsheet: gspread.Spreadsheet, name: str) -> gspread.Worksheet:

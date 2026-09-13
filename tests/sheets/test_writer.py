@@ -265,3 +265,24 @@ def test_format_date_columns_tolerates_worksheet_without_format():
     writer.format_date_columns(ws)  # does not raise
 
 
+class _FakeSpreadsheet:
+    def __init__(self, title):
+        self.title = title
+
+
+def test_check_expected_title_passes_when_unset(monkeypatch):
+    monkeypatch.setattr(writer.config, "GOOGLE_SHEET_TITLE", None)
+    writer._check_expected_title(_FakeSpreadsheet("Anything"))  # does not raise
+
+
+def test_check_expected_title_passes_when_matching(monkeypatch):
+    monkeypatch.setattr(writer.config, "GOOGLE_SHEET_TITLE", "Job Board Tracker")
+    writer._check_expected_title(_FakeSpreadsheet("Job Board Tracker"))  # does not raise
+
+
+def test_check_expected_title_raises_on_mismatch(monkeypatch):
+    monkeypatch.setattr(writer.config, "GOOGLE_SHEET_TITLE", "Job Board Tracker")
+    with pytest.raises(RuntimeError, match="Some Other Sheet"):
+        writer._check_expected_title(_FakeSpreadsheet("Some Other Sheet"))
+
+

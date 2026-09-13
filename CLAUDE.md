@@ -64,6 +64,11 @@ small fake `Worksheet`.
 - The scraper logs the spreadsheet title/URL and writes a GitHub Actions job
   summary. Workflow-level concurrency protects Action-triggered runs; it does
   not protect a local run pointed at the production sheet.
+- `GOOGLE_SHEET_ID` is set independently in `.env` (local) and the GitHub
+  Actions secret (CI); nothing else cross-checks the two. The optional
+  `GOOGLE_SHEET_TITLE` env var closes that gap: when set, `get_spreadsheet()`
+  raises before any board is touched if the opened spreadsheet's title
+  doesn't match, rather than only being visible in the logged title/URL.
 
 ## Open work
 
@@ -84,13 +89,8 @@ small fake `Worksheet`.
   (`airwallex`), Snowflake (`snowflake`), Exa (`exa`), Sierra (`sierra`),
   BlockTech (`blocktech`) — all confirmed live on `jobs.ashbyhq.com`.
 - **Lever Job Board Support** Check the lever job portal, Spotify, Palantir, ShopBack, prestolabs, CSIT  is confirmed
-- Decide whether worksheets should be created automatically when a new tab is
-  configured; today a missing tab raises.
 - If more than one person operates the production sheet, add a distributed
   lock; GitHub Actions concurrency cannot prevent an overlapping local run.
-- Consider a way to validate that local and CI `GOOGLE_SHEET_ID` values refer
-  to the intended spreadsheet. The logged title/URL makes drift visible but
-  does not prevent it.
 
 ## Scale
 

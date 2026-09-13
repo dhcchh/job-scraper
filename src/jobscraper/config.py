@@ -47,6 +47,13 @@ GREENHOUSE_BOARDS: list[dict] = _load_boards(_BOARDS_FILE)
 # that category's name.
 GOOGLE_SHEET_ID: str = os.environ["GOOGLE_SHEET_ID"]
 
+# Optional: the spreadsheet's exact display title. GOOGLE_SHEET_ID is set
+# independently here (.env) and in the GitHub Actions secret, with nothing
+# else cross-checking the two -- when this is set, sheets.writer.
+# get_spreadsheet() raises if the opened spreadsheet's title doesn't match,
+# catching that drift before anything is written instead of only logging it.
+GOOGLE_SHEET_TITLE: str | None = os.environ.get("GOOGLE_SHEET_TITLE") or None
+
 # The full service account JSON key, as one raw string -- not a file path.
 # This is what lets a GitHub Actions secret carry it without a "write secret
 # to a temp file" workflow step. Parsed with json.loads() in sheets/writer.py.
