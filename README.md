@@ -32,7 +32,23 @@ uv run pytest                              # tests -- no network or credentials 
    `board, title, location, first_published, updated_at, company_type, url, seniority, department, job_id, scraped_date`.
    Tabs and header rows aren't auto-created.
 
-## How it works
+## Architecture
+
+```
+src/jobscraper/
+├── config.py                          # only module reading env vars / greenhouse_boards.toml
+├── main.py                            # entrypoint: fetch → classify → append/prune, per board
+├── models.py                          # Job dataclass, FIELDS column order, to_row/date helpers
+├── classifications/
+│   ├── classify_roles.py              # title → role category (or dropped as noise)
+│   ├── classify_region.py             # location → PAC/RoW
+│   ├── classify_seniority.py          # title/department → seniority level
+│   └── normalize_location.py          # one office name → canonical "City, Country"
+├── job_boards/greenhouse/client.py    # Greenhouse Job Board API fetch + retry
+└── sheets/
+    ├── writer.py                      # append new rows, prune closed postings
+    └── backfill.py                    # re-apply current classifiers to existing rows
+```
 
 - **Role category**: `classify_roles.py` keyword-matches each job's title
   into one of `CATEGORIES` (or drops it as noise if nothing matches).
@@ -48,6 +64,11 @@ uv run pytest                              # tests -- no network or credentials 
   can't be safely comma-split.
 - **Seniority**: `classify_seniority.py` tags a best-effort level
   (Intern/Junior/.../Unspecified) off the title, computed once at fetch time.
+- **Fetching**: `greenhouse/client.py` hits each board's public Job Board API
+  (`content=true`), retrying connection errors/timeouts/5xx/429 up to 3
+  times total (2s/4s backoff); other 4xx raise immediately. `main.py` logs
+  and skips a board that still fails, rather than letting it trigger false
+  pruning elsewhere.
 - **Identity**: a posting is uniquely identified by `(board, job_id)`, not
   `job_id` alone — Greenhouse assigns ids per tenant, so two different
   firms' boards can (and do) reuse the same numeric id. `board` is the
@@ -56,12 +77,17 @@ uv run pytest                              # tests -- no network or credentials 
   string.
 - **Dedup/pruning**: keyed on that same `(board, job_id)` pair — a run
   appends a row the first time it sees one, never re-appends it while
-  still open, and deletes it once it's gone from that board's feed. Row
+  still open, and deletes it once it's gone from that board's feed, via one
+  atomic batch of row deletions so a failure leaves the sheet untouched.
+  Multi-token firms are only pruned once all their tokens succeed. Row
   order is never touched, so your own sort/filter setup survives every run.
+- **Backfill**: `sheets/backfill.py` re-applies current classifiers,
+  location normalization, and column order to every existing row — run it
+  after changing `FIELDS`, keyword lists, or the location lookup table. It
+  deliberately doesn't move rows between tabs or rename board values, which
+  could lose data if interrupted.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a full component-by-component
-reference (source layout, data flow, what each module does). See `CLAUDE.md`
-for design rationale and edge-case invariants.
+See `CLAUDE.md` for design rationale and edge-case invariants.
 
 ## Scale limits
 
@@ -113,5 +139,7 @@ by both local runs and CI, no other config changes needed.
 ## Cron / CI
 
 `.github/workflows/daily-scrape.yml` runs at `0 4 * * *` UTC (noon
-Singapore time), plus manual `workflow_dispatch`. Needs two repo secrets:
+Singapore time), plus manual `workflow_dispatch`. Uses
+`concurrency: { group: daily-scrape, cancel-in-progress: false }` to queue
+rather than cancel overlapping runs. Needs two repo secrets:
 `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON`.

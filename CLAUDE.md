@@ -79,6 +79,7 @@ small fake `Worksheet`.
   Firms to add: OpenAI (`openai`), Notion (`notion`), Airwallex
   (`airwallex`), Snowflake (`snowflake`), Exa (`exa`), Sierra (`sierra`),
   BlockTech (`blocktech`) — all confirmed live on `jobs.ashbyhq.com`.
+- **Lever Job Board Support** Check the lever job portal, Spotify, Palantir, ShopBack, prestolabs, CSIT  is confirmed
 - Decide whether worksheets should be created automatically when a new tab is
   configured; today a missing tab raises.
 - Validate each `[[boards]]` entry early and report the specific missing
