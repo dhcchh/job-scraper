@@ -194,3 +194,8 @@ company_type = "Prop Trading/Hedge Fund"
 token = "adyen"
 firm = "Adyen"
 company_type = "Fintech"
+
+[[boards]]
+token = "vercel"
+firm = "Vercel"
+company_type = "Data/Cloud Infrastructure"
