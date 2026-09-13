@@ -49,3 +49,8 @@ company_type = "AI Lab"
 token = "cursor"
 firm = "Cursor"
 company_type = "AI Lab"
+
+[[boards]]
+token = "plaud"
+firm = "Plaud"
+company_type = "AI Lab"
