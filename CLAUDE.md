@@ -26,6 +26,10 @@ small fake `Worksheet`.
 - `config.py` is the only module that reads environment variables and
   `greenhouse_boards.toml`; import `jobscraper.config` rather than copying its
   settings at import time. Board tokens are checked in and are not secrets.
+  `_load_boards` validates every `[[boards]]` entry has `token`, `firm`, and
+  `company_type` at import time, raising `ValueError` naming the offending
+  entry and field(s) rather than letting a typo surface as a `KeyError` deep
+  in `main.py`'s fetch loop.
 - `Job` in `models.py` is the shared data shape. Keep `FIELDS`,
   `Job.to_row()`, and the sheet header aligned. The row identity is
   `(board, job_id)`, not `job_id` alone, because Greenhouse IDs are tenant
@@ -82,8 +86,6 @@ small fake `Worksheet`.
 - **Lever Job Board Support** Check the lever job portal, Spotify, Palantir, ShopBack, prestolabs, CSIT  is confirmed
 - Decide whether worksheets should be created automatically when a new tab is
   configured; today a missing tab raises.
-- Validate each `[[boards]]` entry early and report the specific missing
-  `firm`, `token`, or `company_type` field instead of surfacing `KeyError`.
 - If more than one person operates the production sheet, add a distributed
   lock; GitHub Actions concurrency cannot prevent an overlapping local run.
 - Consider a way to validate that local and CI `GOOGLE_SHEET_ID` values refer

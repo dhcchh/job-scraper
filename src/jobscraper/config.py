@@ -20,9 +20,21 @@ load_dotenv()
 _BOARDS_FILE = Path(__file__).resolve().parents[2] / "greenhouse_boards.toml"
 
 
+_REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
+
+
 def _load_boards(path: Path) -> list[dict]:
     with open(path, "rb") as f:
-        return tomllib.load(f)["boards"]
+        boards = tomllib.load(f)["boards"]
+    for index, board in enumerate(boards, start=1):
+        missing = [field for field in _REQUIRED_BOARD_FIELDS if not board.get(field)]
+        if missing:
+            identifier = board.get("firm") or board.get("token") or f"#{index}"
+            raise ValueError(
+                f"{path.name}: [[boards]] entry {identifier!r} is missing "
+                f"required field(s): {', '.join(missing)}"
+            )
+    return boards
 
 
 GREENHOUSE_BOARDS: list[dict] = _load_boards(_BOARDS_FILE)
