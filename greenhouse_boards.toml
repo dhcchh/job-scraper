@@ -184,3 +184,8 @@ company_type = "Data/Cloud Infrastructure"
 token = "datadog"
 firm = "Datadog"
 company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "schonfeld"
+firm = "Schonfeld"
+company_type = "Prop Trading/Hedge Fund"
