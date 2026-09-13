@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from jobscraper.classifications.classify_roles import classify_job
+from jobscraper.enrichment.classify_roles import classify_job
 from jobscraper.models import Job
 
 _TODAY = datetime.date(2026, 9, 12)

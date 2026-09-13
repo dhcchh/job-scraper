@@ -2,7 +2,7 @@
 
 import pytest
 
-from jobscraper.classifications.classify_region import classify_region, tab_name
+from jobscraper.enrichment.classify_region import classify_region, tab_name
 
 
 @pytest.mark.parametrize(

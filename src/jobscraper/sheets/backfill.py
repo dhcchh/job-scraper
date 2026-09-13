@@ -86,10 +86,10 @@ import gspread
 from gspread.utils import rowcol_to_a1
 
 from jobscraper import config
-from jobscraper.classifications.classify_region import REGIONS, tab_name
-from jobscraper.classifications.classify_roles import CATEGORIES
-from jobscraper.classifications.classify_seniority import classify_seniority
-from jobscraper.classifications.normalize_location import normalize_location
+from jobscraper.enrichment.classify_region import REGIONS, tab_name
+from jobscraper.enrichment.classify_roles import CATEGORIES
+from jobscraper.enrichment.classify_seniority import classify_seniority
+from jobscraper.enrichment.normalize_location import normalize_location
 from jobscraper.job_boards.greenhouse.client import fetch_jobs
 from jobscraper.models import FIELDS, Job, hyperlink_formula, normalize_date
 from jobscraper.sheets.writer import (

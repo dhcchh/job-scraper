@@ -2,7 +2,7 @@
 
 import pytest
 
-from jobscraper.classifications.normalize_location import normalize_location
+from jobscraper.enrichment.normalize_location import normalize_location
 
 
 @pytest.mark.parametrize(

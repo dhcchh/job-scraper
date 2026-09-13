@@ -39,7 +39,7 @@ src/jobscraper/
 ├── config.py                          # only module reading env vars / greenhouse_boards.toml
 ├── main.py                            # entrypoint: fetch → classify → append/prune, per board
 ├── models.py                          # Job dataclass, FIELDS column order, to_row/date helpers
-├── classifications/
+├── enrichment/
 │   ├── classify_roles.py              # title → role category (or dropped as noise)
 │   ├── classify_region.py             # location → PAC/RoW
 │   ├── classify_seniority.py          # title/department → seniority level

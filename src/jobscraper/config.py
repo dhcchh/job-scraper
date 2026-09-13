@@ -31,7 +31,7 @@ GREENHOUSE_BOARDS: list[dict] = _load_boards(_BOARDS_FILE)
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit
 #
 # Tab names aren't configured here -- sheets.writer.get_worksheet() opens one
-# tab per jobscraper.classifications.classify_roles.CATEGORIES entry, by
+# tab per jobscraper.enrichment.classify_roles.CATEGORIES entry, by
 # that category's name.
 GOOGLE_SHEET_ID: str = os.environ["GOOGLE_SHEET_ID"]
 

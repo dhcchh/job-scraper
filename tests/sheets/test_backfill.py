@@ -248,8 +248,8 @@ def test_refresh_uses_user_entered_input_option():
 
 
 def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
-    from jobscraper.classifications.classify_region import REGIONS, tab_name
-    from jobscraper.classifications.classify_roles import CATEGORIES
+    from jobscraper.enrichment.classify_region import REGIONS, tab_name
+    from jobscraper.enrichment.classify_roles import CATEGORIES
 
     # No boards to re-fetch for location overrides -- keeps this test off
     # the network (see module docstring: tests never hit it).

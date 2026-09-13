@@ -2,7 +2,7 @@
 
 import pytest
 
-from jobscraper.classifications.classify_seniority import classify_seniority
+from jobscraper.enrichment.classify_seniority import classify_seniority
 
 
 @pytest.mark.parametrize(

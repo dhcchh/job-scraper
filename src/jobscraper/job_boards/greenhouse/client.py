@@ -29,8 +29,8 @@ import time
 import requests
 
 from jobscraper.models import Job, normalize_date
-from jobscraper.classifications.classify_seniority import classify_seniority
-from jobscraper.classifications.normalize_location import normalize_location
+from jobscraper.enrichment.classify_seniority import classify_seniority
+from jobscraper.enrichment.normalize_location import normalize_location
 
 logger = logging.getLogger(__name__)
 

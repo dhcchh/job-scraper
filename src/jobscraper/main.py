@@ -1,5 +1,5 @@
 """Entrypoint: fetch every configured board's jobs, classify + route each into
-one of jobscraper.classifications.classify_roles's role categories crossed
+one of jobscraper.enrichment.classify_roles's role categories crossed
 with classify_region's region, append new postings per (category, region)
 tab, prune closed ones.
 
@@ -53,7 +53,7 @@ jobscraper.main`.
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add e.g. jobscraper/job_boards/lever/client.py with its own
     fetch_jobs() -> list[Job], and extend the fetch loop below the same way.
-  - more/edited categories: see classifications/classify_roles.py's
+  - more/edited categories: see enrichment/classify_roles.py's
     CATEGORIES -- add a keyword there, or a whole new category + matching
     spreadsheet tab (x2, one per region -- see classify_region.tab_name).
     Same idea for seniority levels, in classify_seniority.py, and for the
@@ -64,12 +64,12 @@ import logging
 import os
 
 from jobscraper import config
-from jobscraper.classifications.classify_region import (
+from jobscraper.enrichment.classify_region import (
     REGIONS,
     classify_region,
     tab_name,
 )
-from jobscraper.classifications.classify_roles import CATEGORIES, classify_job
+from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
 from jobscraper.job_boards.greenhouse.client import fetch_jobs
 from jobscraper.models import Job
 from jobscraper.sheets.writer import (
