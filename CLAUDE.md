@@ -14,8 +14,18 @@ uv run pytest tests/sheets/test_writer.py
 ```
 
 There is no formatter or linter. Tests never use the network or live Google
-credentials: `tests/conftest.py` supplies dummy config and sheet tests use a
-small fake `Worksheet`.
+or Telegram credentials: `tests/conftest.py` forces `GOOGLE_SHEET_ID`/
+`GOOGLE_SERVICE_ACCOUNT_JSON` to dummy values and `TELEGRAM_BOT_TOKEN`/
+`TELEGRAM_CHAT_ID`/`TELEGRAM_THREAD_ID` to `""`, all via `setdefault` *before*
+`jobscraper.config` is ever imported -- config.py's own `load_dotenv()` call
+never overrides a key already in `os.environ` (its default `override=False`),
+so this reliably wins over whatever a real, locally configured `.env` has,
+without editing or reading that file. Skipping the Telegram half of this
+once let a real `.env`'s real bot token/chat id flow straight through into
+every `tests/test_main.py` test that calls `main.run()` without itself
+monkeypatching `send_digest` -- each one actually posted its fake job data
+(e.g. "Acme", "GoodCo") to the real chat on every `pytest` run. Sheet tests
+use a small fake `Worksheet`.
 
 ## Architecture and invariants
 

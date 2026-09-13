@@ -10,6 +10,15 @@ unset in _patch_sheet_functions so these orchestration tests can't
 accidentally write into a real one if pytest is ever run inside a GitHub
 Actions job itself; the summary-writing tests below set it to a tmp_path
 file instead.
+
+send_digest is also mocked to a no-op by default in _patch_sheet_functions --
+belt-and-suspenders alongside conftest.py forcing TELEGRAM_BOT_TOKEN/
+TELEGRAM_CHAT_ID to "" (which already makes the real send_digest a no-op):
+a test here shouldn't depend on global env state to stay off the network,
+since a real `.env` with real Telegram credentials previously let several of
+these tests' fake job data (e.g. "Acme", "GoodCo") actually get posted to a
+real chat. The two digest-specific tests below override this default to
+capture what main.run() actually passed send_digest.
 """
 
 import datetime
@@ -41,6 +50,10 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main.config, "LEVER_BOARDS", [])
     monkeypatch.setattr(main.config, "ASHBY_BOARDS", [])
     monkeypatch.setattr(main.config, "SMARTRECRUITERS_BOARDS", [])
+    # No-op by default -- see module docstring. A test that wants to inspect
+    # what main.run() passed send_digest overrides this itself, after
+    # calling _patch_sheet_functions.
+    monkeypatch.setattr(main, "send_digest", lambda new_jobs, spreadsheet_url: None)
 
     def fake_append_jobs(worksheet, jobs):
         if append_calls is not None:
