@@ -53,6 +53,26 @@ _REMOTE_SUFFIX_RE = re.compile(r"\s*\(remote\)$", re.IGNORECASE)
 # bare country classify_region already recognizes).
 _LOCATION_SUFFIX_RE = re.compile(r"\s+locations?$", re.IGNORECASE)
 
+# Two more board-specific noise wrappers, both confirmed on live Lever
+# boards (ShopBack, Spotify) once Lever support was added: a trailing
+# two-letter ISO country code in parens ("Singapore (SG)") and Spotify's own
+# work-arrangement annotation ("Taiwan (Home Mix)", "United States of
+# America (Home Mix)"). Same failure shape as every other wrapper on this
+# page -- left in place, neither exact-matches the lookup table below or
+# classify_region's bare-country check, so a real PAC posting (Singapore,
+# Taiwan) would silently land in RoW.
+_COUNTRY_CODE_SUFFIX_RE = re.compile(r"\s*\([A-Z]{2}\)$")
+_WORK_MODE_SUFFIX_RE = re.compile(r"\s*\([^()]*\bmix\)$", re.IGNORECASE)
+
+# Lever's `categories.allLocations` sometimes repeats a city-state's name on
+# both sides of the comma instead of pairing a city with a country --
+# "Singapore, Singapore" (Palantir, CSIT), "Hong Kong, Hong Kong"
+# (ShopBack). Still resolves to the right PAC country either way (nothing
+# after classify_region's last comma cares about the duplication), but
+# collapsing it here keeps the sheet's location column as clean as the
+# already-canonical bare form.
+_DUPLICATE_NAME_RE = re.compile(r"^(.+?),\s*\1$", re.IGNORECASE)
+
 # Keyed by the office name lowercased (after stripping a trailing " office"
 # noise suffix -- covers "Amsterdam office", "Chicago Office", etc. without
 # needing a separate entry per suffix variant). Unmapped names pass through
@@ -152,4 +172,7 @@ def normalize_location(raw: str) -> str:
     cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_PREFIX_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = _COUNTRY_CODE_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = _WORK_MODE_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = _DUPLICATE_NAME_RE.sub(r"\1", cleaned).strip()
     return _CANONICAL_LOCATIONS.get(cleaned.lower(), cleaned)

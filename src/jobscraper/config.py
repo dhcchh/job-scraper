@@ -13,11 +13,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Greenhouse board tokens live in a checked-in TOML file, not an env var --
-# they aren't secret (just company career-page slugs), and a growing list of
-# many firms is much easier to read/edit as a TOML array-of-tables than as
-# one long comma-separated string. See greenhouse_boards.toml itself.
+# Greenhouse/Lever board tokens live in checked-in TOML files, not an env
+# var -- they aren't secret (just company career-page slugs), and a growing
+# list of many firms is much easier to read/edit as a TOML array-of-tables
+# than as one long comma-separated string. See greenhouse_boards.toml and
+# lever_boards.toml themselves.
 _BOARDS_FILE = Path(__file__).resolve().parents[2] / "greenhouse_boards.toml"
+_LEVER_BOARDS_FILE = Path(__file__).resolve().parents[2] / "lever_boards.toml"
 
 
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
@@ -38,6 +40,11 @@ def _load_boards(path: Path) -> list[dict]:
 
 
 GREENHOUSE_BOARDS: list[dict] = _load_boards(_BOARDS_FILE)
+
+# Same required fields (token/firm/company_type), same validation -- Lever's
+# `token` is its own site slug rather than a Greenhouse board token, but
+# _load_boards doesn't care which board type a file is for.
+LEVER_BOARDS: list[dict] = _load_boards(_LEVER_BOARDS_FILE)
 
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit

@@ -1,6 +1,6 @@
 # latest-job-scraper
 
-Fetches job postings from Greenhouse boards daily, classifies them, and writes them into a Google Sheet.
+Fetches job postings from Greenhouse and Lever boards daily, classifies them, and writes them into a Google Sheet.
 
 ## Run it
 
@@ -15,8 +15,9 @@ uv run pytest                              # tests -- no network or credentials 
 
 ## Setup
 
-1. **Greenhouse board tokens** — add each firm as a `[[boards]]` entry in
-   `greenhouse_boards.toml` (repo root, checked in — see "Adding a board").
+1. **Board tokens** — add each firm as a `[[boards]]` entry in
+   `greenhouse_boards.toml` or `lever_boards.toml` (repo root, checked in —
+   see "Adding a board").
 2. **Google Sheets access** — in Google Cloud Console: enable the Sheets
    API, create a service account + JSON key, then **Share** your target
    sheet with that key's `client_email` as **Editor**. Collapse the key to
@@ -40,7 +41,7 @@ uv run pytest                              # tests -- no network or credentials 
 
 ```
 src/jobscraper/
-├── config.py                          # only module reading env vars / greenhouse_boards.toml
+├── config.py                          # only module reading env vars / *_boards.toml
 ├── main.py                            # entrypoint: fetch → classify → append/prune, per board
 ├── models.py                          # Job dataclass, FIELDS column order, to_row/date helpers
 ├── enrichment/
@@ -48,7 +49,9 @@ src/jobscraper/
 │   ├── classify_region.py             # location → PAC/RoW
 │   ├── classify_seniority.py          # title/department → seniority level
 │   └── normalize_location.py          # one office name → canonical "City, Country"
-├── job_boards/greenhouse/client.py    # Greenhouse Job Board API fetch + retry
+├── job_boards/
+│   ├── greenhouse/client.py           # Greenhouse Job Board API fetch + retry
+│   └── lever/client.py                # Lever Postings API fetch + retry
 └── sheets/
     ├── writer.py                      # append new rows, prune closed postings
     └── backfill.py                    # re-apply current classifiers to existing rows
@@ -62,23 +65,26 @@ src/jobscraper/
   local roles without wading through everything else. Category × region
   picks the tab.
 - **Location normalization**: `normalize_location.py` cleans up each
-  office name via a curated lookup table, reading Greenhouse's pre-split
-  `offices` field rather than parsing the ambiguous free-text
-  `location.name` string — see the module docstrings for why that field
-  can't be safely comma-split.
+  office name via a curated lookup table, reading each board's pre-split
+  per-office field (Greenhouse's `offices`, Lever's `categories.allLocations`)
+  rather than parsing an ambiguous free-text location string — see the
+  module docstrings for why that field can't be safely comma-split.
 - **Seniority**: `classify_seniority.py` tags a best-effort level
   (Intern/Junior/.../Unspecified) off the title, computed once at fetch time.
 - **Fetching**: `greenhouse/client.py` hits each board's public Job Board API
-  (`content=true`), retrying connection errors/timeouts/5xx/429 up to 3
+  (`content=true`); `lever/client.py` hits each site's public Postings API
+  (`?mode=json`). Both retry connection errors/timeouts/5xx/429 up to 3
   times total (2s/4s backoff); other 4xx raise immediately. `main.py` logs
   and skips a board that still fails, rather than letting it trigger false
-  pruning elsewhere.
+  pruning elsewhere. Lever's API exposes no edited-at timestamp, so
+  `updated_at` is always `""` for a Lever-sourced job — `first_published`
+  comes from `createdAt` instead.
 - **Identity**: a posting is uniquely identified by `(board, job_id)`, not
-  `job_id` alone — Greenhouse assigns ids per tenant, so two different
-  firms' boards can (and do) reuse the same numeric id. `board` is the
-  firm's readable name from `greenhouse_boards.toml` (not the Greenhouse
-  token), and `job_id` is that board's own id for the posting, kept as a
-  string.
+  `job_id` alone — Greenhouse (and Lever) assign ids per tenant, so two
+  different firms' boards can (and do) reuse the same id. `board` is the
+  firm's readable name from `greenhouse_boards.toml`/`lever_boards.toml`
+  (not the board token/slug), and `job_id` is that board's own id for the
+  posting, kept as a string (Greenhouse's are numeric, Lever's are UUIDs).
 - **Dedup/pruning**: keyed on that same `(board, job_id)` pair — a run
   appends a row the first time it sees one, never re-appends it while
   still open, and deletes it once it's gone from that board's feed, via one
@@ -96,27 +102,28 @@ See `CLAUDE.md` for design rationale and edge-case invariants.
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~29 boards. Realistic
-ceiling: **somewhere around 2,000-5,000 companies**, not the 10,000+ the
-raw minutes math alone would suggest:
+Google Sheet as the datastore — works fine at today's ~37 boards (32
+Greenhouse, 5 Lever). Realistic ceiling: **somewhere around 2,000-5,000
+companies**, not the 10,000+ the raw minutes math alone would suggest:
 
 - **GitHub Actions minutes, idealized**: fetching is sequential (see
-  `job_boards/greenhouse/client.py`), ~0.25s/board observed (29 boards ≈
-  7s total). This repo is a private GitHub repo, so its free tier is 2,000
-  Actions minutes/month, shared across every private repo on the account.
-  At 0.25s/board with negligible fixed overhead, that budget alone isn't
-  exhausted until roughly **~15,000 companies** — higher than you'd guess.
+  `job_boards/greenhouse/client.py` and `job_boards/lever/client.py`),
+  ~0.25s/board observed (37 boards ≈ 9s total). This repo is a private
+  GitHub repo, so its free tier is 2,000 Actions minutes/month, shared
+  across every private repo on the account. At 0.25s/board with negligible
+  fixed overhead, that budget alone isn't exhausted until roughly
+  **~15,000 companies** — higher than you'd guess.
 - **...but that's optimistic.** Retries/backoff on transient failures
   (2s/4s each) aren't in that math, and at real scale some % of boards
   fail transiently every run. `get_all_values()` also re-reads each tab's
   *entire* accumulated history every run, so runtime grows with total
   tracked postings over time, not just company count that day.
-- **The real unknown: Greenhouse itself.** This design hits thousands of
-  different Greenhouse-hosted board subdomains sequentially from one CI
-  runner IP. Each board is a different tenant, but Greenhouse's own
-  infrastructure is likely shared at the network/WAF layer — untested
-  whether/when that starts looking like abusive traffic and gets
-  throttled, independent of anything on this side.
+- **The real unknown: the board platforms themselves.** This design hits
+  thousands of different Greenhouse- and Lever-hosted board subdomains
+  sequentially from one CI runner IP. Each board is a different tenant, but
+  each platform's own infrastructure is likely shared at the network/WAF
+  layer — untested whether/when that starts looking like abusive traffic
+  and gets throttled, independent of anything on this side.
 - **Sheets' own hard cap**: a spreadsheet holds at most 10,000,000 cells
   (~900,000 rows at `FIELDS`' 11 columns). Where this binds depends on
   postings-per-company; today's sample (large quant/trading firms, ~45
@@ -131,14 +138,23 @@ of a GitHub Actions cron.
 ## Adding a board
 
 ```toml
+# greenhouse_boards.toml
 [[boards]]
 token = "stripe"          # slug from boards.greenhouse.io/<token>
 firm = "Stripe"           # readable name, shown in the board column
 company_type = "Big Tech" # free-form label, no fixed list
 ```
 
-Commit and push — `greenhouse_boards.toml` is checked in and read directly
-by both local runs and CI, no other config changes needed.
+```toml
+# lever_boards.toml
+[[boards]]
+token = "palantir"                    # slug from jobs.lever.co/<token>
+firm = "Palantir"                     # readable name, shown in the board column
+company_type = "Data/Cloud Infrastructure" # free-form label, no fixed list
+```
+
+Commit and push — both files are checked in and read directly by local runs
+and CI, no other config changes needed.
 
 ## Cron / CI
 

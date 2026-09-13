@@ -1,0 +1,26 @@
+[[boards]]
+token = "palantir"
+firm = "Palantir"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "spotify"
+firm = "Spotify"
+company_type = "Consumer/Media & Entertainment"
+
+# NOTE: the token is "shopback-2", not "shopback" -- ShopBack's live Lever
+# site is registered under that slug (confirmed against jobs.lever.co).
+[[boards]]
+token = "shopback-2"
+firm = "ShopBack"
+company_type = "Fintech"
+
+[[boards]]
+token = "prestolabs"
+firm = "Presto Labs"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "csit"
+firm = "CSIT"
+company_type = "Government/Defense Tech"

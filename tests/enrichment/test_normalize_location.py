@@ -85,6 +85,35 @@ def test_normalize_location_maps_iso_country_code_prefixed_cities():
     assert normalize_location("GB-London") == "London, United Kingdom"
 
 
+def test_normalize_location_strips_trailing_country_code_in_parens():
+    # ShopBack's live Lever board writes Singapore as "Singapore (SG)" --
+    # unstripped, neither the lookup table nor classify_region's bare-country
+    # check exact-matches it, so a real PAC posting would silently land in
+    # RoW.
+    assert normalize_location("Singapore (SG)") == "Singapore"
+
+
+def test_normalize_location_strips_work_mode_annotation():
+    # Spotify's live Lever board annotates some locations with its own
+    # work-arrangement label -- same failure shape as the country-code
+    # suffix above.
+    assert normalize_location("Taiwan (Home Mix)") == "Taiwan"
+    assert (
+        normalize_location("United States of America (Home Mix)")
+        == "United States of America"
+    )
+
+
+def test_normalize_location_collapses_repeated_city_state_name():
+    # Lever's categories.allLocations pairs some city-states with themselves
+    # instead of a country -- "Singapore, Singapore" (Palantir, CSIT),
+    # "Hong Kong, Hong Kong" (ShopBack). Already resolves to the right PAC
+    # country either way, but this keeps the sheet's location column as
+    # clean as the bare canonical form.
+    assert normalize_location("Singapore, Singapore") == "Singapore"
+    assert normalize_location("Hong Kong, Hong Kong") == "Hong Kong"
+
+
 def test_normalize_location_strips_trailing_locations_suffix():
     # Stripe groups several physical offices under one umbrella entry per
     # country instead of listing them individually -- confirmed on its live
