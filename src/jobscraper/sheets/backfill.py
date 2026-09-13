@@ -20,16 +20,18 @@ Eight things happen to every row, for every (category, region) tab:
     `title`/`department` via the *current* classify_seniority.
     classify_seniority; `company_type` and `source` by looking the row's
     `board` up in the *current* config.GREENHOUSE_BOARDS,
-    config.LEVER_BOARDS, and config.ASHBY_BOARDS (whichever one the firm is
-    actually configured in -- `source` is just which of the three that is,
-    "Greenhouse"/"Lever"/"Ashby"). Fixing classify_seniority.py's "misses
-    numeric/leveling titles" gap, re-categorizing a firm in any of the
-    three `*_boards.toml` files, or moving a firm from one board system to
-    another, and then running this backfill applies the change to every
-    existing row, not just new ones.
+    config.LEVER_BOARDS, config.ASHBY_BOARDS, and
+    config.SMARTRECRUITERS_BOARDS (whichever one the firm is actually
+    configured in -- `source` is just which of the four that is,
+    "Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters"). Fixing
+    classify_seniority.py's "misses numeric/leveling titles" gap,
+    re-categorizing a firm in any of the four `*_boards.toml` files, or
+    moving a firm from one board system to another, and then running this
+    backfill applies the change to every existing row, not just new ones.
   - `location` is corrected using a *fresh* re-fetch of every board in
-    config.GREENHOUSE_BOARDS, config.LEVER_BOARDS, and config.ASHBY_BOARDS
-    (see _fetch_overrides) when the row's posting is still open -- that
+    config.GREENHOUSE_BOARDS, config.LEVER_BOARDS, config.ASHBY_BOARDS, and
+    config.SMARTRECRUITERS_BOARDS (see _fetch_overrides) when the row's
+    posting is still open -- that
     re-fetch has real per-office data, so it's what actually fixes a
     legacy, never-split cell like "Chicago, New York City" (written before
     this project read per-office data at all -- see
@@ -95,15 +97,15 @@ into another tab's own dedup key space, which risks duplicating or losing
 rows if this script is interrupted partway through. Out of scope until
 that's actually needed.
 
-refresh_all() does re-fetch Greenhouse, Lever, and Ashby (for
-location/first_published/description overrides -- see above), but only
+refresh_all() does re-fetch Greenhouse, Lever, Ashby, and SmartRecruiters
+(for location/first_published/description overrides -- see above), but only
 ever *reads* them: a closed posting is gone from its board's API forever,
 so for every OTHER column, a row's own text (title, department, url, ...)
 is the only surviving source of truth for itself -- everything except
 `location`/`first_published`/`description` only ever recomputes from
 columns already in the row.
 
-A firm dropped from all three `*_boards.toml` files entirely has no entry
+A firm dropped from all four `*_boards.toml` files entirely has no entry
 to look company_type or source up against -- its existing rows are left
 with whatever company_type/source they already have rather than being
 blanked out.
@@ -125,6 +127,7 @@ from jobscraper.enrichment.normalize_location import normalize_location
 from jobscraper.job_boards.ashby.client import fetch_ashby_jobs
 from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs
+from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
 from jobscraper.models import (
     FIELDS,
     FIRMS_NEEDING_DESCRIPTION,
@@ -199,9 +202,10 @@ def _url_formula_cells(
 def _fetch_overrides() -> dict[tuple[str, str], Job]:
     """Every currently open posting, freshly re-fetched, keyed by (board,
     job_id) -- one re-fetch of every board in config.GREENHOUSE_BOARDS,
-    config.LEVER_BOARDS, and config.ASHBY_BOARDS (the same three loops
-    main.py's daily run makes) serves three different retroactive fixes
-    without doubling the network cost:
+    config.LEVER_BOARDS, config.ASHBY_BOARDS, and
+    config.SMARTRECRUITERS_BOARDS (the same four loops main.py's daily run
+    makes) serves three different retroactive fixes without doubling the
+    network cost:
 
     - `location`: the only way to correctly fix a legacy multi-location cell
       that was never split (written before a board's client read its
@@ -230,9 +234,9 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
 
     A board that fails to fetch (network error, bad token, ...) is logged
     and skipped -- its rows just get no override for any of these columns
-    this run. Merging all three board types into one dict is safe because
+    this run. Merging all four board types into one dict is safe because
     the dedup key is (board, job_id) where `board` is the firm's name, not
-    the board type -- a firm is only ever configured in one of the three
+    the board type -- a firm is only ever configured in one of the four
     files.
     """
     overrides: dict[tuple[str, str], Job] = {}
@@ -240,6 +244,7 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
         (config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),
         (config.LEVER_BOARDS, fetch_lever_jobs),
         (config.ASHBY_BOARDS, fetch_ashby_jobs),
+        (config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
     ):
         for board in board_list:
             firm = board["firm"]
@@ -336,7 +341,12 @@ def refresh_worksheet(
     }
     company_type_by_firm = {
         board["firm"]: board["company_type"]
-        for board_list in (config.GREENHOUSE_BOARDS, config.LEVER_BOARDS, config.ASHBY_BOARDS)
+        for board_list in (
+            config.GREENHOUSE_BOARDS,
+            config.LEVER_BOARDS,
+            config.ASHBY_BOARDS,
+            config.SMARTRECRUITERS_BOARDS,
+        )
         for board in board_list
     }
     source_by_firm = {
@@ -345,6 +355,7 @@ def refresh_worksheet(
             (config.GREENHOUSE_BOARDS, "Greenhouse"),
             (config.LEVER_BOARDS, "Lever"),
             (config.ASHBY_BOARDS, "Ashby"),
+            (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
         )
         for board in board_list
     }

@@ -265,7 +265,7 @@ class Job:
         already, but shows the whole url as the cell's visible text, which
         is unreadable once the column is more than a few characters wide.
         `self.url` itself stays the raw url so anything else on this Job
-        (e.g. a future Telegram digest) still has the real link.
+        (e.g. telegram.py's digest) still has the real link.
         """
         return [
             normalize_date(self.first_published),

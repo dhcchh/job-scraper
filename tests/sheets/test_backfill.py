@@ -320,6 +320,7 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", [])
     monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
     monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "SMARTRECRUITERS_BOARDS", [])
     monkeypatch.setattr(backfill, "get_spreadsheet", lambda: "SPREADSHEET")
     monkeypatch.setattr(backfill, "get_worksheet", lambda spreadsheet, name: name)
 
@@ -344,6 +345,7 @@ def test_fetch_overrides_keys_by_board_and_job_id(monkeypatch):
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", boards)
     monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
     monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "SMARTRECRUITERS_BOARDS", [])
 
     fetched = [_job_stub("Acme", "1", "Singapore"), _job_stub("Acme", "2", "London, United Kingdom")]
     monkeypatch.setattr(
@@ -366,6 +368,7 @@ def test_fetch_overrides_skips_a_board_that_fails(monkeypatch):
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", boards)
     monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
     monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "SMARTRECRUITERS_BOARDS", [])
 
     good_job = _job_stub("GoodCo", "1", "Singapore")
 
@@ -381,10 +384,11 @@ def test_fetch_overrides_skips_a_board_that_fails(monkeypatch):
     assert overrides == {("GoodCo", "1"): good_job}
 
 
-def test_fetch_overrides_merges_greenhouse_lever_and_ashby(monkeypatch):
-    # backfill.py predates Lever/Ashby support and only ever re-fetched
-    # GREENHOUSE_BOARDS -- a Lever- or Ashby-sourced row must get the same
-    # fresh-data override a Greenhouse-sourced row already did.
+def test_fetch_overrides_merges_greenhouse_lever_ashby_and_smartrecruiters(monkeypatch):
+    # backfill.py predates Lever/Ashby/SmartRecruiters support and only ever
+    # re-fetched GREENHOUSE_BOARDS -- a row sourced from any of the other
+    # three must get the same fresh-data override a Greenhouse-sourced row
+    # already did.
     monkeypatch.setattr(
         backfill.config,
         "GREENHOUSE_BOARDS",
@@ -400,10 +404,16 @@ def test_fetch_overrides_merges_greenhouse_lever_and_ashby(monkeypatch):
         "ASHBY_BOARDS",
         [{"token": "as", "firm": "AshbyCo", "company_type": "Big Tech"}],
     )
+    monkeypatch.setattr(
+        backfill.config,
+        "SMARTRECRUITERS_BOARDS",
+        [{"token": "sr", "firm": "SmartRecruitersCo", "company_type": "Big Tech"}],
+    )
 
     gh_job = _job_stub("GreenhouseCo", "1", "Singapore")
     lever_job = _job_stub("LeverCo", "2", "London, United Kingdom")
     ashby_job = _job_stub("AshbyCo", "3", "Sydney, Australia")
+    smartrecruiters_job = _job_stub("SmartRecruitersCo", "4", "Beijing, China")
 
     monkeypatch.setattr(backfill, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     monkeypatch.setattr(
@@ -412,6 +422,11 @@ def test_fetch_overrides_merges_greenhouse_lever_and_ashby(monkeypatch):
     monkeypatch.setattr(
         backfill, "fetch_ashby_jobs", lambda token, firm, company_type: [ashby_job]
     )
+    monkeypatch.setattr(
+        backfill,
+        "fetch_smartrecruiters_jobs",
+        lambda token, firm, company_type: [smartrecruiters_job],
+    )
 
     overrides = backfill._fetch_overrides()
 
@@ -419,6 +434,7 @@ def test_fetch_overrides_merges_greenhouse_lever_and_ashby(monkeypatch):
         ("GreenhouseCo", "1"): gh_job,
         ("LeverCo", "2"): lever_job,
         ("AshbyCo", "3"): ashby_job,
+        ("SmartRecruitersCo", "4"): smartrecruiters_job,
     }
 
 

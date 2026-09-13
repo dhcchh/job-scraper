@@ -127,7 +127,7 @@ def set_basic_filter(worksheet: gspread.Worksheet) -> None:
         worksheet.set_basic_filter()
 
 
-def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> int:
+def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> list[Job]:
     """Append this run's not-yet-seen jobs as new rows.
 
     A job already present in the sheet -- matched by (board, job_id) -- is
@@ -136,12 +136,13 @@ def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> int:
     worth knowing: since a job's row is now written exactly once, its
     scraped_date is effectively "first seen", not "last confirmed open".
 
-    Returns the number of rows actually appended (0 if none) -- main.py
-    rolls this up into its per-run summary.
+    Returns the Job objects actually appended (empty if none) -- main.py
+    rolls len() of this up into its per-run summary, and passes the Jobs
+    themselves to telegram.send_digest for the PAC tabs it covers.
     """
     if not jobs:
         logger.info("no jobs to append")
-        return 0
+        return []
 
     existing = _existing_keys(worksheet)
     new_jobs = [job for job in jobs if (job.board, job.job_id) not in existing]
@@ -149,14 +150,14 @@ def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> int:
 
     if not new_jobs:
         logger.info("no new jobs to append (%d already tracked)", skipped)
-        return 0
+        return []
 
     rows = [job.to_row() for job in new_jobs]
     worksheet.append_rows(rows, value_input_option="USER_ENTERED")
     logger.info(
         "appended %d new row(s), skipped %d already-tracked", len(rows), skipped
     )
-    return len(rows)
+    return new_jobs
 
 
 def _existing_keys(worksheet: gspread.Worksheet) -> set[tuple[str, str]]:

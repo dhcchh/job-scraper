@@ -5,7 +5,7 @@ a firm is added or removed.
 
 import pytest
 
-from jobscraper.config import _load_boards
+from jobscraper.config import _load_boards, _optional_int
 
 
 def test_load_boards_parses_token_firm_and_company_type(tmp_path):
@@ -62,3 +62,20 @@ def test_load_boards_error_identifies_entry_by_firm(tmp_path):
 
     with pytest.raises(ValueError, match="Beta Inc"):
         _load_boards(boards_file)
+
+
+def test_optional_int_parses_a_set_value(monkeypatch):
+    monkeypatch.setenv("SOME_INT", "42")
+    assert _optional_int("SOME_INT") == 42
+
+
+def test_optional_int_none_when_unset(monkeypatch):
+    monkeypatch.delenv("SOME_INT", raising=False)
+    assert _optional_int("SOME_INT") is None
+
+
+def test_optional_int_none_when_blank(monkeypatch):
+    # A GitHub Actions secret that doesn't exist still shows up as "" in the
+    # workflow's env block, not simply absent -- must not raise on int("").
+    monkeypatch.setenv("SOME_INT", "")
+    assert _optional_int("SOME_INT") is None

@@ -1,0 +1,11 @@
+# SmartRecruiters job boards to scrape.
+
+[[boards]]
+token = "Grab"
+firm = "Grab"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "Wise"
+firm = "Wise"
+company_type = "Fintech"

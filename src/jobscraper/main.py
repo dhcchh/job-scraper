@@ -5,15 +5,17 @@ tab, prune closed ones.
 
     uv run python -m jobscraper.main
 
-Loops over GREENHOUSE_BOARDS, then LEVER_BOARDS, then ASHBY_BOARDS, from
-config -- one board at a time within each, no concurrency, since this runs
-once a day and there's no rate-limit pressure at this scale. All three loops
-feed the same all_jobs/succeeded_firms/failed_firms accumulators, so a
-firm's board type is otherwise invisible past this point --
-prune_closed_postings only ever reasons about firms. A board whose fetch
-fails (greenhouse.client.fetch_greenhouse_jobs/lever.client.fetch_lever_jobs/
-ashby.client.fetch_ashby_jobs already retry transient errors -- see those
-modules -- so what reaches here has exhausted those) is skipped for pruning; its
+Loops over GREENHOUSE_BOARDS, then LEVER_BOARDS, then ASHBY_BOARDS, then
+SMARTRECRUITERS_BOARDS, from config -- one board at a time within each, no
+concurrency, since this runs once a day and there's no rate-limit pressure
+at this scale. All four loops feed the same
+all_jobs/succeeded_firms/failed_firms accumulators, so a firm's board type
+is otherwise invisible past this point -- prune_closed_postings only ever
+reasons about firms. A board whose fetch fails
+(greenhouse.client.fetch_greenhouse_jobs/lever.client.fetch_lever_jobs/
+ashby.client.fetch_ashby_jobs/smartrecruiters.client.fetch_smartrecruiters_jobs
+already retry transient errors -- see those modules -- so what reaches here
+has exhausted those) is skipped for pruning; its
 firm is left out of fetched_boards, so prune_closed_postings never mistakes
 "we couldn't check this board" for "everything on it just closed".
 Successful boards are still updated, then the process fails after writing
@@ -55,6 +57,16 @@ runner renders on the workflow's summary page); _write_job_summary no-ops
 when it's unset, which is always true for a local `uv run python -m
 jobscraper.main`.
 
+telegram.send_digest is called right after, with each of DA/BI, DS/ML/Algos,
+and SWE/DE's newly appended PAC-tab Jobs (from append_jobs' return value --
+not tab_jobs, which is every job classified into that tab this run, appended
+or not) plus this run's already-opened spreadsheet.url, for the digest's
+trailing link. Unconfigured or nothing new, it no-ops; see telegram.py for
+why PAC/these-three-categories only, why the message is grouped counts (not
+a full per-job listing) linking back to the sheet rather than to each job
+directly, and why this is called even when failed_firms will fail the run
+below.
+
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add a client module with its own fetch_<board>_jobs() ->
     list[Job], and extend the fetch loop below the same way Greenhouse,
@@ -79,6 +91,7 @@ from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
 from jobscraper.job_boards.ashby.client import fetch_ashby_jobs
 from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs
+from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
 from jobscraper.models import Job
 from jobscraper.sheets.writer import (
     append_jobs,
@@ -86,6 +99,7 @@ from jobscraper.sheets.writer import (
     get_worksheet,
     prune_closed_postings,
 )
+from jobscraper.telegram import DIGEST_CATEGORIES, send_digest
 
 logger = logging.getLogger(__name__)
 
@@ -148,8 +162,27 @@ def run() -> None:
         succeeded_firms.add(firm)
         succeeded_entries += 1
 
+    for board in config.SMARTRECRUITERS_BOARDS:
+        firm = board["firm"]
+        try:
+            jobs = fetch_smartrecruiters_jobs(board["token"], firm, board["company_type"])
+        except Exception:
+            logger.exception(
+                "smartrecruiters[%s]: failed to fetch after retries, skipping this "
+                "board for the rest of the run",
+                firm,
+            )
+            failed_firms.add(firm)
+            continue
+        all_jobs.extend(jobs)
+        succeeded_firms.add(firm)
+        succeeded_entries += 1
+
     total_boards = (
-        len(config.GREENHOUSE_BOARDS) + len(config.LEVER_BOARDS) + len(config.ASHBY_BOARDS)
+        len(config.GREENHOUSE_BOARDS)
+        + len(config.LEVER_BOARDS)
+        + len(config.ASHBY_BOARDS)
+        + len(config.SMARTRECRUITERS_BOARDS)
     )
 
     # A firm can have more than one board token (e.g. Optiver has two) --
@@ -196,6 +229,7 @@ def run() -> None:
     )
 
     tab_stats: dict[str, tuple[int, int, int]] = {}
+    newly_appended_by_tab: dict[str, list[Job]] = {}
     for category, _keywords in CATEGORIES:
         for region in REGIONS:
             tab = tab_name(category, region)
@@ -205,7 +239,8 @@ def run() -> None:
             pruned = prune_closed_postings(
                 worksheet, tab_jobs, fetched_boards=fetched_boards
             )
-            tab_stats[tab] = (len(tab_jobs), appended, pruned)
+            tab_stats[tab] = (len(tab_jobs), len(appended), pruned)
+            newly_appended_by_tab[tab] = appended
 
     markdown = _build_summary_markdown(
         spreadsheet_title=spreadsheet.title,
@@ -218,6 +253,20 @@ def run() -> None:
         tab_stats=tab_stats,
     )
     _write_job_summary(markdown)
+
+    # Sent regardless of failed_firms below, same reasoning as writing the
+    # summary above: a board failing elsewhere doesn't make the postings
+    # that WERE newly appended into these PAC tabs any less real, and
+    # withholding the digest until some future fully-clean run could delay
+    # it indefinitely for a chronically flaky board. PAC-only, three
+    # categories -- see telegram.py.
+    send_digest(
+        {
+            category: newly_appended_by_tab.get(tab_name(category, "PAC"), [])
+            for category in DIGEST_CATEGORIES
+        },
+        spreadsheet_url=spreadsheet.url,
+    )
 
     # Keep successful boards current and avoid pruning a failed board, but do
     # not let the workflow look healthy when its result is incomplete. The

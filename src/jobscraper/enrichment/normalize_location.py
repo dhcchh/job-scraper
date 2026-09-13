@@ -242,6 +242,46 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "remote": "Remote",
     "virtual": "Remote",
     "anywhere (subject to approval)": "Remote",
+    # Seeded from Grab's and Wise's live SmartRecruiters boards, both of
+    # which hand this project a single plain `location.city` string per
+    # posting (see job_boards/smartrecruiters/client.py) rather than a
+    # pre-split offices array -- same "City, Country"/bare-city-state
+    # convention as every entry above once decoded.
+    "petaling jaya": "Petaling Jaya, Malaysia",
+    "johor bahru": "Johor Bahru, Malaysia",
+    "kuala lumpur": "Kuala Lumpur, Malaysia",
+    "jakarta": "Jakarta, Indonesia",
+    "bandung": "Bandung, Indonesia",
+    "medan": "Medan, Indonesia",
+    "palembang": "Palembang, Indonesia",
+    "batam": "Batam, Indonesia",
+    "pangkal pinang": "Pangkal Pinang, Indonesia",
+    "tangerang": "Tangerang, Indonesia",
+    # SmartRecruiters' own `location.city` value for one Grab posting --
+    # BSD City is a district of Tangerang, not a separate city.
+    "bsd, tangerang": "Tangerang, Indonesia",
+    "bangkok": "Bangkok, Thailand",
+    "chiang mai": "Chiang Mai, Thailand",
+    "pasig city": "Pasig City, Philippines",
+    "phnom penh": "Phnom Penh, Cambodia",
+    "suzhou": "Suzhou, China",
+    # Vietnam is a PAC country in classify_region's list; HCMC is Grab's own
+    # abbreviation for the city already mapped above as "Ho Chi Minh"/"Ho
+    # Chi Minh City".
+    "hcmc": "Ho Chi Minh City, Vietnam",
+    "cluj napoca": "Cluj-Napoca, Romania",
+    "tallinn": "Tallinn, Estonia",
+    "sao paulo": "Sao Paulo, Brazil",
+    "são paulo": "Sao Paulo, Brazil",
+    "hyderabad": "Hyderabad, India",
+    "berlin": "Berlin, Germany",
+    "brussels": "Brussels, Belgium",
+    "bogota": "Bogota, Colombia",
+    "johannesburg": "Johannesburg, South Africa",
+    "ottawa": "Ottawa, Canada",
+    "ciudad de méxico": "Mexico City, Mexico",
+    # A ward of Tokyo on Wise's board, not a separate city.
+    "chuo city": "Tokyo, Japan",
 }
 
 

@@ -20,14 +20,15 @@ small fake `Worksheet`.
 ## Architecture and invariants
 
 - The daily GitHub Actions workflow runs `jobscraper.main`. Each run fetches
-  every configured Greenhouse, Lever, and Ashby board, classifies postings
-  into ten tabs (five categories × `PAC`/`RoW`), appends jobs first seen
-  this run, then removes jobs confirmed closed.
+  every configured Greenhouse, Lever, Ashby, and SmartRecruiters board,
+  classifies postings into ten tabs (five categories × `PAC`/`RoW`), appends
+  jobs first seen this run, then removes jobs confirmed closed.
 - `config.py` is the only module that reads environment variables,
   `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
-  and `company_toml/ashby_boards.toml`; import `jobscraper.config` rather
-  than copying its settings at import time. Board tokens are checked in
-  and are not secrets.
+  `company_toml/ashby_boards.toml`, and
+  `company_toml/smartrecruiters_boards.toml`; import `jobscraper.config`
+  rather than copying its settings at import time. Board tokens are checked
+  in and are not secrets.
   `_load_boards` validates every `[[boards]]` entry has `token`, `firm`, and
   `company_type` at import time, raising `ValueError` naming the offending
   entry and field(s) rather than letting a typo surface as a `KeyError` deep
@@ -38,7 +39,7 @@ small fake `Worksheet`.
   scoped. `first_published` is the best available Greenhouse "went live"
   signal; `updated_at` can change after edits and `scraped_date` is only when
   this project first saw the job. `source` records which board system
-  ("Greenhouse"/"Lever"/"Ashby") a posting came from -- distinct from
+  ("Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters") a posting came from -- distinct from
   `board`, which is the firm's name -- and is stamped as a fixed literal by
   each `job_boards/*/client.py`, not read from any API response.
   `description` is the full JD text, but ONLY for a firm in
@@ -54,7 +55,9 @@ small fake `Worksheet`.
   (unlike every other column, which is never guess-blanked). Where it is
   populated: Greenhouse's client runs `models.strip_html` over its HTML
   `content` field, Lever's and Ashby's clients use each API's own
-  ready-made plain text instead. `FIELDS`' current order is
+  ready-made plain text instead. SmartRecruiters' client never populates it
+  regardless of `FIRMS_NEEDING_DESCRIPTION` -- see
+  `job_boards/smartrecruiters/client.py` for why. `FIELDS`' current order is
   `first_published, updated_at, board, title, location, seniority,
   company_type, url, department, job_id, scraped_date, source,
   description` (columns A-M) -- see `models.py`'s `FIELDS` comment for why.
@@ -75,11 +78,32 @@ small fake `Worksheet`.
   live Ashby board has needed that fallback yet. Ashby splits its per-office
   list across two fields (top-level `location` plus
   `secondaryLocations[].location`), not one array like Greenhouse/Lever.
+- `smartrecruiters/client.py` fetches the public Posting API
+  (`api.smartrecruiters.com/v1/companies/<identifier>/postings`), same
+  retry/skip behavior. Paginated (the server caps `limit` at 100 regardless
+  of what's requested), unlike the other three boards' single-response
+  payloads, so the client pages through `offset` until `totalFound` is
+  reached. Same no-edited-at-timestamp shape as Lever/Ashby:
+  `first_published` comes from `releasedDate`, `updated_at` stays `""`.
+  `department` reads `function.label` (a standardized, always-populated
+  SmartRecruiters taxonomy), not the generic `department` object every
+  posting carries -- confirmed always empty `{}` on both Grab's and Wise's
+  live boards, with each company's actual org-unit naming buried in its own
+  inconsistent custom fields instead (Grab has a "Department Name" custom
+  field; Wise has none, its closest equivalent is "Tribe"/"Squad", its own
+  internal jargon). `url` is built directly as
+  `https://jobs.smartrecruiters.com/<company identifier>/<id>` (confirmed
+  against live postings) rather than read from a field, since the list
+  response's own `ref` field is the API endpoint URL, not a candidate-facing
+  page. A SmartRecruiters posting is only ever open in one office (a single
+  `location` object, not a pre-split per-office array like the other three
+  boards), so its client's `_location` normalizes just `location.city` with
+  no `" | "`-joining needed.
 - Build locations from Greenhouse's `offices[]`, Lever's
-  `categories.allLocations`, or Ashby's `location` +
-  `secondaryLocations[].location`, normalize each office, remove
-  duplicates, then join with `" | "`. Do not split
-  `location.name`/`categories.location` by commas: it is free text.
+  `categories.allLocations`, Ashby's `location` +
+  `secondaryLocations[].location`, or SmartRecruiters' single `location.city`,
+  normalize each office, remove duplicates, then join with `" | "`. Do not
+  split `location.name`/`categories.location` by commas: it is free text.
   `normalize_location.py` intentionally falls back to a cleaned unknown
   value rather than guessing. Add a canonical mapping before treating a new
   city as PAC. It also removes `Remote -`, `(Remote)`, `Office`,
@@ -88,8 +112,14 @@ small fake `Worksheet`.
   City" wrapper, and (seeded from Ashby's Airwallex/Snowflake boards) a
   spaced-out ISO-code prefix like `"AU - Sydney"` before lookup.
 - `classify_region` routes a posting to PAC if any normalized office is in a
-  PAC country. `classify_roles.classify_job` returns `None` for recruiter
-  titles before applying category keywords; keyword precedence is intentional.
+  PAC country. `_PAC_COUNTRIES` deliberately excludes Malaysia, Indonesia,
+  Thailand, the Philippines, and Cambodia even though Grab's SmartRecruiters
+  board posts the majority of its jobs there -- a conscious decision (not an
+  oversight) when SmartRecruiters/Grab was added, to keep today's
+  Singapore/Hong Kong/Australia/Japan/South Korea/China/Taiwan/New
+  Zealand/Vietnam scope rather than widen it; those Grab postings land in
+  RoW. `classify_roles.classify_job` returns `None` for recruiter titles
+  before applying category keywords; keyword precedence is intentional.
 - `sheets/writer.py` deduplicates and prunes by `(board, job_id)`. Only prune
   boards fetched successfully (and all tokens for a multi-token firm).
   Pruning uses an atomic Sheets batch of row deletions, but concurrent writers
@@ -134,15 +164,47 @@ small fake `Worksheet`.
   `GOOGLE_SHEET_TITLE` env var closes that gap: when set, `get_spreadsheet()`
   raises before any board is touched if the opened spreadsheet's title
   doesn't match, rather than only being visible in the logged title/URL.
+- `telegram.py` is an optional digest of this run's newly appended DA/BI,
+  DS/ML/Algos, and SWE/DE postings -- PAC region only, matching this
+  project's Singapore-based audience (see `classify_region.py`); QT/QR and
+  SRE/DevOps are deliberately left out. `main.py` calls `send_digest` with
+  each category's newly appended PAC-tab jobs plus this run's already-opened
+  `spreadsheet.url` -- `sheets.writer.append_jobs` returns the `list[Job]`
+  it actually appended (not a count) so the digest can group them. The
+  message is deliberately a *count* digest, not a listing: one line per
+  distinct (category, firm, location), e.g. "3 new SWE/DE roles from Grab
+  available in Singapore", not one line per job with its own title and
+  apply link -- an earlier version gave every job's title and a direct
+  apply link away up front, which gave a reader no reason to open the
+  tracker sheet. The message ends with one link to the spreadsheet itself
+  (not a per-job/per-category deep link) so the reader goes there for
+  titles, exact locations, and the real apply link. Disabled by default:
+  `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` unset (see `config.py`)
+  makes `send_digest` a silent no-op, same convention as
+  data-career-hustler-bot's own optional `*_CHAT_ID` destinations. Sent via
+  a raw HTTP POST to Telegram's Bot API, not a bot framework -- this fires
+  one message (HTML parse mode, since the trailing sheet link needs a real
+  anchor tag) and exits, no dispatcher needed. `send_digest`
+  never raises: a Telegram outage or bad token is logged and swallowed
+  rather than failing a run that otherwise wrote to the sheet successfully,
+  and `main.py` calls it unconditionally before its own failed-board check
+  so a flaky board elsewhere doesn't withhold the digest for postings a
+  *different*, successful board actually appended. `TELEGRAM_BOT_TOKEN` can
+  reuse the exact bot token the sibling `data-career-hustler-bot` repo's
+  Telegram community bot already runs (a bot token isn't tied to one chat),
+  but `TELEGRAM_CHAT_ID`/`TELEGRAM_THREAD_ID` should point at a different
+  topic from that bot's own `JOBS_CHAT_ID`/`JOBS_THREAD_ID` -- these are
+  unreviewed scraped postings, not the same thing as that bot's
+  member-curated, point-earning `/postjob` listings, and mixing the two
+  would make the manual topic unreadable. A single message over Telegram's
+  4096-character cap splits into a few, on section/line boundaries only
+  (`telegram._chunk`) -- never mid-line, since a truncated `<a href=...>`
+  would send Telegram malformed HTML.
 
 ## Open work
 
 - Recognize numeric and level-based seniority (for example, `Engineer II`,
   `SDE II`, and `L4/L5`) rather than classifying it as `Unspecified`.
-- Add an optional Telegram digest for newly appended DA/BI, DS/ML/Algos, and
-  SWE/DE postings. Send one batched message per successful run; it will need
-  bot, chat, and thread secrets, plus access to the newly appended jobs rather
-  than only their counts.
 - If more than one person operates the production sheet, add a distributed
   lock; GitHub Actions concurrency cannot prevent an overlapping local run.
 

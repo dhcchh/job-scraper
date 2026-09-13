@@ -18,12 +18,14 @@ load_dotenv()
 # list of many firms is much easier to read/edit as a TOML array-of-tables
 # than as one long comma-separated string. Grouped under company_toml/
 # (rather than the repo root) so the root isn't cluttered as more board
-# platforms are added -- see company_toml/greenhouse_boards.toml and
-# company_toml/lever_boards.toml themselves.
+# platforms are added -- see company_toml/greenhouse_boards.toml,
+# company_toml/lever_boards.toml, company_toml/ashby_boards.toml, and
+# company_toml/smartrecruiters_boards.toml themselves.
 _COMPANY_TOML_DIR = Path(__file__).resolve().parents[2] / "company_toml"
 _BOARDS_FILE = _COMPANY_TOML_DIR / "greenhouse_boards.toml"
 _LEVER_BOARDS_FILE = _COMPANY_TOML_DIR / "lever_boards.toml"
 _ASHBY_BOARDS_FILE = _COMPANY_TOML_DIR / "ashby_boards.toml"
+_SMARTRECRUITERS_BOARDS_FILE = _COMPANY_TOML_DIR / "smartrecruiters_boards.toml"
 
 
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
@@ -54,6 +56,10 @@ LEVER_BOARDS: list[dict] = _load_boards(_LEVER_BOARDS_FILE)
 # (jobs.ashbyhq.com/<token>), same idea as Lever's site slug.
 ASHBY_BOARDS: list[dict] = _load_boards(_ASHBY_BOARDS_FILE)
 
+# Same shape again -- SmartRecruiters' `token` is its company identifier
+# (jobs.smartrecruiters.com/<token>), same idea as Lever's/Ashby's slug.
+SMARTRECRUITERS_BOARDS: list[dict] = _load_boards(_SMARTRECRUITERS_BOARDS_FILE)
+
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit
 #
@@ -73,3 +79,34 @@ GOOGLE_SHEET_TITLE: str | None = os.environ.get("GOOGLE_SHEET_TITLE") or None
 # This is what lets a GitHub Actions secret carry it without a "write secret
 # to a temp file" workflow step. Parsed with json.loads() in sheets/writer.py.
 GOOGLE_SERVICE_ACCOUNT_JSON: str = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+
+
+def _optional_int(name: str) -> int | None:
+    """An optional integer env var; None when unset/blank.
+
+    A GitHub Actions secret that doesn't exist still shows up as an empty
+    string in the workflow's `env:` block (not simply absent), so this
+    treats "" the same as unset rather than raising on int("").
+    """
+    val = os.environ.get(name)
+    return int(val) if val else None
+
+
+# Optional Telegram digest of newly appended DA/BI, DS/ML/Algos, and SWE/DE
+# postings (PAC region only, matching this project's Singapore-based
+# audience -- see classify_region.py) -- see telegram.py. Unset (the
+# default for all three) disables the feature entirely rather than raising,
+# the same convention data-career-hustler-bot's own JOBS_CHAT_ID/
+# RESOURCES_CHAT_ID use for an optional destination.
+#
+# TELEGRAM_BOT_TOKEN can reuse the exact @BotFather bot
+# data-career-hustler-bot already runs (a bot token isn't tied to one chat),
+# but TELEGRAM_CHAT_ID/TELEGRAM_THREAD_ID should point at a DIFFERENT topic
+# from that bot's own JOBS_CHAT_ID/JOBS_THREAD_ID -- these are unreviewed
+# scraped postings, not the same thing as that bot's member-curated,
+# point-earning /postjob listings, and mixing the two would make the manual
+# topic unreadable. TELEGRAM_THREAD_ID is optional even when the rest is
+# set (a non-forum group or a DM has no topics).
+TELEGRAM_BOT_TOKEN: str | None = os.environ.get("TELEGRAM_BOT_TOKEN") or None
+TELEGRAM_CHAT_ID: int | None = _optional_int("TELEGRAM_CHAT_ID")
+TELEGRAM_THREAD_ID: int | None = _optional_int("TELEGRAM_THREAD_ID")

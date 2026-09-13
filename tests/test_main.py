@@ -35,15 +35,17 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main, "get_worksheet", lambda spreadsheet, name: name)
     # Empty by default so a test that only cares about Greenhouse behavior
     # doesn't also fetch the real, committed company_toml/lever_boards.toml
-    # / company_toml/ashby_boards.toml over the network -- a test exercising
-    # the Lever/Ashby loop overrides these itself.
+    # / company_toml/ashby_boards.toml / company_toml/smartrecruiters_boards.toml
+    # over the network -- a test exercising one of those loops overrides it
+    # itself.
     monkeypatch.setattr(main.config, "LEVER_BOARDS", [])
     monkeypatch.setattr(main.config, "ASHBY_BOARDS", [])
+    monkeypatch.setattr(main.config, "SMARTRECRUITERS_BOARDS", [])
 
     def fake_append_jobs(worksheet, jobs):
         if append_calls is not None:
             append_calls.append((worksheet, jobs))
-        return len(jobs)
+        return jobs  # simulate every job as newly appended
 
     def fake_prune_closed_postings(worksheet, jobs, fetched_boards):
         prune_calls.append(fetched_boards)
@@ -189,6 +191,75 @@ def test_run_fetches_and_merges_ashby_boards_alongside_greenhouse(monkeypatch):
     )
     assert pac_jobs == [gh_job]
     assert row_jobs == [ashby_job]
+
+
+def test_run_fetches_and_merges_smartrecruiters_boards_alongside_greenhouse(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        main.config,
+        "GREENHOUSE_BOARDS",
+        [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}],
+    )
+
+    gh_job = _job("Acme", "1", location="Singapore")
+    sr_job = _job("Grab", "2", location="London, United Kingdom")
+
+    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(
+        main, "fetch_smartrecruiters_jobs", lambda token, firm, company_type: [sr_job]
+    )
+
+    prune_calls: list[set[str]] = []
+    append_calls: list[tuple] = []
+    _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
+    # Override _patch_sheet_functions' empty-by-default SMARTRECRUITERS_BOARDS
+    # -- this test specifically exercises the SmartRecruiters loop.
+    monkeypatch.setattr(
+        main.config,
+        "SMARTRECRUITERS_BOARDS",
+        [{"token": "Grab", "firm": "Grab", "company_type": "Consumer/Marketplace"}],
+    )
+
+    main.run()
+
+    assert all(fetched_boards == {"Acme", "Grab"} for fetched_boards in prune_calls)
+    pac_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - PAC"
+    )
+    row_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - RoW"
+    )
+    assert pac_jobs == [gh_job]
+    assert row_jobs == [sr_job]
+
+
+def test_run_treats_a_failed_smartrecruiters_board_like_a_failed_greenhouse_board(
+    monkeypatch,
+):
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [])
+
+    def fake_fetch_smartrecruiters_jobs(token, firm, company_type):
+        raise RuntimeError("smartrecruiters down")
+
+    monkeypatch.setattr(main, "fetch_smartrecruiters_jobs", fake_fetch_smartrecruiters_jobs)
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    # Override _patch_sheet_functions' empty-by-default SMARTRECRUITERS_BOARDS
+    # -- this test specifically exercises the SmartRecruiters loop's failure
+    # handling.
+    monkeypatch.setattr(
+        main.config,
+        "SMARTRECRUITERS_BOARDS",
+        [{"token": "bad", "firm": "BadCo", "company_type": "Big Tech"}],
+    )
+
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
+
+    assert prune_calls
+    assert all(fetched_boards == set() for fetched_boards in prune_calls)
 
 
 def test_run_treats_a_failed_ashby_board_like_a_failed_greenhouse_board(monkeypatch):
@@ -416,3 +487,74 @@ def test_write_job_summary_appends_to_existing_file(monkeypatch, tmp_path):
 def test_write_job_summary_noop_without_env_var(monkeypatch):
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     main._write_job_summary("content")  # must not raise
+
+
+def test_run_sends_telegram_digest_with_newly_appended_pac_jobs(monkeypatch):
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    da_bi_job = _job("Acme", "1", title="Data Analyst", location="Singapore")
+    # A real SWE/DE posting, but RoW -- must NOT show up in the digest, which
+    # is PAC-only (see telegram.py).
+    swe_row_job = _job(
+        "Acme", "2", title="Software Engineer", location="London, United Kingdom"
+    )
+    monkeypatch.setattr(
+        main,
+        "fetch_greenhouse_jobs",
+        lambda token, firm, company_type: [da_bi_job, swe_row_job],
+    )
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+
+    digest_calls = []
+    monkeypatch.setattr(
+        main,
+        "send_digest",
+        lambda new_jobs, spreadsheet_url: digest_calls.append(new_jobs),
+    )
+
+    main.run()
+
+    (new_jobs,) = digest_calls
+    assert new_jobs["DA/BI"] == [da_bi_job]
+    assert new_jobs["SWE/DE"] == []
+    assert new_jobs["DS/ML/Algos"] == []
+
+
+def test_run_sends_telegram_digest_even_on_partial_failure(monkeypatch):
+    # The digest must still report what a successful board actually
+    # appended, even though the run as a whole fails and raises below --
+    # see main.run()'s comment on why send_digest isn't gated on
+    # failed_firms.
+    boards = [
+        {"token": "good", "firm": "GoodCo", "company_type": "Big Tech"},
+        {"token": "bad", "firm": "BadCo", "company_type": "Big Tech"},
+    ]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    good_job = _job("GoodCo", "1", title="Data Analyst", location="Singapore")
+
+    def fake_fetch_greenhouse_jobs(token, firm, company_type):
+        if firm == "BadCo":
+            raise RuntimeError("greenhouse down")
+        return [good_job]
+
+    monkeypatch.setattr(main, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+
+    digest_calls = []
+    monkeypatch.setattr(
+        main,
+        "send_digest",
+        lambda new_jobs, spreadsheet_url: digest_calls.append(new_jobs),
+    )
+
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
+
+    (new_jobs,) = digest_calls
+    assert new_jobs["DA/BI"] == [good_job]

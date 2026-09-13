@@ -75,14 +75,14 @@ def test_append_jobs_writes_job_rows():
     appended = writer.append_jobs(worksheet, [job])
 
     assert worksheet.appended == [job.to_row()]
-    assert appended == 1
+    assert appended == [job]
 
 
 def test_append_jobs_noop_on_empty_list():
     worksheet = _FakeWorksheet()
     appended = writer.append_jobs(worksheet, [])
     assert worksheet.appended is None
-    assert appended == 0
+    assert appended == []
 
 
 def test_append_jobs_skips_already_tracked_job():
@@ -93,7 +93,7 @@ def test_append_jobs_skips_already_tracked_job():
     appended = writer.append_jobs(worksheet, [job])
 
     assert worksheet.appended is None  # already tracked -- not re-appended
-    assert appended == 0
+    assert appended == []
 
 
 def test_append_jobs_appends_only_the_new_ones():
@@ -102,9 +102,10 @@ def test_append_jobs_appends_only_the_new_ones():
     seen = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
     new = Job("acme", "2", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
-    writer.append_jobs(worksheet, [seen, new])
+    appended = writer.append_jobs(worksheet, [seen, new])
 
     assert worksheet.appended == [new.to_row()]
+    assert appended == [new]
 
 
 def test_append_jobs_same_job_id_different_board_is_not_a_duplicate():
