@@ -33,9 +33,11 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main, "get_spreadsheet", lambda: _FakeSpreadsheet())
     monkeypatch.setattr(main, "get_worksheet", lambda spreadsheet, name: name)
     # Empty by default so a test that only cares about Greenhouse behavior
-    # doesn't also fetch the real, committed lever_boards.toml over the
-    # network -- a test exercising the Lever loop overrides this itself.
+    # doesn't also fetch the real, committed lever_boards.toml/
+    # ashby_boards.toml over the network -- a test exercising the Lever/Ashby
+    # loop overrides these itself.
     monkeypatch.setattr(main.config, "LEVER_BOARDS", [])
+    monkeypatch.setattr(main.config, "ASHBY_BOARDS", [])
 
     def fake_append_jobs(worksheet, jobs):
         if append_calls is not None:
@@ -147,6 +149,70 @@ def test_run_fetches_and_merges_lever_boards_alongside_greenhouse(monkeypatch):
     )
     assert pac_jobs == [gh_job]
     assert row_jobs == [lever_job]
+
+
+def test_run_fetches_and_merges_ashby_boards_alongside_greenhouse(monkeypatch):
+    monkeypatch.setattr(
+        main.config,
+        "GREENHOUSE_BOARDS",
+        [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}],
+    )
+
+    gh_job = _job("Acme", "1", location="Singapore")
+    ashby_job = _job("OpenAI", "2", location="London, United Kingdom")
+
+    monkeypatch.setattr(main, "fetch_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(
+        main, "fetch_ashby_jobs", lambda token, firm, company_type: [ashby_job]
+    )
+
+    prune_calls: list[set[str]] = []
+    append_calls: list[tuple] = []
+    _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
+    # Override _patch_sheet_functions' empty-by-default ASHBY_BOARDS -- this
+    # test specifically exercises the Ashby loop.
+    monkeypatch.setattr(
+        main.config,
+        "ASHBY_BOARDS",
+        [{"token": "openai", "firm": "OpenAI", "company_type": "AI Lab"}],
+    )
+
+    main.run()
+
+    assert all(fetched_boards == {"Acme", "OpenAI"} for fetched_boards in prune_calls)
+    pac_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - PAC"
+    )
+    row_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - RoW"
+    )
+    assert pac_jobs == [gh_job]
+    assert row_jobs == [ashby_job]
+
+
+def test_run_treats_a_failed_ashby_board_like_a_failed_greenhouse_board(monkeypatch):
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [])
+
+    def fake_fetch_ashby_jobs(token, firm, company_type):
+        raise RuntimeError("ashby down")
+
+    monkeypatch.setattr(main, "fetch_ashby_jobs", fake_fetch_ashby_jobs)
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    # Override _patch_sheet_functions' empty-by-default ASHBY_BOARDS -- this
+    # test specifically exercises the Ashby loop's failure handling.
+    monkeypatch.setattr(
+        main.config,
+        "ASHBY_BOARDS",
+        [{"token": "bad", "firm": "BadCo", "company_type": "Big Tech"}],
+    )
+
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
+
+    assert prune_calls
+    assert all(fetched_boards == set() for fetched_boards in prune_calls)
 
 
 def test_run_treats_a_failed_lever_board_like_a_failed_greenhouse_board(monkeypatch):

@@ -7,11 +7,12 @@ instead of scanning every region mixed together. See `tab_name` for the
 "{category} - {region}" naming this project's spreadsheet tabs already use.
 
 PAC here means Pacific-adjacent from a Singapore vantage point: Singapore,
-Hong Kong, Australia, Japan, South Korea, China, Taiwan, New Zealand.
-Everything else -- Europe, the Americas, the Middle East, and South Asia
-(e.g. Gurgaon, Mumbai, Bangalore) -- is RoW. This is a product choice, not
-a geographic one (India is "Asia-Pacific" in plenty of other contexts); if
-that's ever wrong for a posting, fix it here, not by special-casing main.py.
+Hong Kong, Australia, Japan, South Korea, China, Taiwan, New Zealand,
+Vietnam. Everything else -- Europe, the Americas, the Middle East, and
+South Asia (e.g. Gurgaon, Mumbai, Bangalore) -- is RoW. This is a product
+choice, not a geographic one (India is "Asia-Pacific" in plenty of other
+contexts); if that's ever wrong for a posting, fix it here, not by
+special-casing main.py.
 
 Same tuning-pass caveat as classify_roles.py/classify_seniority.py/
 normalize_location.py: _PAC_COUNTRIES was seeded from real data (today's
@@ -36,6 +37,7 @@ _PAC_COUNTRIES = {
     "China",
     "Taiwan",
     "New Zealand",
+    "Vietnam",
 }
 
 

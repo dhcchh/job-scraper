@@ -114,6 +114,69 @@ def test_normalize_location_collapses_repeated_city_state_name():
     assert normalize_location("Hong Kong, Hong Kong") == "Hong Kong"
 
 
+def test_normalize_location_maps_iso_country_code_prefixed_cities_with_spaced_dash():
+    # Ashby boards (Airwallex, Snowflake) write the same ISO-3166 prefix
+    # convention as Stripe's Greenhouse board, but with spaces around the
+    # dash -- both forms must resolve to the same canonical city.
+    assert normalize_location("AU - Sydney") == "Sydney, Australia"
+    assert normalize_location("AU-Sydney") == "Sydney, Australia"
+    assert normalize_location("SG - Singapore") == "Singapore"
+    assert normalize_location("SG-Singapore") == "Singapore"
+    assert normalize_location("CN - Shanghai") == "Shanghai, China"
+    assert normalize_location("JP - Tokyo") == "Tokyo, Japan"
+    assert normalize_location("KR - Seoul") == "Seoul, South Korea"
+    assert normalize_location("HK - Hong Kong SAR") == "Hong Kong"
+    assert normalize_location("NZ - Auckland") == "Auckland, New Zealand"
+
+
+def test_normalize_location_does_not_collapse_spacing_on_a_non_code_prefix():
+    # The ISO-code-spacing collapse is anchored to exactly two leading
+    # letters so it can't misfire on an ordinary word like "Australia".
+    assert normalize_location("Australia - Remote") == "Australia"
+
+
+def test_normalize_location_maps_snowflake_office_code_suffixes():
+    # Snowflake's Ashby board appends an internal office/building code after
+    # the city ("-MSO", "-WW") -- confirmed live, mapped as whole strings
+    # since there's no fixed set of codes to strip generically.
+    assert normalize_location("AU-Canberra-MSO") == "Canberra, Australia"
+    assert normalize_location("CN-Beijing-MSO") == "Beijing, China"
+    assert normalize_location("CN-Shanghai-WW") == "Shanghai, China"
+    assert normalize_location("KR-South Korea-Remote") == "South Korea"
+
+
+def test_normalize_location_maps_bare_tokyo():
+    # Confirmed on Sierra's live Ashby board: no country/code prefix at all.
+    assert normalize_location("Tokyo") == "Tokyo, Japan"
+
+
+def test_normalize_location_maps_bare_taipei_to_taiwan():
+    # Confirmed on WorldQuant's live Greenhouse board: a bare "Taipei" (no
+    # trailing ", Taiwan") was falling through unmapped, and since Taiwan is
+    # a PAC country, classify_region had no country to match against --
+    # silently landing a real PAC posting in RoW.
+    assert normalize_location("Taipei") == "Taipei, Taiwan"
+
+
+def test_normalize_location_maps_vietnamese_cities():
+    # Confirmed on WorldQuant's Greenhouse board, Spotify's Lever board, and
+    # Airwallex's Ashby board.
+    assert normalize_location("Hanoi") == "Hanoi, Vietnam"
+    assert normalize_location("Ho Chi Minh") == "Ho Chi Minh City, Vietnam"
+    assert normalize_location("Ho Chi Minh City") == "Ho Chi Minh City, Vietnam"
+    assert normalize_location("VN-Hanoi") == "Hanoi, Vietnam"
+    assert normalize_location("VN-Ho Chi Minh City") == "Ho Chi Minh City, Vietnam"
+
+
+def test_normalize_location_maps_grasshopper_internal_office_codes():
+    # Grasshopper's live Greenhouse board sets offices[].name to an internal
+    # short code rather than a readable place name -- confirmed against
+    # offices[].location, a separate field naming the real place.
+    assert normalize_location("GHP-SG") == "Singapore"
+    assert normalize_location("GHP-VN") == "Vietnam"
+    assert normalize_location("GAM") == "Singapore"
+
+
 def test_normalize_location_strips_trailing_locations_suffix():
     # Stripe groups several physical offices under one umbrella entry per
     # country instead of listing them individually -- confirmed on its live

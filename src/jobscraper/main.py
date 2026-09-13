@@ -5,13 +5,14 @@ tab, prune closed ones.
 
     uv run python -m jobscraper.main
 
-Loops over GREENHOUSE_BOARDS, then LEVER_BOARDS, from config -- one board at
-a time within each, no concurrency, since this runs once a day and there's
-no rate-limit pressure at this scale. Both loops feed the same all_jobs/
-succeeded_firms/failed_firms accumulators, so a firm's board type is
-otherwise invisible past this point -- prune_closed_postings only ever
-reasons about firms. A board whose fetch fails (greenhouse.client.fetch_jobs/
-lever.client.fetch_jobs already retry transient errors -- see those modules
+Loops over GREENHOUSE_BOARDS, then LEVER_BOARDS, then ASHBY_BOARDS, from
+config -- one board at a time within each, no concurrency, since this runs
+once a day and there's no rate-limit pressure at this scale. All three loops
+feed the same all_jobs/succeeded_firms/failed_firms accumulators, so a
+firm's board type is otherwise invisible past this point --
+prune_closed_postings only ever reasons about firms. A board whose fetch
+fails (greenhouse.client.fetch_jobs/lever.client.fetch_jobs/
+ashby.client.fetch_jobs already retry transient errors -- see those modules
 -- so what reaches here has exhausted those) is skipped for pruning; its
 firm is left out of fetched_boards, so prune_closed_postings never mistakes
 "we couldn't check this board" for "everything on it just closed".
@@ -55,9 +56,9 @@ when it's unset, which is always true for a local `uv run python -m
 jobscraper.main`.
 
 TODO(extension points), roughly in the order you'll likely reach for them:
-  - more boards: add e.g. jobscraper/job_boards/ashby/client.py with its own
-    fetch_jobs() -> list[Job], and extend the fetch loop below the same way
-    Greenhouse and Lever already are.
+  - more boards: add a client module with its own fetch_jobs() -> list[Job],
+    and extend the fetch loop below the same way Greenhouse, Lever, and
+    Ashby already are.
   - more/edited categories: see enrichment/classify_roles.py's
     CATEGORIES -- add a keyword there, or a whole new category + matching
     spreadsheet tab (x2, one per region -- see classify_region.tab_name).
@@ -75,6 +76,7 @@ from jobscraper.enrichment.classify_region import (
     tab_name,
 )
 from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
+from jobscraper.job_boards.ashby.client import fetch_jobs as fetch_ashby_jobs
 from jobscraper.job_boards.greenhouse.client import fetch_jobs
 from jobscraper.job_boards.lever.client import fetch_jobs as fetch_lever_jobs
 from jobscraper.models import Job
@@ -130,7 +132,25 @@ def run() -> None:
         succeeded_firms.add(firm)
         succeeded_entries += 1
 
-    total_boards = len(config.GREENHOUSE_BOARDS) + len(config.LEVER_BOARDS)
+    for board in config.ASHBY_BOARDS:
+        firm = board["firm"]
+        try:
+            jobs = fetch_ashby_jobs(board["token"], firm, board["company_type"])
+        except Exception:
+            logger.exception(
+                "ashby[%s]: failed to fetch after retries, skipping this "
+                "board for the rest of the run",
+                firm,
+            )
+            failed_firms.add(firm)
+            continue
+        all_jobs.extend(jobs)
+        succeeded_firms.add(firm)
+        succeeded_entries += 1
+
+    total_boards = (
+        len(config.GREENHOUSE_BOARDS) + len(config.LEVER_BOARDS) + len(config.ASHBY_BOARDS)
+    )
 
     # A firm can have more than one board token (e.g. Optiver has two) --
     # only treat a firm as "fully fetched" this run if every one of its
@@ -141,9 +161,10 @@ def run() -> None:
     fetched_boards = succeeded_firms - failed_firms
 
     logger.info(
-        # succeeded_entries/total counts board TOKENS across both
-        # GREENHOUSE_BOARDS and LEVER_BOARDS; fetched_boards counts distinct
-        # FIRMS, which is smaller whenever one firm has multiple tokens
+        # succeeded_entries/total counts board TOKENS across
+        # GREENHOUSE_BOARDS, LEVER_BOARDS, and ASHBY_BOARDS; fetched_boards
+        # counts distinct FIRMS, which is smaller whenever one firm has
+        # multiple tokens
         # (e.g. Optiver) -- comparing that against the token count would
         # make a fully successful run misleadingly print e.g. "14/15".
         "fetched %d jobs total across %d/%d board(s)%s",

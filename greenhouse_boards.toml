@@ -166,3 +166,15 @@ company_type = "Consumer/Marketplace"
 token = "bridgewater89"
 firm = "Bridgewater"
 company_type = "Prop Trading/Hedge Fund"
+
+# NOTE: the token is "grasshopperasia" -- confirmed against jobs listed on
+# job-boards.greenhouse.io/grasshopperasia. Its offices[].name is an
+# internal short code ("GHP-SG", "GHP-VN", "GAM"), not a readable place
+# name like every other board configured here -- see the new
+# "ghp-sg"/"ghp-vn"/"gam" entries in normalize_location.py's table, added
+# so these still resolve to the right PAC country instead of falling
+# through unmapped.
+[[boards]]
+token = "grasshopperasia"
+firm = "Grasshopper"
+company_type = "Prop Trading/Hedge Fund"

@@ -1,0 +1,36 @@
+# Ashby job boards to scrape.
+
+[[boards]]
+token = "openai"
+firm = "OpenAI"
+company_type = "AI Lab"
+
+[[boards]]
+token = "notion"
+firm = "Notion"
+company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "airwallex"
+firm = "Airwallex"
+company_type = "Fintech"
+
+[[boards]]
+token = "snowflake"
+firm = "Snowflake"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "exa"
+firm = "Exa"
+company_type = "AI Lab"
+
+[[boards]]
+token = "sierra"
+firm = "Sierra"
+company_type = "AI Lab"
+
+[[boards]]
+token = "blocktech"
+firm = "BlockTech"
+company_type = "Prop Trading/Hedge Fund"

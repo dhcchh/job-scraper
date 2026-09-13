@@ -20,13 +20,13 @@ small fake `Worksheet`.
 ## Architecture and invariants
 
 - The daily GitHub Actions workflow runs `jobscraper.main`. Each run fetches
-  every configured Greenhouse and Lever board, classifies postings into ten
-  tabs (five categories × `PAC`/`RoW`), appends jobs first seen this run,
-  then removes jobs confirmed closed.
+  every configured Greenhouse, Lever, and Ashby board, classifies postings
+  into ten tabs (five categories × `PAC`/`RoW`), appends jobs first seen
+  this run, then removes jobs confirmed closed.
 - `config.py` is the only module that reads environment variables,
-  `greenhouse_boards.toml`, and `lever_boards.toml`; import
-  `jobscraper.config` rather than copying its settings at import time. Board
-  tokens are checked in and are not secrets.
+  `greenhouse_boards.toml`, `lever_boards.toml`, and `ashby_boards.toml`;
+  import `jobscraper.config` rather than copying its settings at import
+  time. Board tokens are checked in and are not secrets.
   `_load_boards` validates every `[[boards]]` entry has `token`, `firm`, and
   `company_type` at import time, raising `ValueError` naming the offending
   entry and field(s) rather than letting a typo surface as a `KeyError` deep
@@ -46,15 +46,26 @@ small fake `Worksheet`.
   `updated_at` is left `""` rather than fabricated; `department` falls back
   to `categories.team` when a board (e.g. Palantir) never sets
   `categories.department`.
-- Build locations from Greenhouse's `offices[]` (or Lever's
-  `categories.allLocations`), normalize each office, remove duplicates, then
-  join with `" | "`. Do not split `location.name`/`categories.location` by
-  commas: it is free text. `normalize_location.py` intentionally falls back
-  to a cleaned unknown value rather than guessing. Add a canonical mapping
-  before treating a new city as PAC. It also removes `Remote -`, `(Remote)`,
-  `Office`, Stripe-style `Location(s)`, a trailing 2-letter country code in
-  parens, Spotify-style `(... Mix)` work-arrangement annotations, and a
-  repeated "City, City" wrapper before lookup.
+- `ashby/client.py` fetches the public Posting API
+  (`api.ashbyhq.com/posting-api/job-board/<slug>`), same retry/skip
+  behavior. Same no-edited-at-timestamp shape as Lever: `first_published`
+  comes from `publishedAt`, `updated_at` stays `""`; `department` falls back
+  to `team` the same way Lever's falls back to `categories.team`, though no
+  live Ashby board has needed that fallback yet. Ashby splits its per-office
+  list across two fields (top-level `location` plus
+  `secondaryLocations[].location`), not one array like Greenhouse/Lever.
+- Build locations from Greenhouse's `offices[]`, Lever's
+  `categories.allLocations`, or Ashby's `location` +
+  `secondaryLocations[].location`, normalize each office, remove
+  duplicates, then join with `" | "`. Do not split
+  `location.name`/`categories.location` by commas: it is free text.
+  `normalize_location.py` intentionally falls back to a cleaned unknown
+  value rather than guessing. Add a canonical mapping before treating a new
+  city as PAC. It also removes `Remote -`, `(Remote)`, `Office`,
+  Stripe-style `Location(s)`, a trailing 2-letter country code in parens,
+  Spotify-style `(... Mix)` work-arrangement annotations, a repeated "City,
+  City" wrapper, and (seeded from Ashby's Airwallex/Snowflake boards) a
+  spaced-out ISO-code prefix like `"AU - Sydney"` before lookup.
 - `classify_region` routes a posting to PAC if any normalized office is in a
   PAC country. `classify_roles.classify_job` returns `None` for recruiter
   titles before applying category keywords; keyword precedence is intentional.
@@ -88,19 +99,13 @@ small fake `Worksheet`.
   SWE/DE postings. Send one batched message per successful run; it will need
   bot, chat, and thread secrets, plus access to the newly appended jobs rather
   than only their counts.
-- **Ashby job board support**: add a third board type under
-  `job_boards/ashby/client.py` with its own `fetch_jobs() -> list[Job]`,
-  following the pattern `job_boards/lever/client.py` already established for
-  the second one. Ashby's public API serves jobs at
-  `https://api.ashbyhq.com/posting-api/job-board/<board_slug>`, returning
-  JSON similar in shape to Greenhouse. Needs a new `ashby_boards.toml`
-  (same `[[boards]]`/`token`+`firm`+`company_type` shape as
-  `greenhouse_boards.toml`/`lever_boards.toml`, loadable with the same
-  `config._load_boards`) and a third fetch loop in `main.py`, alongside
-  Greenhouse's and Lever's. Firms to add: OpenAI (`openai`), Notion
-  (`notion`), Airwallex (`airwallex`), Snowflake (`snowflake`), Exa (`exa`),
-  Sierra (`sierra`), BlockTech (`blocktech`) — all confirmed live on
-  `jobs.ashbyhq.com`.
+- `sheets/backfill.py` only ever re-fetches `config.GREENHOUSE_BOARDS` for
+  its `location`/`first_published` overrides and its `company_type`
+  refresh — this predates Lever support and still hasn't been extended to
+  either Lever or Ashby, so a Lever- or Ashby-sourced row only ever gets
+  `_renormalize_location`'s best-effort cleanup, never a fresh-data
+  override, and never picks up a `company_type` edit made in
+  `lever_boards.toml`/`ashby_boards.toml` after the row was written.
 - If more than one person operates the production sheet, add a distributed
   lock; GitHub Actions concurrency cannot prevent an overlapping local run.
 

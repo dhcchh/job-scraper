@@ -16,6 +16,7 @@ from jobscraper.enrichment.classify_region import classify_region, tab_name
         ("Beijing, China", "PAC"),
         ("Taiwan", "PAC"),
         ("Auckland, New Zealand", "PAC"),
+        ("Hanoi, Vietnam", "PAC"),
         ("London, United Kingdom", "RoW"),
         ("New York, NY", "RoW"),
         ("Gurgaon, India", "RoW"),

@@ -20,6 +20,7 @@ load_dotenv()
 # lever_boards.toml themselves.
 _BOARDS_FILE = Path(__file__).resolve().parents[2] / "greenhouse_boards.toml"
 _LEVER_BOARDS_FILE = Path(__file__).resolve().parents[2] / "lever_boards.toml"
+_ASHBY_BOARDS_FILE = Path(__file__).resolve().parents[2] / "ashby_boards.toml"
 
 
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
@@ -45,6 +46,10 @@ GREENHOUSE_BOARDS: list[dict] = _load_boards(_BOARDS_FILE)
 # `token` is its own site slug rather than a Greenhouse board token, but
 # _load_boards doesn't care which board type a file is for.
 LEVER_BOARDS: list[dict] = _load_boards(_LEVER_BOARDS_FILE)
+
+# Same shape again -- Ashby's `token` is its job-board slug
+# (jobs.ashbyhq.com/<token>), same idea as Lever's site slug.
+ASHBY_BOARDS: list[dict] = _load_boards(_ASHBY_BOARDS_FILE)
 
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit
