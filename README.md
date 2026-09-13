@@ -106,14 +106,14 @@ See `CLAUDE.md` for design rationale and edge-case invariants.
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~54 boards (38
+Google Sheet as the datastore — works fine at today's ~55 boards (39
 Greenhouse, 5 Lever, 11 Ashby). Realistic ceiling: **somewhere around
 2,000-5,000 companies**, not the 10,000+ the raw minutes math alone would
 suggest:
 
 - **GitHub Actions minutes, idealized**: fetching is sequential (see
   `job_boards/greenhouse/client.py`, `job_boards/lever/client.py`, and
-  `job_boards/ashby/client.py`), ~0.25s/board observed (54 boards ≈ 14s
+  `job_boards/ashby/client.py`), ~0.25s/board observed (55 boards ≈ 14s
   total). This repo is a private GitHub repo, so its free tier is 2,000
   Actions minutes/month, shared
   across every private repo on the account. At 0.25s/board with negligible
