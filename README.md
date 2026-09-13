@@ -121,7 +121,8 @@ src/jobscraper/
   Eightfold's API is not documented/public — see `job_boards/eightfold/
   client.py`'s module docstring for what that means in practice (no
   contract to rely on, a hard 10-postings-per-page cap regardless of what's
-  requested, and only confirmed working for one live deployment).
+  requested, and confirmed unreachable this way for most other real
+  Eightfold tenants tried, not just Millennium).
 - **Job description**: kept in the sheet (`description` column), but only
   for a firm in `models.FIRMS_NEEDING_DESCRIPTION` (currently Qube Research
   & Technologies and Squarepoint) — every other posting's `description` is
@@ -221,10 +222,12 @@ raw minutes math alone would suggest:
   anything on this side. Eightfold specifically is a bigger unknown than
   the other four here: its API isn't documented/public at all (this
   project's client reverse-engineers the same request a browser makes),
-  confirmed working for only one live deployment so far, and a couple of
-  other guessed subdomains returned 403s that may or may not generalize to
-  a real restriction on other tenants — see `job_boards/eightfold/
-  client.py`'s module docstring.
+  and — confirmed, not just suspected — most real Eightfold tenants block
+  it outright: of 7 real, verified Eightfold-hosted companies tried, only
+  2 (Millennium and Albemarle) were actually reachable this way; Morgan
+  Stanley, Micron, Eaton, and Vodafone all 403'd even with the correct
+  subdomain/domain pairing taken from their own live pages — see
+  `job_boards/eightfold/client.py`'s module docstring.
 - **Sheets' own hard cap**: a spreadsheet holds at most 10,000,000 cells
   (~770,000 rows at `FIELDS`' 13 columns). Where this binds depends on
   postings-per-company; today's sample (large quant/trading firms, ~45

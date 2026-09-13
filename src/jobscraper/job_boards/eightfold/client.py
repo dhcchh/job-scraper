@@ -23,17 +23,20 @@ other board platforms this project fetches from:
   company_toml/eightfold_boards.toml carries both as separate required
   fields (`token` for the subdomain, `domain` for the query param) instead
   of the single identifier the other four board types need.
-- Confirmed working for Millennium's own deployment only. Whether this same
-  query pattern -- no auth, no session cookie, plain GET -- generalizes to
-  every other Eightfold-hosted company is NOT confirmed: a couple of other
-  guessed subdomains returned the same 403 shape, most likely from wrong
-  subdomain guesses rather than a real restriction, but each Eightfold
-  tenant is free to configure its own WAF/bot-protection differently
-  (Eightfold's own careers page, hosted on its own platform, rejected the
-  identical query shape). Dry-run a real company's own careers site before
-  adding it here, same as every other board type's own "Adding a board"
-  workflow -- don't assume a new Eightfold firm works just because
-  Millennium's does.
+- This query pattern -- no auth, no session cookie, plain GET -- does NOT
+  generalize to every Eightfold-hosted company: confirmed, not just
+  suspected. Of 7 other real, verified Eightfold tenants tried (found via
+  their own actual careers pages, not guessed subdomains) --
+  Albemarle worked identically to Millennium's; Morgan Stanley, Micron,
+  Eaton, and Vodafone all returned the same 403
+  `{"message": "Not authorized for ..."}` even with the exact
+  subdomain/domain pairing taken straight from each company's own live
+  page -- so each Eightfold tenant clearly configures its own
+  WAF/bot-protection independently, and only about 2 in 7 real Eightfold
+  firms sampled this way were actually reachable this simply.
+  Dry-run a real company's own careers site before adding it here, same as
+  every other board type's own "Adding a board" workflow -- don't assume a
+  new Eightfold firm works just because Millennium's does.
 - The server ignores the requested page size entirely -- passing a larger
   `num` (confirmed up to 100) still returns exactly 10 postings per page,
   unlike SmartRecruiters' own (still real, just larger) 100-per-page

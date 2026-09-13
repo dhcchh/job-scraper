@@ -128,13 +128,19 @@ use a small fake `Worksheet`.
   than 404s; (2) the server ignores the requested page size and always
   returns exactly 10 postings per page (confirmed up to `num=100`), so a
   firm with Millennium's ~230 open postings costs ~23 requests where a
-  similarly-sized Greenhouse/Ashby board costs 1-3; (3) confirmed working
-  for exactly one live deployment (Millennium's) -- a couple of other
-  guessed subdomains 403'd, most likely from wrong guesses rather than a
-  real restriction, but each Eightfold tenant can configure its own
-  WAF/bot-protection differently, so a new Eightfold firm needs its own
-  dry-run before being added, same as every other board type's "Adding a
-  board" workflow, not an assumption it'll work because Millennium's does.
+  similarly-sized Greenhouse/Ashby board costs 1-3; (3) most Eightfold
+  tenants block this query pattern outright -- confirmed, not just
+  suspected: of 7 real, verified Eightfold-hosted firms tried (found via
+  each one's own actual careers page, not a guessed subdomain), only
+  Millennium and Albemarle were reachable this way; Morgan Stanley,
+  Micron, Eaton, and Vodafone all returned the same 403
+  `{"message": "Not authorized for ..."}` even with the exact
+  subdomain/domain pairing taken from their own live page. Each Eightfold
+  tenant clearly configures its own WAF/bot-protection independently, so a
+  new Eightfold firm needs its own dry-run before being added, same as
+  every other board type's "Adding a board" workflow -- expect roughly 2
+  in 7 to actually work, not an assumption it'll work because Millennium's
+  does.
   Unlike Lever/Ashby/SmartRecruiters, it DOES expose a real edited-at
   signal (`t_update`, alongside `t_create`) -- both Unix epoch seconds, not
   an ISO 8601 string like every other board here -- so `updated_at` is
