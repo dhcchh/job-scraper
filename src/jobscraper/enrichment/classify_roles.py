@@ -192,6 +192,24 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
 # confirmed dry-running this against all 29 boards' live postings.
 _RECRUITER_RE = re.compile(r"\brecruiter\b", re.IGNORECASE)
 
+# Same idea as the recruiter veto above: a Solutions Architect/Architecture
+# title is pre-sales/customer-facing, the same family as "Solutions
+# Engineer"/"Forward Deployed Engineer" already left as noise by omission --
+# but unlike those, "Solutions Architect" titles were actually reaching
+# SWE/DE, because several real postings name their own team in a trailing
+# parenthetical or suffix that happens to contain SWE/DE's bare "developer"
+# keyword: Cloudflare's "Principal Solutions Architect, APJC (Developer
+# Platform) - Mandarin Speaking" and "Senior Solutions Architect, APJC
+# (Developer Platform) - India Market" both matched on "developer" inside
+# "(Developer Platform)", a product/org name, not the role itself. No
+# keyword-list edit can fix that (the false match isn't from a bad keyword,
+# it's the veto-worthy title matching an unrelated keyword by coincidence),
+# so this excludes the whole title family unconditionally, matching
+# "architect" not "architecture" -- the substring match still catches
+# "Solutions Architecture" titles (e.g. a "Manager, Solutions Architecture"
+# role) since "architect" is already a prefix of "architecture".
+_SOLUTIONS_ARCHITECT_RE = re.compile(r"\bsolutions architect", re.IGNORECASE)
+
 
 def classify_job(job: Job) -> str | None:
     """The category name job routes to, or None if it matches nothing (noise).
@@ -201,6 +219,8 @@ def classify_job(job: Job) -> str | None:
     """
     text = job.title
     if _RECRUITER_RE.search(text):
+        return None
+    if _SOLUTIONS_ARCHITECT_RE.search(text):
         return None
     for category, keywords in CATEGORIES:
         if any(_contains_keyword(text, keyword) for keyword in keywords):

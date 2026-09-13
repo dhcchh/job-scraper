@@ -117,3 +117,26 @@ def test_classify_job_does_not_veto_recruiting_as_a_department_qualifier():
     # "Recruiting" (not "recruiter") can trail a genuine IC title as a
     # department-style qualifier -- must not be swept up by the same veto.
     assert classify_job(_job("People Research Scientist, Recruiting")) == "DS/ML/Algos"
+
+
+def test_classify_job_vetoes_solutions_architect_even_with_a_real_keyword():
+    # Confirmed on Cloudflare's live Greenhouse board: both titles matched
+    # SWE/DE's bare "developer" keyword via their own trailing "(Developer
+    # Platform)" team/product name, not because the role is a developer
+    # role -- a Solutions Architect title must never route anywhere,
+    # regardless of what else it mentions.
+    assert classify_job(
+        _job("Principal Solutions Architect, APJC (Developer Platform) - Mandarin Speaking")
+    ) is None
+    assert classify_job(
+        _job("Senior Solutions Architect, APJC (Developer Platform) - India Market")
+    ) is None
+    assert classify_job(_job("Partner Solutions Architect- Service Providers")) is None
+    # "Architecture", not just "Architect", is caught by the same veto --
+    # confirmed on GitLab's live board ("Manager, Solutions Architecture -
+    # East", "Senior Manager, Solutions Architecture, AI & Developer
+    # Platform").
+    assert classify_job(_job("Manager, Solutions Architecture - East")) is None
+    assert classify_job(
+        _job("Senior Manager, Solutions Architecture, AI & Developer Platform")
+    ) is None

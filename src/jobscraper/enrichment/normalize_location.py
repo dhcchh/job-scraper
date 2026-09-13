@@ -40,6 +40,14 @@ _OFFICE_SUFFIX_RE = re.compile(r"\s+office$", re.IGNORECASE)
 _REMOTE_PREFIX_RE = re.compile(r"^remote\s*-\s*", re.IGNORECASE)
 _REMOTE_SUFFIX_RE = re.compile(r"\s*\(remote\)$", re.IGNORECASE)
 
+# MongoDB and Cloudflare use a dashless variant of the same annotation --
+# "Remote Singapore", "Remote Australia" -- which _REMOTE_PREFIX_RE's
+# required "-" doesn't match, so a real PAC posting was silently landing in
+# RoW the same way an unstripped "Remote - Singapore" would. The lookahead
+# keeps this from also eating "Remote (United States)" (Perplexity), where
+# the word after "Remote" is a paren, not a place name to unwrap.
+_REMOTE_PREFIX_NO_DASH_RE = re.compile(r"^remote\s+(?=[A-Za-z])", re.IGNORECASE)
+
 # Stripe groups several physical offices in one country under a single
 # umbrella `offices[].name` instead of listing them individually -- e.g.
 # "Singapore Locations", "Australia Locations", "Japan Locations" (confirmed
@@ -139,6 +147,11 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "gift city": "GIFT City, India",
     "gurgaon": "Gurgaon, India",
     "hong kong": "Hong Kong",
+    # GitLab's live board uses the ISO/formal country name rather than a
+    # city -- "Korea, Republic of" has its own comma, so classify_region's
+    # comma-split would otherwise read "Republic of" as the "country" and
+    # miss the real one entirely.
+    "korea, republic of": "South Korea",
     "mumbai": "Mumbai, India",
     "seoul": "Seoul, South Korea",
     "shanghai": "Shanghai, China",
@@ -248,6 +261,7 @@ def normalize_location(raw: str) -> str:
     cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _ISO_CODE_SPACING_RE.sub(r"\1-", cleaned).strip()
     cleaned = _REMOTE_PREFIX_RE.sub("", cleaned).strip()
+    cleaned = _REMOTE_PREFIX_NO_DASH_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _COUNTRY_CODE_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _WORK_MODE_SUFFIX_RE.sub("", cleaned).strip()

@@ -34,3 +34,18 @@ company_type = "AI Lab"
 token = "blocktech"
 firm = "BlockTech"
 company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "mistral.ai"
+firm = "Mistral AI"
+company_type = "AI Lab"
+
+[[boards]]
+token = "perplexity"
+firm = "Perplexity"
+company_type = "AI Lab"
+
+[[boards]]
+token = "cursor"
+firm = "Cursor"
+company_type = "AI Lab"

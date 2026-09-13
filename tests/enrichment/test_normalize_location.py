@@ -73,6 +73,29 @@ def test_normalize_location_strips_remote_annotation_around_a_known_place():
     assert normalize_location("Taiwan (Remote)") == "Taiwan"
 
 
+def test_normalize_location_strips_remote_annotation_without_a_dash():
+    # MongoDB and Cloudflare annotate with a space instead of a dash --
+    # "Remote Singapore", "Remote Australia" -- which the dash-only prefix
+    # regex above doesn't match, so a real PAC posting was silently landing
+    # in RoW.
+    assert normalize_location("Remote Singapore") == "Singapore"
+    assert normalize_location("Remote Australia") == "Australia"
+
+
+def test_normalize_location_does_not_strip_remote_before_a_parenthetical():
+    # Perplexity's "Remote (United States)" must not become "(United
+    # States)" -- the word after "Remote" here is a paren, not a place name
+    # to unwrap.
+    assert normalize_location("Remote (United States)") == "Remote (United States)"
+
+
+def test_normalize_location_maps_korea_republic_of():
+    # GitLab's live board uses the ISO/formal name instead of a city --
+    # unmapped, its own comma would make classify_region read "Republic of"
+    # as the country and miss South Korea entirely.
+    assert normalize_location("Korea, Republic of") == "South Korea"
+
+
 def test_normalize_location_leaves_remote_region_codes_unmapped():
     # A "Remote - " prefix is still stripped, but a code with no place-name
     # entry to resolve to (NAMER, EMEA, CIS) is unmapped, same as any other

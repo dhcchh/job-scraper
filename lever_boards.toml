@@ -8,8 +8,6 @@ token = "spotify"
 firm = "Spotify"
 company_type = "Consumer/Media & Entertainment"
 
-# NOTE: the token is "shopback-2", not "shopback" -- ShopBack's live Lever
-# site is registered under that slug (confirmed against jobs.lever.co).
 [[boards]]
 token = "shopback-2"
 firm = "ShopBack"

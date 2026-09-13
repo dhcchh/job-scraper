@@ -110,9 +110,6 @@ token = "hoyoverse"
 firm = "HoYoverse"
 company_type = "Gaming"
 
-# NOTE: the token is "riotgames", not "riotgamesinc" -- both resolve to a
-# valid Greenhouse board ("Riot Games" vs "Riot Games, Inc."), but only this
-# one has any open postings (151 vs 0 at the time this was checked).
 [[boards]]
 token = "riotgames"
 firm = "Riot Games"
@@ -148,10 +145,6 @@ token = "discord"
 firm = "Discord"
 company_type = "Consumer Comms/Social"
 
-# NOTE: Notion is NOT on this list -- it migrated off Greenhouse to Ashby
-# (jobs.ashbyhq.com/notion). This scraper only has a Greenhouse client
-# today; adding Notion needs a new job_boards/ashby/client.py first.
-
 [[boards]]
 token = "figma"
 firm = "Figma"
@@ -167,14 +160,27 @@ token = "bridgewater89"
 firm = "Bridgewater"
 company_type = "Prop Trading/Hedge Fund"
 
-# NOTE: the token is "grasshopperasia" -- confirmed against jobs listed on
-# job-boards.greenhouse.io/grasshopperasia. Its offices[].name is an
-# internal short code ("GHP-SG", "GHP-VN", "GAM"), not a readable place
-# name like every other board configured here -- see the new
-# "ghp-sg"/"ghp-vn"/"gam" entries in normalize_location.py's table, added
-# so these still resolve to the right PAC country instead of falling
-# through unmapped.
 [[boards]]
 token = "grasshopperasia"
 firm = "Grasshopper"
 company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "mongodb"
+firm = "MongoDB"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "gitlab"
+firm = "GitLab"
+company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "cloudflare"
+firm = "Cloudflare"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "datadog"
+firm = "Datadog"
+company_type = "Data/Cloud Infrastructure"
