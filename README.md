@@ -10,8 +10,20 @@ cp .env.example .env                       # fill in, see Setup below
 
 uv run python -m jobscraper.main           # run the scraper once
 uv run python -m jobscraper.sheets.backfill  # re-apply current classification/formatting to existing rows
-uv run pytest                              # tests -- no network or credentials needed
+uv run pytest                              # tests -- safe to run even with a real .env, see below
 ```
+
+Tests never hit the network or a real Google/Telegram account, even when
+`.env` has real credentials in it: `tests/conftest.py` forces
+`GOOGLE_SHEET_ID`/`GOOGLE_SERVICE_ACCOUNT_JSON`/`TELEGRAM_BOT_TOKEN`/
+`TELEGRAM_CHAT_ID`/`TELEGRAM_THREAD_ID` to dummy/empty values before
+`jobscraper.config` ever loads `.env` (its `load_dotenv()` never overrides
+an already-set variable), and sheet/Telegram-sending code itself is mocked
+at the call site too. Skipping the Telegram half of this once let a real
+`.env`'s real bot token/chat id flow through into `uv run pytest`, which
+posted every test run's fake job data straight to a real Telegram chat --
+fixed, but worth knowing if you're adding another `.env`-configured
+integration later: add its vars here too.
 
 ## Setup
 
