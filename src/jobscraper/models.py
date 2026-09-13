@@ -10,34 +10,70 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import html
+import re
 
 # Keep in sync with sheets.writer.HEADER -- this is the column order written
 # to, and read back from, the sheet. Ordered for a human scanning/filtering
-# the sheet, not for how Job is constructed: the columns someone actually
-# filters/sorts by (company, title, location, updated_at, company_type)
-# come first; url still earns a near-front spot since it's the one column
-# whose whole purpose is to be clicked; job_id and scraped_date are pure
-# bookkeeping and sit last. Changing this order is a live-sheet migration,
-# not just a code change -- see sheets/backfill.py, which rewrites every
-# existing row (and the header) into whatever order FIELDS currently is.
+# the sheet, not for how Job is constructed: first_published/updated_at lead
+# so the "posted in the last 7 days" conditional-formatting rule (see
+# CLAUDE.md) anchors on column A; board/title/location/seniority/
+# company_type -- the columns someone actually filters/sorts by, and what
+# sheets.writer.set_basic_filter's dropdown arrows target -- follow; url
+# still earns a spot ahead of the rest since it's the one column whose whole
+# purpose is to be clicked; department, job_id, scraped_date, and source are
+# comparatively bookkeeping and trail. Changing this order is a live-sheet
+# migration, not just a code change -- see sheets/backfill.py, which
+# rewrites every existing row (and the header) into whatever order FIELDS
+# currently is, including re-pointing format_date_columns and each tab's
+# conditional-formatting rule at wherever the date columns land now (see
+# CLAUDE.md).
+# `description` is appended after everything above, including `source` --
+# same reasoning as `source`'s own placement (see git history/CLAUDE.md): it
+# doesn't belong with the columns someone filters/sorts by (it's freeform,
+# multi-paragraph JD text, not a category), and appending rather than
+# inserting means every column before it keeps its current letter, so
+# format_date_columns/set_basic_filter and each tab's conditional-formatting
+# rule (see CLAUDE.md) don't need to move.
 FIELDS: tuple[str, ...] = (
+    "first_published",
+    "updated_at",
     "board",
     "title",
     "location",
-    "first_published",
-    "updated_at",
+    "seniority",
     "company_type",
     "url",
-    "seniority",
     "department",
     "job_id",
     "scraped_date",
+    "source",
+    "description",
 )
 
 DATE_FIELDS: tuple[str, ...] = (
     "first_published",
     "updated_at",
     "scraped_date",
+)
+
+# `board` values (see Job.board) for firms confirmed to have an apply page
+# that doesn't reliably show its own JD -- Qube's Greenhouse page only ever
+# renders the JD into a client-side hydration blob (invisible/unsearchable
+# on the page), and Squarepoint's `absolute_url` redirects to a generic
+# careers listing rather than the specific posting. `description` is only
+# ever populated for a firm in this set -- see each job_boards/*/client.py's
+# `_to_job` -- rather than for every posting from every board: this is a
+# deliberate trial scoped to the two known-broken firms, not a blanket
+# rollout, since most employers' own apply pages already show the JD fine
+# and duplicating several-KB of text into every other row's cell for no
+# reason works against Sheets' cell cap (see CLAUDE.md's Scale section) for
+# no benefit. Expand this set if another firm turns out to have the same
+# problem -- sheets/backfill.py blanks `description` back to "" for any
+# firm that's since been removed from it, so narrowing this set cleans up
+# the sheet on the next backfill too, not just widening it.
+FIRMS_NEEDING_DESCRIPTION: frozenset[str] = frozenset(
+    {"Qube Research & Technologies", "Squarepoint"}
 )
 
 # The display text every job posting link uses instead of its raw url --
@@ -65,6 +101,43 @@ def hyperlink_formula(url: str, label: str = LINK_LABEL) -> str:
     escaped_url = url.replace('"', '""')
     escaped_label = label.replace('"', '""')
     return f'=HYPERLINK("{escaped_url}", "{escaped_label}")'
+
+
+_HTML_LIST_ITEM_RE = re.compile(r"(?i)<li[^>]*>")
+_HTML_BLOCK_CLOSE_RE = re.compile(r"(?i)</(p|div|h[1-6]|ul|ol)\s*>")
+_HTML_BR_RE = re.compile(r"(?i)<br\s*/?>")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RUN_RE = re.compile(r"[ \t]+")
+_BLANK_LINE_RUN_RE = re.compile(r"\n{3,}")
+
+
+def strip_html(raw: str) -> str:
+    """Best-effort HTML -> plain text, for a board's raw JD markup.
+
+    Greenhouse's `content` field is HTML-entity-double-encoded (its own API
+    quirk, confirmed across every board this project fetches: the real
+    markup is itself escaped, e.g. a literal `&lt;p&gt;` in the JSON value
+    rather than `<p>`) -- unescaping twice, once before stripping tags and
+    once after, undoes that and also decodes any real entity (`&amp;`) the
+    underlying content has. A `<li>` becomes a "- " bullet line and
+    `<p>`/`<div>`/heading/`<ul>`/`<ol>` closes and `<br>` become newlines
+    before every remaining tag is dropped, so list/paragraph structure
+    survives as plain-text line breaks instead of being squashed into one
+    run-on line. Collapses to "" for empty/missing input, matching every
+    other string field's empty-default here rather than raising.
+    """
+    if not raw:
+        return ""
+    text = html.unescape(raw)
+    text = _HTML_LIST_ITEM_RE.sub("\n- ", text)
+    text = _HTML_BR_RE.sub("\n", text)
+    text = _HTML_BLOCK_CLOSE_RE.sub("\n\n", text)
+    text = _HTML_TAG_RE.sub("", text)
+    text = html.unescape(text)
+    text = _WHITESPACE_RUN_RE.sub(" ", text)
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    text = _BLANK_LINE_RUN_RE.sub("\n\n", text)
+    return text.strip()
 
 
 def normalize_date(value: str | datetime.date | datetime.datetime | None) -> str:
@@ -108,13 +181,13 @@ class Job:
     """One job posting, normalized across job boards.
 
     board: the firm's human-readable name (e.g. "Jane Street"), from
-      greenhouse_boards.toml's `firm` -- NOT the Greenhouse career-page slug
-      used to fetch it. See job_boards/greenhouse/client.py's docstring for
-      why, and the consequence for renaming a firm later.
-      TODO(multi-board): once a second *type* of board exists, a company
-      could in principle appear on two different board systems under the
-      same token. Not a concern with Greenhouse only -- revisit (e.g. add a
-      `source` field) when Lever/Workday support is added.
+      company_toml/greenhouse_boards.toml's `firm` -- NOT the Greenhouse
+      career-page slug used to fetch it. See
+      job_boards/greenhouse/client.py's docstring for why, and the
+      consequence for renaming a firm later. A firm could in principle run
+      boards on more than one board system at once (e.g. Greenhouse for one
+      team, Lever for another) under this same name -- `source` (below) is
+      what distinguishes those, not this field.
     job_id: the board's own id for the posting, as a string. Greenhouse's
       ids are integers; keeping this as `str` means a board with
       non-numeric ids doesn't need a model change.
@@ -141,12 +214,33 @@ class Job:
       "Unspecified" is a real, common outcome rather than a fallback bug.
       Defaults to "Unspecified" so every other Job(...) call site in tests
       doesn't need to pass it explicitly.
-    company_type: from greenhouse_boards.toml's `company_type` (e.g. "Prop
-      Trading/Hedge Fund") -- a fact about the firm, not something inferred
-      from the title, so unlike seniority/board there's no classifier module
-      for it: main.py reads it straight from config and passes it through
-      job_boards/greenhouse/client.py. Defaults to "" for the same reason as
-      seniority's default -- test Job(...) calls that don't care about it.
+    company_type: from company_toml/greenhouse_boards.toml's `company_type`
+      (e.g. "Prop Trading/Hedge Fund") -- a fact about the firm, not
+      something inferred from the title, so unlike seniority/board there's
+      no classifier module for it: main.py reads it straight from config and
+      passes it through job_boards/greenhouse/client.py. Defaults to "" for
+      the same reason as seniority's default -- test Job(...) calls that
+      don't care about it.
+    source: which board system this posting was fetched from -- "Greenhouse",
+      "Lever", or "Ashby" -- a fact about which client fetched it, not
+      something in the API response itself, so each job_boards/*/client.py
+      stamps it as a fixed literal in its own `_to_job` rather than reading
+      it from `raw`. Defaults to "" for the same reason as company_type's
+      default -- test Job(...) calls that don't care about it.
+    description: the full JD text, but ONLY for a firm in
+      FIRMS_NEEDING_DESCRIPTION -- "" for every other posting, even though
+      every client could technically assemble one. Board-specific in how
+      it's assembled where it is populated: Greenhouse's client runs
+      strip_html() over the already-fetched `content=true` HTML; Lever's
+      and Ashby's APIs hand back ready-made plain text
+      (`descriptionBodyPlain`/`lists`/`descriptionPlain`), so their clients
+      use that directly instead of re-deriving it from HTML. Exists because
+      an employer's own apply page can't be trusted to show the JD at all --
+      see FIRMS_NEEDING_DESCRIPTION's comment for the confirmed cases -- so
+      the sheet itself needs to be a reliable place to actually read the JD
+      for those specific firms. Defaults to "" for the same reason as
+      company_type's default -- test Job(...) calls that don't care about
+      it.
     """
 
     board: str
@@ -160,6 +254,8 @@ class Job:
     seniority: str = "Unspecified"
     company_type: str = ""
     first_published: str = ""
+    source: str = ""
+    description: str = ""
 
     def to_row(self) -> list[str]:
         """Render as a flat list of strings, in FIELDS order, for a sheet row.
@@ -172,15 +268,17 @@ class Job:
         (e.g. a future Telegram digest) still has the real link.
         """
         return [
+            normalize_date(self.first_published),
+            normalize_date(self.updated_at),
             self.board,
             self.title,
             self.location,
-            normalize_date(self.first_published),
-            normalize_date(self.updated_at),
+            self.seniority,
             self.company_type,
             hyperlink_formula(self.url),
-            self.seniority,
             self.department,
             self.job_id,
             normalize_date(self.scraped_date),
+            self.source,
+            self.description,
         ]

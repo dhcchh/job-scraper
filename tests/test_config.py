@@ -1,6 +1,6 @@
 """Tests for config._load_boards -- against a temp fixture file, not the
-real greenhouse_boards.toml, so this doesn't churn every time a firm is
-added or removed.
+real company_toml/greenhouse_boards.toml, so this doesn't churn every time
+a firm is added or removed.
 """
 
 import pytest

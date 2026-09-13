@@ -5,12 +5,14 @@ One function: give it a board token, get back this run's Job objects.
 `firm` (not `board_token`) is what ends up in Job.board -- the token is only
 needed to hit the right Greenhouse URL. This keeps the sheet's board column
 readable ("HRT", "Optiver") instead of the raw career-page slug
-("wehrtyou", "optiverneurips") -- see greenhouse_boards.toml for the
-token->firm mapping. Because Job.board (not the token) is also half of the
-(board, job_id) dedup/prune key in sheets.writer, changing what firm maps to
-for an existing token would make every already-tracked job under that token
-look new again next run -- rename firms there with care, and re-key any
-already-written rows to match if you do.
+("wehrtyou", "optiverneurips") -- see company_toml/greenhouse_boards.toml
+for the token->firm mapping. Because Job.board (not the token) is also half
+of the (board, job_id) dedup/prune key in sheets.writer, changing what firm
+maps to for an existing token would make every already-tracked job under
+that token look new again next run -- rename firms there with care, and
+re-key any already-written rows to match if you do. Every Job returned here
+is stamped `source="Greenhouse"` -- a fixed literal, not anything read from
+the response -- see models.Job's docstring.
 
 Transient failures (connection errors, timeouts, 5xx, 429) are retried with
 exponential backoff -- see _get_with_retries. Anything else (a 4xx other
@@ -28,7 +30,7 @@ import time
 
 import requests
 
-from jobscraper.models import Job, normalize_date
+from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_date, strip_html
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
 
@@ -43,7 +45,7 @@ _MAX_ATTEMPTS = 3
 _BACKOFF_SECONDS = 2.0
 
 
-def fetch_jobs(
+def fetch_greenhouse_jobs(
     board_token: str,
     firm: str,
     company_type: str,
@@ -53,18 +55,19 @@ def fetch_jobs(
     """Fetch every open job posted on one company's Greenhouse board.
 
     `board_token` is the Greenhouse career-page slug used to hit the API;
-    `firm` and `company_type` (both from greenhouse_boards.toml) are stored
-    as-is on every returned Job -- `firm` instead of the token (see the
-    module docstring), `company_type` because it's a fact about the firm,
-    not something derivable from a posting's title.
+    `firm` and `company_type` (both from company_toml/greenhouse_boards.toml)
+    are stored as-is on every returned Job -- `firm` instead of the token
+    (see the module docstring), `company_type` because it's a fact about the
+    firm, not something derivable from a posting's title.
 
     `scraped_date` defaults to today and is stamped on every Job returned --
     it's what sheets.writer prunes on later, not anything from Greenhouse.
 
-    We ask for content=true (full HTML job descriptions) even though today's
-    Job model doesn't keep that text -- it's the natural place a future
-    keyword-filtering extension would read from, and it's free to request
-    now.
+    We ask for content=true (full HTML job descriptions) -- `_to_job` runs
+    that through models.strip_html into Job.description, but only for a
+    firm in models.FIRMS_NEEDING_DESCRIPTION (confirmed to have an apply
+    page that can't be trusted to actually show the JD -- see that
+    constant's comment); every other firm's Job.description stays "".
     """
     if scraped_date is None:
         scraped_date = datetime.date.today()
@@ -80,7 +83,7 @@ def fetch_jobs(
     # matches that same defensive posture rather than letting one bad
     # record (no id at all) raise and cost this whole board's ~hundreds of
     # otherwise-good postings for the day (main.py treats any exception
-    # from fetch_jobs as the entire board failing, not per-job).
+    # from fetch_greenhouse_jobs as the entire board failing, not per-job).
     jobs = []
     skipped = 0
     for raw in raw_jobs:
@@ -156,6 +159,12 @@ def _to_job(
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
         company_type=company_type,
+        source="Greenhouse",
+        description=(
+            strip_html(raw.get("content", ""))
+            if firm in FIRMS_NEEDING_DESCRIPTION
+            else ""
+        ),
     )
 
 
@@ -174,7 +183,7 @@ def _first_name(items: list[dict] | None) -> str:
 def _location(raw: dict) -> str:
     """Every office this posting is open in, normalized and " | "-joined.
 
-    `raw["offices"]` (present because fetch_jobs always requests
+    `raw["offices"]` (present because fetch_greenhouse_jobs always requests
     content=true) is Greenhouse's own *pre-split* per-office list -- each
     entry's `name` is one office, with none of the comma-inside-a-city-vs-
     comma-between-cities ambiguity `location.name` has (that field is one

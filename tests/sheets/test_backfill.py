@@ -94,30 +94,34 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
     header, row = worksheet.updated_with
     assert header == backfill.HEADER
     assert header == [
+        "first_published",
+        "updated_at",
         "board",
         "title",
         "location",
-        "first_published",
-        "updated_at",
+        "seniority",
         "company_type",
         "url",
-        "seniority",
         "department",
         "job_id",
         "scraped_date",
+        "source",
+        "description",
     ]
     assert row == [
+        "",  # first_published: no such column in _OLD_HEADER, no override given
+        "2026-09-01",
         "Acme",
         "Junior Engineer",
         "Remote",
-        "",  # first_published: no such column in _OLD_HEADER, no override given
-        "2026-09-01",
+        "Junior",  # recomputed from "Junior Engineer", was stale "Unspecified"
         "Big Tech",
         '=HYPERLINK("https://x/101", "Apply")',
-        "Junior",  # recomputed from "Junior Engineer", was stale "Unspecified"
         "Eng",
         "101",
         "2026-09-01",
+        "",  # source: "Acme" isn't a real configured firm, no override given
+        "",  # description: no such column in _OLD_HEADER, no override given
     ]
 
 
@@ -127,6 +131,28 @@ def test_refresh_recomputes_company_type_from_current_config(monkeypatch):
         "GREENHOUSE_BOARDS",
         [{"token": "acme", "firm": "Acme", "company_type": "Prop Trading/Hedge Fund"}],
     )
+    monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
+    worksheet = _FakeWorksheet([_OLD_HEADER, _old_row(company_type="Big Tech")])
+
+    backfill.refresh_worksheet(worksheet)
+
+    company_type_index = backfill.HEADER.index("company_type")
+    _, row = worksheet.updated_with
+    assert row[company_type_index] == "Prop Trading/Hedge Fund"
+
+
+def test_refresh_recomputes_company_type_from_a_lever_or_ashby_board(monkeypatch):
+    # backfill.py predates Lever/Ashby support and only ever looked up
+    # company_type in GREENHOUSE_BOARDS -- a Lever- or Ashby-only firm's
+    # company_type edit must be picked up too.
+    monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", [])
+    monkeypatch.setattr(
+        backfill.config,
+        "LEVER_BOARDS",
+        [{"token": "acme", "firm": "Acme", "company_type": "Prop Trading/Hedge Fund"}],
+    )
+    monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
     worksheet = _FakeWorksheet([_OLD_HEADER, _old_row(company_type="Big Tech")])
 
     backfill.refresh_worksheet(worksheet)
@@ -138,6 +164,8 @@ def test_refresh_recomputes_company_type_from_current_config(monkeypatch):
 
 def test_refresh_leaves_company_type_alone_when_firm_not_in_config(monkeypatch):
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
     worksheet = _FakeWorksheet([_OLD_HEADER, _old_row(company_type="Big Tech")])
 
     backfill.refresh_worksheet(worksheet)
@@ -145,6 +173,42 @@ def test_refresh_leaves_company_type_alone_when_firm_not_in_config(monkeypatch):
     company_type_index = backfill.HEADER.index("company_type")
     _, row = worksheet.updated_with
     assert row[company_type_index] == "Big Tech"  # unchanged, not blanked
+
+
+def test_refresh_recomputes_source_from_current_config(monkeypatch):
+    # "Acme" moved from Greenhouse to Lever -- its existing rows' stale
+    # "Greenhouse" source cell must be corrected to "Lever".
+    monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", [])
+    monkeypatch.setattr(
+        backfill.config,
+        "LEVER_BOARDS",
+        [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}],
+    )
+    monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
+    header_with_source = _OLD_HEADER + ["source"]
+    row_with_source = _old_row() + ["Greenhouse"]
+    worksheet = _FakeWorksheet([header_with_source, row_with_source])
+
+    backfill.refresh_worksheet(worksheet)
+
+    source_index = backfill.HEADER.index("source")
+    _, row = worksheet.updated_with
+    assert row[source_index] == "Lever"
+
+
+def test_refresh_leaves_source_alone_when_firm_not_in_config(monkeypatch):
+    monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
+    header_with_source = _OLD_HEADER + ["source"]
+    row_with_source = _old_row() + ["Greenhouse"]
+    worksheet = _FakeWorksheet([header_with_source, row_with_source])
+
+    backfill.refresh_worksheet(worksheet)
+
+    source_index = backfill.HEADER.index("source")
+    _, row = worksheet.updated_with
+    assert row[source_index] == "Greenhouse"  # unchanged, not blanked
 
 
 def test_refresh_defaults_missing_trailing_cells_to_empty_string():
@@ -254,6 +318,8 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     # No boards to re-fetch for location overrides -- keeps this test off
     # the network (see module docstring: tests never hit it).
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
     monkeypatch.setattr(backfill, "get_spreadsheet", lambda: "SPREADSHEET")
     monkeypatch.setattr(backfill, "get_worksheet", lambda spreadsheet, name: name)
 
@@ -273,16 +339,18 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     ]
 
 
-def test_greenhouse_overrides_keys_by_board_and_job_id(monkeypatch):
+def test_fetch_overrides_keys_by_board_and_job_id(monkeypatch):
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", boards)
+    monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
 
     fetched = [_job_stub("Acme", "1", "Singapore"), _job_stub("Acme", "2", "London, United Kingdom")]
     monkeypatch.setattr(
-        backfill, "fetch_jobs", lambda token, firm, company_type: fetched
+        backfill, "fetch_greenhouse_jobs", lambda token, firm, company_type: fetched
     )
 
-    overrides = backfill._greenhouse_overrides()
+    overrides = backfill._fetch_overrides()
 
     assert overrides == {
         ("Acme", "1"): fetched[0],
@@ -290,25 +358,68 @@ def test_greenhouse_overrides_keys_by_board_and_job_id(monkeypatch):
     }
 
 
-def test_greenhouse_overrides_skips_a_board_that_fails(monkeypatch):
+def test_fetch_overrides_skips_a_board_that_fails(monkeypatch):
     boards = [
         {"token": "good", "firm": "GoodCo", "company_type": "Big Tech"},
         {"token": "bad", "firm": "BadCo", "company_type": "Big Tech"},
     ]
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", boards)
+    monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
 
     good_job = _job_stub("GoodCo", "1", "Singapore")
 
-    def fake_fetch_jobs(token, firm, company_type):
+    def fake_fetch_greenhouse_jobs(token, firm, company_type):
         if firm == "BadCo":
             raise RuntimeError("greenhouse down")
         return [good_job]
 
-    monkeypatch.setattr(backfill, "fetch_jobs", fake_fetch_jobs)
+    monkeypatch.setattr(backfill, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
 
-    overrides = backfill._greenhouse_overrides()  # must not raise
+    overrides = backfill._fetch_overrides()  # must not raise
 
     assert overrides == {("GoodCo", "1"): good_job}
+
+
+def test_fetch_overrides_merges_greenhouse_lever_and_ashby(monkeypatch):
+    # backfill.py predates Lever/Ashby support and only ever re-fetched
+    # GREENHOUSE_BOARDS -- a Lever- or Ashby-sourced row must get the same
+    # fresh-data override a Greenhouse-sourced row already did.
+    monkeypatch.setattr(
+        backfill.config,
+        "GREENHOUSE_BOARDS",
+        [{"token": "gh", "firm": "GreenhouseCo", "company_type": "Big Tech"}],
+    )
+    monkeypatch.setattr(
+        backfill.config,
+        "LEVER_BOARDS",
+        [{"token": "lv", "firm": "LeverCo", "company_type": "Big Tech"}],
+    )
+    monkeypatch.setattr(
+        backfill.config,
+        "ASHBY_BOARDS",
+        [{"token": "as", "firm": "AshbyCo", "company_type": "Big Tech"}],
+    )
+
+    gh_job = _job_stub("GreenhouseCo", "1", "Singapore")
+    lever_job = _job_stub("LeverCo", "2", "London, United Kingdom")
+    ashby_job = _job_stub("AshbyCo", "3", "Sydney, Australia")
+
+    monkeypatch.setattr(backfill, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(
+        backfill, "fetch_lever_jobs", lambda token, firm, company_type: [lever_job]
+    )
+    monkeypatch.setattr(
+        backfill, "fetch_ashby_jobs", lambda token, firm, company_type: [ashby_job]
+    )
+
+    overrides = backfill._fetch_overrides()
+
+    assert overrides == {
+        ("GreenhouseCo", "1"): gh_job,
+        ("LeverCo", "2"): lever_job,
+        ("AshbyCo", "3"): ashby_job,
+    }
 
 
 def test_refresh_prefers_a_location_override_over_best_effort_renormalization():
@@ -380,7 +491,96 @@ def test_refresh_leaves_first_published_unchanged_when_no_override_for_that_row(
     assert row[header.index("first_published")] == "2026-05-01"
 
 
-def _job_stub(board, job_id, location, first_published=""):
+_A_FIRM_NEEDING_DESCRIPTION = "Qube Research & Technologies"  # in FIRMS_NEEDING_DESCRIPTION
+
+
+def test_refresh_fills_in_description_for_a_header_that_predates_the_column():
+    # Same "column added after rows already existed" shape as
+    # first_published above -- _OLD_HEADER/_old_row have no description
+    # column at all. Firm must be in FIRMS_NEEDING_DESCRIPTION, or this
+    # would just get blanked instead (see
+    # test_refresh_blanks_description_for_a_firm_not_needing_it).
+    worksheet = _FakeWorksheet(
+        [_OLD_HEADER, _old_row(board=_A_FIRM_NEEDING_DESCRIPTION, job_id="1")]
+    )
+
+    backfill.refresh_worksheet(
+        worksheet,
+        overrides={
+            (_A_FIRM_NEEDING_DESCRIPTION, "1"): _job_stub(
+                _A_FIRM_NEEDING_DESCRIPTION, "1", "Remote", description="Do the thing."
+            )
+        },
+    )
+
+    header, row = worksheet.updated_with
+    assert "description" in header
+    assert row[header.index("description")] == "Do the thing."
+
+
+def test_refresh_leaves_description_unchanged_when_no_override_for_that_row():
+    # Already-migrated row (has real description text) whose posting has
+    # since closed -- no override available, so it must not be blanked.
+    header_with_desc = _OLD_HEADER + ["description"]
+    row_with_desc = (
+        _old_row(board=_A_FIRM_NEEDING_DESCRIPTION, job_id="1") + ["Existing JD text."]
+    )
+    worksheet = _FakeWorksheet([header_with_desc, row_with_desc])
+
+    backfill.refresh_worksheet(worksheet, overrides={})
+
+    header, row = worksheet.updated_with
+    assert row[header.index("description")] == "Existing JD text."
+
+
+def test_refresh_overwrites_stale_description_when_fresh_differs():
+    # Unlike first_published, description overwrites a non-empty existing
+    # value too -- a JD can be legitimately edited after this project first
+    # saw it, and the fresh re-fetch is the only way to pick that up.
+    header_with_desc = _OLD_HEADER + ["description"]
+    row_with_desc = (
+        _old_row(board=_A_FIRM_NEEDING_DESCRIPTION, job_id="1") + ["Stale JD text."]
+    )
+    worksheet = _FakeWorksheet([header_with_desc, row_with_desc])
+
+    backfill.refresh_worksheet(
+        worksheet,
+        overrides={
+            (_A_FIRM_NEEDING_DESCRIPTION, "1"): _job_stub(
+                _A_FIRM_NEEDING_DESCRIPTION, "1", "Remote", description="Updated JD text."
+            )
+        },
+    )
+
+    header, row = worksheet.updated_with
+    assert row[header.index("description")] == "Updated JD text."
+
+
+def test_refresh_blanks_description_for_a_firm_not_needing_it():
+    # "Acme" isn't in FIRMS_NEEDING_DESCRIPTION -- its rows must have
+    # description cleared unconditionally, even with no overrides at all
+    # (e.g. a firm dropped from FIRMS_NEEDING_DESCRIPTION after this
+    # project's earlier blanket rollout of the column).
+    header_with_desc = _OLD_HEADER + ["description"]
+    row_with_desc = _old_row(board="Acme", job_id="1") + ["Stale JD text."]
+    worksheet = _FakeWorksheet([header_with_desc, row_with_desc])
+
+    backfill.refresh_worksheet(worksheet, overrides={})
+
+    header, row = worksheet.updated_with
+    assert row[header.index("description")] == ""
+
+
+def test_refresh_leaves_description_empty_for_a_firm_not_needing_it():
+    worksheet = _FakeWorksheet([_OLD_HEADER, _old_row(board="Acme", job_id="1")])
+
+    backfill.refresh_worksheet(worksheet)
+
+    header, row = worksheet.updated_with
+    assert row[header.index("description")] == ""
+
+
+def _job_stub(board, job_id, location, first_published="", description=""):
     from datetime import date
 
     from jobscraper.models import Job
@@ -395,4 +595,5 @@ def _job_stub(board, job_id, location, first_published=""):
         "",
         date(2026, 9, 12),
         first_published=first_published,
+        description=description,
     )

@@ -117,9 +117,9 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
             "big data engineer",
             "analytics engineer",
             "fpga",
-            # Added when Crypto Exchange/Gaming/Fintech/big-tech boards joined
-            # greenhouse_boards.toml (dry-run validated against ~3,700 real
-            # postings across 14 firms). Big-tech
+            # Added when Crypto Exchange/Gaming/Fintech/big-tech boards
+            # joined company_toml/greenhouse_boards.toml (dry-run validated
+            # against ~3,700 real postings across 14 firms). Big-tech
             # titling favors bare "Engineer"/reordered phrases the quant-firm
             # keywords above never needed to cover:
             "staff engineer",

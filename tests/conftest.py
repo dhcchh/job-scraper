@@ -3,8 +3,9 @@
 config reads required env vars at import and raises without them, so
 sensible defaults are set here before jobscraper.config is ever imported --
 conftest runs first, and setdefault leaves a real .env alone. Greenhouse
-board tokens come from greenhouse_boards.toml (checked in, always present)
-rather than an env var, so no default is needed for those here.
+board tokens come from company_toml/greenhouse_boards.toml (checked in,
+always present) rather than an env var, so no default is needed for those
+here.
 """
 
 import os

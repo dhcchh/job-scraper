@@ -19,9 +19,19 @@ shape as job_boards/greenhouse/client.py, adapted to Lever's response shape:
   a "went live" signal, so unlike Greenhouse's client this stamps
   first_published from it and leaves updated_at "" rather than fabricating
   a value the source data doesn't have.
+- The JD comes back already as plain text (`openingPlain`,
+  `descriptionBodyPlain`, `additionalPlain`), not HTML like Greenhouse's
+  `content` -- `_description` assembles Job.description straight from
+  those instead of running Greenhouse's strip_html() path, except for
+  `lists` (responsibilities/requirements), which only has an HTML
+  `content` per item. Same as every client, this only runs for a firm in
+  models.FIRMS_NEEDING_DESCRIPTION; no live Lever board is in that set
+  today.
 
 `firm` (not the slug) is what ends up in Job.board, for the same readability
-and dedup-key reasons documented in job_boards/greenhouse/client.py.
+and dedup-key reasons documented in job_boards/greenhouse/client.py. Every
+Job returned here is stamped `source="Lever"` -- a fixed literal, not
+anything read from the response -- see models.Job's docstring.
 
 Retries the same way as the Greenhouse client (transient failures, 3
 attempts, exponential backoff) -- see that module's docstring for the
@@ -36,7 +46,7 @@ import time
 
 import requests
 
-from jobscraper.models import Job, normalize_date
+from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_date, strip_html
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
 
@@ -49,7 +59,7 @@ _MAX_ATTEMPTS = 3
 _BACKOFF_SECONDS = 2.0
 
 
-def fetch_jobs(
+def fetch_lever_jobs(
     board_slug: str,
     firm: str,
     company_type: str,
@@ -59,8 +69,9 @@ def fetch_jobs(
     """Fetch every open job posted on one company's Lever site.
 
     `board_slug` is the Lever site slug used to hit the API (e.g.
-    "palantir"); `firm` and `company_type` (both from lever_boards.toml) are
-    stored as-is on every returned Job, same as the Greenhouse client.
+    "palantir"); `firm` and `company_type` (both from
+    company_toml/lever_boards.toml) are stored as-is on every returned Job,
+    same as the Greenhouse client.
 
     `scraped_date` defaults to today and is stamped on every Job returned --
     it's what sheets.writer prunes on later, not anything from Lever.
@@ -76,7 +87,7 @@ def fetch_jobs(
 
     raw_jobs = response.json()
 
-    # Same defensive posture as the Greenhouse client's fetch_jobs: one
+    # Same defensive posture as the Greenhouse client's fetch_greenhouse_jobs: one
     # malformed record (no id at all) is skipped rather than costing this
     # whole board's otherwise-good postings for the day.
     jobs = []
@@ -152,6 +163,8 @@ def _to_job(
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
         company_type=company_type,
+        source="Lever",
+        description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
     )
 
 
@@ -177,6 +190,32 @@ def _location(categories: dict) -> str:
     if names:
         return " | ".join(names)
     return normalize_location(categories.get("location") or "")
+
+
+def _description(raw: dict) -> str:
+    """The full JD as plain text, assembled from Lever's own plain-text
+    fields rather than stripping the HTML `description` field itself.
+
+    Unlike Greenhouse, Lever's API already hands back plain text for most
+    of the posting -- `openingPlain`/`descriptionPlain` (company intro, the
+    two are identical on every posting checked) and `descriptionBodyPlain`
+    (the actual role-specific body) -- so this only reaches for strip_html
+    on `lists` (responsibilities/requirements sections), which has no plain
+    variant, only each item's HTML `content`. Sections are joined with blank
+    lines in the same opening -> body -> lists -> closing order Lever's own
+    hosted page renders them in; any missing/empty section is skipped
+    rather than leaving a stray blank line.
+    """
+    sections = [
+        (raw.get("openingPlain") or "").strip(),
+        (raw.get("descriptionBodyPlain") or "").strip(),
+    ]
+    for item in raw.get("lists") or []:
+        header = (item.get("text") or "").strip()
+        body = strip_html(item.get("content") or "")
+        sections.append("\n".join(part for part in (header, body) if part))
+    sections.append((raw.get("additionalPlain") or "").strip())
+    return "\n\n".join(section for section in sections if section)
 
 
 def _created_at(raw: dict) -> datetime.date | None:

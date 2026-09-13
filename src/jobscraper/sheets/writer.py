@@ -84,12 +84,47 @@ def get_worksheet(spreadsheet: gspread.Spreadsheet, name: str) -> gspread.Worksh
 def format_date_columns(worksheet: gspread.Worksheet) -> None:
     """Explicitly format date columns as DATE ('yyyy-mm-dd') in Google Sheets.
 
-    Applies to first_published (D), updated_at (E), and scraped_date (K)
-    data cells so Google Sheets displays them uniformly.
+    Applies to first_published (A), updated_at (B), and scraped_date (K)
+    data cells so Google Sheets displays them uniformly. These letters follow
+    FIELDS' current order (see models.py) -- they move if FIELDS is reordered.
     """
     if hasattr(worksheet, "format"):
-        worksheet.format("D2:E", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
+        worksheet.format("A2:B", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
         worksheet.format("K2:K", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
+
+
+def format_description_column(worksheet: gspread.Worksheet) -> None:
+    """Clip (don't wrap) the description column (M) so a long JD can't blow
+    up that row's height.
+
+    models.strip_html/lever's _description embed real newlines in the text
+    (paragraph/bullet breaks) so the JD reads properly when you open the
+    cell -- but a cell with embedded newlines defaults to WRAP in Sheets,
+    which auto-expands the row to fit every line, so a several-thousand-
+    character JD makes its row dozens of lines tall and scrolling through
+    rows painful. CLIP instead keeps the row at normal height and truncates
+    the visible text at the column's right edge; the full text is still
+    there -- click the cell (or widen it) to read all of it. This letter
+    follows FIELDS' current order (see models.py) -- it moves if FIELDS is
+    reordered.
+    """
+    if hasattr(worksheet, "format"):
+        worksheet.format("M2:M", {"wrapStrategy": "CLIP"})
+
+
+def set_basic_filter(worksheet: gspread.Worksheet) -> None:
+    """Turn on Sheets' basic filter (Data > Create a filter) over the header.
+
+    Adds the dropdown arrow to every header cell that lets someone filter or
+    sort by any column -- board, location, seniority, and company_type are
+    the ones this project's postings are actually meant to be sliced by, but
+    a basic filter is all-or-nothing over its range, so every other column
+    gets the same arrow for free. Re-running this replaces any existing
+    basic filter on the sheet rather than erroring, so it's safe to call
+    every backfill the same way format_date_columns is.
+    """
+    if hasattr(worksheet, "set_basic_filter"):
+        worksheet.set_basic_filter()
 
 
 def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> int:

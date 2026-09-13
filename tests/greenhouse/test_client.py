@@ -40,7 +40,7 @@ class _FakeResponse:
         return self._payload
 
 
-def test_fetch_jobs_parses_response(monkeypatch):
+def test_fetch_greenhouse_jobs_parses_response(monkeypatch):
     captured = {}
 
     def fake_get(url, params=None, timeout=None):
@@ -50,7 +50,7 @@ def test_fetch_jobs_parses_response(monkeypatch):
 
     monkeypatch.setattr(client.requests, "get", fake_get)
 
-    jobs = client.fetch_jobs(
+    jobs = client.fetch_greenhouse_jobs(
         "acme", "Acme Corp", "Big Tech", scraped_date=datetime.date(2026, 9, 12)
     )
 
@@ -76,10 +76,37 @@ def test_fetch_jobs_parses_response(monkeypatch):
     assert second.first_published == ""  # missing from the raw job, not a crash
 
 
-def test_fetch_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):
+def test_fetch_greenhouse_jobs_populates_description_only_for_a_firm_needing_it(
+    monkeypatch,
+):
+    response = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Engineer",
+                "updated_at": "",
+                "absolute_url": "https://x/1",
+                "location": {},
+                "departments": [],
+                "content": "&lt;p&gt;Do the thing.&lt;/p&gt;",
+            }
+        ]
+    }
+    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FakeResponse(response))
+
+    (needed,) = client.fetch_greenhouse_jobs(
+        "qube", "Qube Research & Technologies", "Prop Trading/Hedge Fund"
+    )
+    (not_needed,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
+
+    assert needed.description == "Do the thing."
+    assert not_needed.description == ""  # not in FIRMS_NEEDING_DESCRIPTION
+
+
+def test_fetch_greenhouse_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):
     # A malformed record with no id at all must not cost the whole board's
     # otherwise-good postings for the day -- main.py treats any exception
-    # from fetch_jobs as this entire board having failed to fetch.
+    # from fetch_greenhouse_jobs as this entire board having failed to fetch.
     response = {
         "jobs": [
             {
@@ -103,13 +130,13 @@ def test_fetch_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):
         client.requests, "get", lambda *a, **k: _FakeResponse(response)
     )
 
-    jobs = client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+    jobs = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
     assert len(jobs) == 1
     assert jobs[0].job_id == "99"
 
 
-def test_fetch_jobs_builds_location_from_offices_not_the_raw_location_string(monkeypatch):
+def test_fetch_greenhouse_jobs_builds_location_from_offices_not_the_raw_location_string(monkeypatch):
     # location.name is one free-text string a recruiter typed and can't be
     # safely split ("London, United Kingdom; New York, NY, United States");
     # offices is Greenhouse's own pre-split, per-office list -- that's what
@@ -135,12 +162,12 @@ def test_fetch_jobs_builds_location_from_offices_not_the_raw_location_string(mon
         client.requests, "get", lambda *a, **k: _FakeResponse(response)
     )
 
-    (job,) = client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+    (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
     assert job.location == "London, United Kingdom | New York, NY"
 
 
-def test_fetch_jobs_falls_back_to_location_name_when_offices_missing(monkeypatch):
+def test_fetch_greenhouse_jobs_falls_back_to_location_name_when_offices_missing(monkeypatch):
     response = {
         "jobs": [
             {
@@ -158,12 +185,12 @@ def test_fetch_jobs_falls_back_to_location_name_when_offices_missing(monkeypatch
         client.requests, "get", lambda *a, **k: _FakeResponse(response)
     )
 
-    (job,) = client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+    (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
     assert job.location == "Bangalore, India"  # still normalized via the fallback
 
 
-def test_fetch_jobs_raises_on_http_error(monkeypatch):
+def test_fetch_greenhouse_jobs_raises_on_http_error(monkeypatch):
     class _FailingResponse:
         def raise_for_status(self):
             raise client.requests.HTTPError("boom")
@@ -171,7 +198,7 @@ def test_fetch_jobs_raises_on_http_error(monkeypatch):
     monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FailingResponse())
 
     with pytest.raises(client.requests.HTTPError):
-        client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+        client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
 
 class _RespondingWith:
@@ -190,7 +217,7 @@ class _RespondingWith:
         raise error
 
 
-def test_fetch_jobs_retries_transient_error_then_succeeds(monkeypatch):
+def test_fetch_greenhouse_jobs_retries_transient_error_then_succeeds(monkeypatch):
     calls = []
 
     def fake_get(url, params=None, timeout=None):
@@ -202,13 +229,13 @@ def test_fetch_jobs_retries_transient_error_then_succeeds(monkeypatch):
     monkeypatch.setattr(client.requests, "get", fake_get)
     monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
 
-    jobs = client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+    jobs = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
     assert len(calls) == 3  # 2 failures + 1 success, within _MAX_ATTEMPTS
     assert len(jobs) == 2
 
 
-def test_fetch_jobs_gives_up_after_max_retries_on_5xx(monkeypatch):
+def test_fetch_greenhouse_jobs_gives_up_after_max_retries_on_5xx(monkeypatch):
     calls = []
 
     def fake_get(url, params=None, timeout=None):
@@ -219,12 +246,12 @@ def test_fetch_jobs_gives_up_after_max_retries_on_5xx(monkeypatch):
     monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
 
     with pytest.raises(client.requests.HTTPError):
-        client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+        client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
     assert len(calls) == client._MAX_ATTEMPTS
 
 
-def test_fetch_jobs_does_not_retry_client_error(monkeypatch):
+def test_fetch_greenhouse_jobs_does_not_retry_client_error(monkeypatch):
     calls = []
 
     def fake_get(url, params=None, timeout=None):
@@ -237,6 +264,6 @@ def test_fetch_jobs_does_not_retry_client_error(monkeypatch):
     )
 
     with pytest.raises(client.requests.HTTPError):
-        client.fetch_jobs("acme", "Acme Corp", "Big Tech")
+        client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
     assert len(calls) == 1  # no retries -- a 404 won't fix itself

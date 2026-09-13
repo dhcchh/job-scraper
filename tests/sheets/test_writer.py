@@ -62,6 +62,8 @@ def _row(board, job_id, scraped_date):
         "scraped_date": scraped_date,
         "seniority": "Unspecified",
         "company_type": "",
+        "source": "",
+        "description": "",
     }
     return [values[name] for name in writer.HEADER]
 
@@ -248,7 +250,7 @@ def test_format_date_columns_calls_format_when_available():
     writer.format_date_columns(ws)
     assert len(formatted_ranges) == 2
     assert formatted_ranges[0] == (
-        "D2:E",
+        "A2:B",
         {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}},
     )
     assert formatted_ranges[1] == (
@@ -263,6 +265,44 @@ def test_format_date_columns_tolerates_worksheet_without_format():
 
     ws = _WorksheetWithoutFormat()
     writer.format_date_columns(ws)  # does not raise
+
+
+def test_format_description_column_clips_instead_of_wrapping():
+    formatted_ranges = []
+
+    class _WorksheetWithFormat:
+        def format(self, range_name, format_dict):
+            formatted_ranges.append((range_name, format_dict))
+
+    ws = _WorksheetWithFormat()
+    writer.format_description_column(ws)
+    assert formatted_ranges == [("M2:M", {"wrapStrategy": "CLIP"})]
+
+
+def test_format_description_column_tolerates_worksheet_without_format():
+    class _WorksheetWithoutFormat:
+        pass
+
+    ws = _WorksheetWithoutFormat()
+    writer.format_description_column(ws)  # does not raise
+
+
+def test_set_basic_filter_calls_set_basic_filter_when_available():
+    calls = []
+
+    class _WorksheetWithFilter:
+        def set_basic_filter(self):
+            calls.append(True)
+
+    writer.set_basic_filter(_WorksheetWithFilter())
+    assert calls == [True]
+
+
+def test_set_basic_filter_tolerates_worksheet_without_it():
+    class _WorksheetWithoutFilter:
+        pass
+
+    writer.set_basic_filter(_WorksheetWithoutFilter())  # does not raise
 
 
 class _FakeSpreadsheet:

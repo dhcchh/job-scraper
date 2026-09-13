@@ -16,11 +16,14 @@ load_dotenv()
 # Greenhouse/Lever board tokens live in checked-in TOML files, not an env
 # var -- they aren't secret (just company career-page slugs), and a growing
 # list of many firms is much easier to read/edit as a TOML array-of-tables
-# than as one long comma-separated string. See greenhouse_boards.toml and
-# lever_boards.toml themselves.
-_BOARDS_FILE = Path(__file__).resolve().parents[2] / "greenhouse_boards.toml"
-_LEVER_BOARDS_FILE = Path(__file__).resolve().parents[2] / "lever_boards.toml"
-_ASHBY_BOARDS_FILE = Path(__file__).resolve().parents[2] / "ashby_boards.toml"
+# than as one long comma-separated string. Grouped under company_toml/
+# (rather than the repo root) so the root isn't cluttered as more board
+# platforms are added -- see company_toml/greenhouse_boards.toml and
+# company_toml/lever_boards.toml themselves.
+_COMPANY_TOML_DIR = Path(__file__).resolve().parents[2] / "company_toml"
+_BOARDS_FILE = _COMPANY_TOML_DIR / "greenhouse_boards.toml"
+_LEVER_BOARDS_FILE = _COMPANY_TOML_DIR / "lever_boards.toml"
+_ASHBY_BOARDS_FILE = _COMPANY_TOML_DIR / "ashby_boards.toml"
 
 
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")

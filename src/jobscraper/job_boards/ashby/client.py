@@ -24,10 +24,19 @@ adapted to Ashby's response shape:
 - `jobUrl` (the listing page a candidate lands on and applies from) is used
   for Job.url, not `applyUrl` (a deep link straight to the application
   form) -- matching absolute_url/hostedUrl's role in the other two clients.
+- Every posting already carries a ready-made `descriptionPlain` field, even
+  on the plain (no extra params) list endpoint this client hits -- unlike
+  Greenhouse's HTML `content` (see strip_html) or Lever's several
+  plain-text pieces (see that client's `_description`), Job.description
+  here is just that field verbatim. Same as every client, this only runs
+  for a firm in models.FIRMS_NEEDING_DESCRIPTION; no live Ashby board is in
+  that set today.
 
 `firm` (not the slug) is what ends up in Job.board, for the same
 readability and dedup-key reasons documented in
-job_boards/greenhouse/client.py.
+job_boards/greenhouse/client.py. Every Job returned here is stamped
+`source="Ashby"` -- a fixed literal, not anything read from the response --
+see models.Job's docstring.
 
 Retries the same way as the Greenhouse/Lever clients (transient failures, 3
 attempts, exponential backoff) -- see that module's docstring for the
@@ -42,7 +51,7 @@ import time
 
 import requests
 
-from jobscraper.models import Job, normalize_date
+from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
 
@@ -55,7 +64,7 @@ _MAX_ATTEMPTS = 3
 _BACKOFF_SECONDS = 2.0
 
 
-def fetch_jobs(
+def fetch_ashby_jobs(
     board_slug: str,
     firm: str,
     company_type: str,
@@ -65,8 +74,9 @@ def fetch_jobs(
     """Fetch every open job posted on one company's Ashby job board.
 
     `board_slug` is the Ashby job-board slug used to hit the API (e.g.
-    "openai"); `firm` and `company_type` (both from ashby_boards.toml) are
-    stored as-is on every returned Job, same as the Greenhouse/Lever clients.
+    "openai"); `firm` and `company_type` (both from
+    company_toml/ashby_boards.toml) are stored as-is on every returned Job,
+    same as the Greenhouse/Lever clients.
 
     `scraped_date` defaults to today and is stamped on every Job returned --
     it's what sheets.writer prunes on later, not anything from Ashby.
@@ -80,7 +90,7 @@ def fetch_jobs(
     payload = response.json()
     raw_jobs = payload.get("jobs", [])
 
-    # Same defensive posture as the Greenhouse/Lever clients' fetch_jobs: one
+    # Same defensive posture as the Greenhouse/Lever clients' fetch_*_jobs: one
     # malformed record (no id at all) is skipped rather than costing this
     # whole board's otherwise-good postings for the day.
     jobs = []
@@ -155,6 +165,12 @@ def _to_job(
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
         company_type=company_type,
+        source="Ashby",
+        description=(
+            (raw.get("descriptionPlain") or "").strip()
+            if firm in FIRMS_NEEDING_DESCRIPTION
+            else ""
+        ),
     )
 
 

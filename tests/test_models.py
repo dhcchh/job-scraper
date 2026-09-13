@@ -1,6 +1,6 @@
 import datetime
 
-from jobscraper.models import FIELDS, Job, hyperlink_formula, normalize_date
+from jobscraper.models import FIELDS, Job, hyperlink_formula, normalize_date, strip_html
 
 
 def test_normalize_date():
@@ -27,17 +27,19 @@ def test_job_to_row_matches_fields_order():
     row = job.to_row()
     assert len(row) == len(FIELDS)
     assert row == [
+        "",  # first_published defaults when not passed explicitly
+        "2026-09-01",
         "acme",
         "Engineer",
         "Remote",
-        "",  # first_published defaults when not passed explicitly
-        "2026-09-01",
+        "Unspecified",  # seniority defaults when not passed explicitly
         "",  # company_type defaults when not passed explicitly
         '=HYPERLINK("https://example.com/1", "Apply")',
-        "Unspecified",  # seniority defaults when not passed explicitly
         "Eng",
         "1",
         "2026-09-12",
+        "",  # source defaults when not passed explicitly
+        "",  # description defaults when not passed explicitly
     ]
 
 
@@ -57,3 +59,25 @@ def test_hyperlink_formula_escapes_embedded_quotes():
         hyperlink_formula('https://example.com/"1"', label='say "hi"')
         == '=HYPERLINK("https://example.com/""1""", "say ""hi""")'
     )
+
+
+def test_strip_html_empty_is_empty_string():
+    assert strip_html("") == ""
+
+
+def test_strip_html_undoes_greenhouse_double_encoding():
+    # Greenhouse's `content` field is HTML-entity-double-encoded -- the raw
+    # JSON value literally contains "&lt;p&gt;", not "<p>" -- confirmed
+    # against every board this project fetches.
+    raw = "&lt;p&gt;Qube Research &amp;amp; Technologies is hiring.&lt;/p&gt;"
+    assert strip_html(raw) == "Qube Research & Technologies is hiring."
+
+
+def test_strip_html_converts_list_items_to_bullet_lines():
+    raw = "<p>Responsibilities:</p><ul><li>Write code</li><li>Ship it</li></ul>"
+    assert strip_html(raw) == "Responsibilities:\n\n- Write code\n- Ship it"
+
+
+def test_strip_html_collapses_excess_blank_lines():
+    raw = "<p>First.</p><p></p><p></p><p>Second.</p>"
+    assert strip_html(raw) == "First.\n\nSecond."

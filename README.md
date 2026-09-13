@@ -16,8 +16,8 @@ uv run pytest                              # tests -- no network or credentials 
 ## Setup
 
 1. **Board tokens** — add each firm as a `[[boards]]` entry in
-   `greenhouse_boards.toml`, `lever_boards.toml`, or `ashby_boards.toml`
-   (repo root, checked in — see "Adding a board").
+   `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
+   or `company_toml/ashby_boards.toml` (checked in — see "Adding a board").
 2. **Google Sheets access** — in Google Cloud Console: enable the Sheets
    API, create a service account + JSON key, then **Share** your target
    sheet with that key's `client_email` as **Editor**. Collapse the key to
@@ -34,14 +34,15 @@ uv run pytest                              # tests -- no network or credentials 
    `classify_roles.py` and `REGIONS` in `classify_region.py` for the
    current full list (10 tabs today). Each needs a header row matching
    `jobscraper.models.FIELDS` exactly:
-   `board, title, location, first_published, updated_at, company_type, url, seniority, department, job_id, scraped_date`.
+   `first_published, updated_at, board, title, location, seniority, company_type, url, department, job_id, scraped_date, source, description`.
    Tabs and header rows aren't auto-created.
 
 ## Architecture
 
 ```
+company_toml/                          # *_boards.toml -- checked-in board configs, not secrets
 src/jobscraper/
-├── config.py                          # only module reading env vars / *_boards.toml
+├── config.py                          # only module reading env vars / company_toml/*_boards.toml
 ├── main.py                            # entrypoint: fetch → classify → append/prune, per board
 ├── models.py                          # Job dataclass, FIELDS column order, to_row/date helpers
 ├── enrichment/
@@ -82,13 +83,26 @@ src/jobscraper/
   elsewhere. Neither Lever's nor Ashby's API exposes an edited-at timestamp,
   so `updated_at` is always `""` for a job from either — `first_published`
   comes from Lever's `createdAt`/Ashby's `publishedAt` instead.
+- **Job description**: kept in the sheet (`description` column), but only
+  for a firm in `models.FIRMS_NEEDING_DESCRIPTION` (currently Qube Research
+  & Technologies and Squarepoint) — every other posting's `description` is
+  `""`. This is a deliberate trial scoped to two firms confirmed to have an
+  apply page that doesn't reliably show the JD at all (one Greenhouse board
+  renders it only into a client-side hydration blob, invisible/unsearchable
+  on the page; another's `absolute_url` redirects to a generic careers
+  listing instead of the specific posting), not a blanket rollout — most
+  employers' own apply pages already show the JD fine. Where it is
+  populated: Greenhouse's `content` field is HTML and gets run through
+  `models.strip_html`; Lever's and Ashby's APIs already hand back plain
+  text, so their clients use that directly.
 - **Identity**: a posting is uniquely identified by `(board, job_id)`, not
   `job_id` alone — every board assigns ids per tenant, so two different
   firms' boards can (and do) reuse the same id. `board` is the firm's
-  readable name from `greenhouse_boards.toml`/`lever_boards.toml`/
-  `ashby_boards.toml` (not the board token/slug), and `job_id` is that
-  board's own id for the posting, kept as a string (Greenhouse's are
-  numeric, Lever's and Ashby's are UUIDs).
+  readable name from `company_toml/greenhouse_boards.toml`/
+  `company_toml/lever_boards.toml`/`company_toml/ashby_boards.toml` (not
+  the board token/slug), and `job_id` is that board's own id for the
+  posting, kept as a string (Greenhouse's are numeric, Lever's and Ashby's
+  are UUIDs).
 - **Dedup/pruning**: keyed on that same `(board, job_id)` pair — a run
   appends a row the first time it sees one, never re-appends it while
   still open, and deletes it once it's gone from that board's feed, via one
@@ -97,9 +111,20 @@ src/jobscraper/
   order is never touched, so your own sort/filter setup survives every run.
 - **Backfill**: `sheets/backfill.py` re-applies current classifiers,
   location normalization, and column order to every existing row — run it
-  after changing `FIELDS`, keyword lists, or the location lookup table. It
-  deliberately doesn't move rows between tabs or rename board values, which
-  could lose data if interrupted.
+  after changing `FIELDS`, keyword lists, the location lookup table, or
+  `models.FIRMS_NEEDING_DESCRIPTION`. It also re-fetches every board to
+  refresh `location`/`first_published` for still-open postings, and
+  recomputes `description` from `FIRMS_NEEDING_DESCRIPTION` — filling it
+  in (and overwriting even a non-empty stale value, since a JD can be
+  legitimately edited) for a firm in that set, blanking it back to `""`
+  for every other firm. It deliberately doesn't move rows between tabs or
+  rename board values, which could lose data if interrupted. It also
+  (re-)applies date-column
+  formatting, clips (rather than wraps) the `description` column so a long
+  JD doesn't blow up its row's height, and turns on a basic filter
+  (dropdown filter/sort arrows on every column, so
+  board/location/seniority/company_type can be filtered) to each tab, at
+  whatever column letters `FIELDS`' current order puts them.
 
 See `CLAUDE.md` for design rationale and edge-case invariants.
 
@@ -131,7 +156,7 @@ suggest:
   layer — untested whether/when that starts looking like abusive traffic
   and gets throttled, independent of anything on this side.
 - **Sheets' own hard cap**: a spreadsheet holds at most 10,000,000 cells
-  (~900,000 rows at `FIELDS`' 11 columns). Where this binds depends on
+  (~770,000 rows at `FIELDS`' 13 columns). Where this binds depends on
   postings-per-company; today's sample (large quant/trading firms, ~45
   classified postings/board average) would hit it well under 10,000
   companies, but a broader, smaller-company mix would likely push this
@@ -144,7 +169,7 @@ of a GitHub Actions cron.
 ## Adding a board
 
 ```toml
-# greenhouse_boards.toml
+# company_toml/greenhouse_boards.toml
 [[boards]]
 token = "stripe"          # slug from boards.greenhouse.io/<token>
 firm = "Stripe"           # readable name, shown in the board column
@@ -152,7 +177,7 @@ company_type = "Big Tech" # free-form label, no fixed list
 ```
 
 ```toml
-# lever_boards.toml
+# company_toml/lever_boards.toml
 [[boards]]
 token = "palantir"                    # slug from jobs.lever.co/<token>
 firm = "Palantir"                     # readable name, shown in the board column
@@ -160,7 +185,7 @@ company_type = "Data/Cloud Infrastructure" # free-form label, no fixed list
 ```
 
 ```toml
-# ashby_boards.toml
+# company_toml/ashby_boards.toml
 [[boards]]
 token = "openai"          # slug from jobs.ashbyhq.com/<token>
 firm = "OpenAI"            # readable name, shown in the board column

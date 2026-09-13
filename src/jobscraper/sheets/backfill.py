@@ -14,29 +14,48 @@ tab's existing header and column order exactly as found (see its docstring)
 an already-written row can sit on stale classification/formatting/column
 order indefinitely without this.
 
-Six things happen to every row, for every (category, region) tab:
-  - `seniority` and `company_type` are recomputed from columns already in
-    the row -- `seniority` from the row's own `title`/`department` via the
-    *current* classify_seniority.classify_seniority, `company_type` by
-    looking the row's `board` up in the *current*
-    config.GREENHOUSE_BOARDS. Fixing classify_seniority.py's "misses
-    numeric/leveling titles" gap, or re-categorizing a firm in
-    greenhouse_boards.toml, and then running this backfill applies the
-    change to every existing row, not just new ones.
+Eight things happen to every row, for every (category, region) tab:
+  - `seniority`, `company_type`, and `source` are recomputed from columns
+    already in the row -- `seniority` from the row's own
+    `title`/`department` via the *current* classify_seniority.
+    classify_seniority; `company_type` and `source` by looking the row's
+    `board` up in the *current* config.GREENHOUSE_BOARDS,
+    config.LEVER_BOARDS, and config.ASHBY_BOARDS (whichever one the firm is
+    actually configured in -- `source` is just which of the three that is,
+    "Greenhouse"/"Lever"/"Ashby"). Fixing classify_seniority.py's "misses
+    numeric/leveling titles" gap, re-categorizing a firm in any of the
+    three `*_boards.toml` files, or moving a firm from one board system to
+    another, and then running this backfill applies the change to every
+    existing row, not just new ones.
   - `location` is corrected using a *fresh* re-fetch of every board in
-    config.GREENHOUSE_BOARDS (see _greenhouse_overrides) when the row's
-    posting is still open -- that re-fetch has real `offices` data, so it's
-    what actually fixes a legacy, never-split cell like "Chicago, New York
-    City" (written before this project read `offices` at all -- see
+    config.GREENHOUSE_BOARDS, config.LEVER_BOARDS, and config.ASHBY_BOARDS
+    (see _fetch_overrides) when the row's posting is still open -- that
+    re-fetch has real per-office data, so it's what actually fixes a
+    legacy, never-split cell like "Chicago, New York City" (written before
+    this project read per-office data at all -- see
     job_boards/greenhouse/client.py). Only once a posting has actually
     closed (gone from the API, no override available) does this fall back
     to _renormalize_location's best-effort re-normalization of whatever
     string is already in the cell.
   - `first_published` is filled in from that same fresh re-fetch, for a row
-    still open -- this column has no legacy cell to re-derive it from (it's
-    a genuinely new field, added after most rows already existed), so a
+    still open -- a genuinely new column added after most rows already
+    existed, so there's no legacy cell to re-derive a value from, and a
     closed posting's row is left exactly as it already is (empty, if it
-    predates this column) rather than guessed at.
+    predates the column) rather than guessed at.
+  - `description` is recomputed unconditionally from
+    models.FIRMS_NEEDING_DESCRIPTION, the same "always trust current code,
+    not the existing cell" treatment as `company_type`/`source` above, not
+    the "only fill in, never blank" treatment `first_published` gets: a row
+    whose `board` is in that set gets the fresh re-fetch's `description`
+    (which overwrites even a non-empty existing value when the text
+    differs -- a JD can be edited after this project first saw it, and
+    there's no signal short of the text itself changing to tell a genuine
+    edit apart from staleness); a row whose `board` is NOT in that set has
+    `description` blanked back to "" if it has anything there at all. This
+    is deliberate, not the usual "never guess-blank a field" caution --
+    narrowing FIRMS_NEEDING_DESCRIPTION is expected to un-fill rows for a
+    firm that's been removed from it, and this is the one place that
+    actually happens.
   - every row is re-laid-out into the *current* jobscraper.models.FIELDS
     column order, and the header row is overwritten with that same order
     (sheets.writer.HEADER) rather than left as whatever the tab already
@@ -58,6 +77,16 @@ Six things happen to every row, for every (category, region) tab:
     as sheets.writer's own two functions), so a date written back when this
     repo still used "RAW" gets re-parsed into a real Sheets date too.
 
+Once per tab, after every row above is rewritten, sheets.writer's
+format_date_columns, format_description_column, and set_basic_filter are
+re-applied against whatever column letters FIELDS' *current* order puts
+first_published/updated_at/scraped_date/description and the header row at
+-- so reordering FIELDS moves all three for free on the next backfill. The
+one thing this can't reach is each tab's own conditional-formatting rule
+(see CLAUDE.md): that lives entirely in Sheets' UI-managed formatting, not
+the value grid this script rewrites, so its hardcoded cell reference has
+to be repointed by hand after a reorder.
+
 Deliberately NOT done here: re-routing a job to a different tab if
 classify_roles.classify_job's category keywords, or classify_region's PAC
 country list, change. Category and region are which tab a row lives in,
@@ -66,15 +95,18 @@ into another tab's own dedup key space, which risks duplicating or losing
 rows if this script is interrupted partway through. Out of scope until
 that's actually needed.
 
-refresh_all() does re-fetch Greenhouse (for location overrides -- see
-above), but only ever *reads* it: a closed posting is gone from the API
-forever, so for every OTHER column, a row's own text (title, department,
-url, ...) is the only surviving source of truth for itself -- everything
-except `location` only ever recomputes from columns already in the row.
+refresh_all() does re-fetch Greenhouse, Lever, and Ashby (for
+location/first_published/description overrides -- see above), but only
+ever *reads* them: a closed posting is gone from its board's API forever,
+so for every OTHER column, a row's own text (title, department, url, ...)
+is the only surviving source of truth for itself -- everything except
+`location`/`first_published`/`description` only ever recomputes from
+columns already in the row.
 
-A firm dropped from greenhouse_boards.toml entirely has no entry to look
-company_type up against -- its existing rows are left with whatever
-company_type they already have rather than being blanked out.
+A firm dropped from all three `*_boards.toml` files entirely has no entry
+to look company_type or source up against -- its existing rows are left
+with whatever company_type/source they already have rather than being
+blanked out.
 """
 
 from __future__ import annotations
@@ -90,13 +122,23 @@ from jobscraper.enrichment.classify_region import REGIONS, tab_name
 from jobscraper.enrichment.classify_roles import CATEGORIES
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
-from jobscraper.job_boards.greenhouse.client import fetch_jobs
-from jobscraper.models import FIELDS, Job, hyperlink_formula, normalize_date
+from jobscraper.job_boards.ashby.client import fetch_ashby_jobs
+from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
+from jobscraper.job_boards.lever.client import fetch_lever_jobs
+from jobscraper.models import (
+    FIELDS,
+    FIRMS_NEEDING_DESCRIPTION,
+    Job,
+    hyperlink_formula,
+    normalize_date,
+)
 from jobscraper.sheets.writer import (
     HEADER,
     format_date_columns,
+    format_description_column,
     get_spreadsheet,
     get_worksheet,
+    set_basic_filter,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,46 +196,65 @@ def _url_formula_cells(
     return [row[0] if row else "" for row in rows]
 
 
-def _greenhouse_overrides() -> dict[tuple[str, str], Job]:
+def _fetch_overrides() -> dict[tuple[str, str], Job]:
     """Every currently open posting, freshly re-fetched, keyed by (board,
-    job_id) -- one re-fetch of every board in config.GREENHOUSE_BOARDS (same
-    call main.py's daily run makes) serves two different retroactive fixes
+    job_id) -- one re-fetch of every board in config.GREENHOUSE_BOARDS,
+    config.LEVER_BOARDS, and config.ASHBY_BOARDS (the same three loops
+    main.py's daily run makes) serves three different retroactive fixes
     without doubling the network cost:
 
     - `location`: the only way to correctly fix a legacy multi-location cell
-      that was never split (written before job_boards/greenhouse/client.py
-      read `offices`) -- there's no way to safely re-split e.g. "Chicago,
-      New York City" from the string alone, but Greenhouse's own `offices`
-      array for that same still-open posting has it pre-split, same as any
-      fresh fetch.
+      that was never split (written before a board's client read its
+      per-office data at all) -- there's no way to safely re-split e.g.
+      "Chicago, New York City" from the string alone, but that board's own
+      per-office data for that same still-open posting has it pre-split,
+      same as any fresh fetch.
     - `first_published`: a column that may not exist at all yet in an
       already-written tab (added after FIELDS already had rows in it) --
       there is no cell to re-derive it from, so a fresh fetch is the only
       source of truth.
+    - `description`, for a firm in models.FIRMS_NEEDING_DESCRIPTION only --
+      same "no cell to re-derive from" reasoning as first_published, but
+      unlike it, this override also replaces a stale-but-present value
+      (a JD can be legitimately edited after this project first saw it).
+      A firm NOT in that set gets its description blanked back to ""
+      unconditionally in refresh_worksheet, whether or not an override is
+      available here -- that decision doesn't depend on this re-fetch at
+      all.
 
-    A posting that's since closed has no entry here for either column --
-    refresh_worksheet falls back to best-effort re-normalization for
-    location, and leaves first_published exactly as it already is (which is
-    "" for a row written before this column existed, since there's nothing
-    to recover it from once a posting is gone).
+    A posting that's since closed has no entry here for either of the
+    first two -- refresh_worksheet falls back to best-effort
+    re-normalization for location, and leaves first_published exactly as
+    it already is (empty, for a row written before that column existed,
+    since there's nothing to recover it from once a posting is gone).
 
     A board that fails to fetch (network error, bad token, ...) is logged
-    and skipped -- its rows just get no override for either column this run.
+    and skipped -- its rows just get no override for any of these columns
+    this run. Merging all three board types into one dict is safe because
+    the dedup key is (board, job_id) where `board` is the firm's name, not
+    the board type -- a firm is only ever configured in one of the three
+    files.
     """
     overrides: dict[tuple[str, str], Job] = {}
-    for board in config.GREENHOUSE_BOARDS:
-        firm = board["firm"]
-        try:
-            jobs = fetch_jobs(board["token"], firm, board["company_type"])
-        except Exception:
-            logger.warning(
-                "refresh: couldn't re-fetch %s for location/first_published "
-                "overrides, its rows keep whatever they already have",
-                firm,
-            )
-            continue
-        for job in jobs:
-            overrides[(job.board, job.job_id)] = job
+    for board_list, fetch in (
+        (config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),
+        (config.LEVER_BOARDS, fetch_lever_jobs),
+        (config.ASHBY_BOARDS, fetch_ashby_jobs),
+    ):
+        for board in board_list:
+            firm = board["firm"]
+            try:
+                jobs = fetch(board["token"], firm, board["company_type"])
+            except Exception:
+                logger.warning(
+                    "refresh: couldn't re-fetch %s for location/first_published"
+                    "/description overrides, its rows keep whatever they "
+                    "already have",
+                    firm,
+                )
+                continue
+            for job in jobs:
+                overrides[(job.board, job.job_id)] = job
     return overrides
 
 
@@ -211,7 +272,8 @@ def _renormalize_location(value: str) -> str:
     so it falls through unchanged, same as any other unmapped name). There's
     no offices data left in the sheet to re-split a legacy multi-location
     string by -- it self-heals the next time that posting closes and
-    reopens through fetch_jobs, which does have offices to work from.
+    reopens through that board's fetch_<board>_jobs, which does have
+    offices to work from.
     """
     pieces = [p.strip() for p in value.split(" | ") if p.strip()]
     if not pieces:
@@ -233,14 +295,17 @@ def refresh_worksheet(
     """Recompute derived columns, re-lay-out, and rewrite every row in this tab.
 
     `overrides` -- (board, job_id) -> a freshly re-fetched Job, from
-    _greenhouse_overrides() -- takes priority over _renormalize_location's
+    _fetch_overrides() -- takes priority over _renormalize_location's
     best-effort cleanup for `location`, and is the *only* source for
-    `first_published` (nothing to re-derive that one from an existing cell).
-    Omit it (the default) to fall back to best-effort location cleanup and
-    leave first_published untouched for every row, e.g. when re-fetching
-    Greenhouse isn't wanted for a given run.
+    `first_published` and for filling in `description` on a row whose firm
+    is in models.FIRMS_NEEDING_DESCRIPTION (nothing to re-derive either
+    from an existing cell). Omit it (the default) to fall back to
+    best-effort location cleanup and leave first_published untouched for
+    every row, e.g. when re-fetching boards isn't wanted for a given run --
+    `description` still gets blanked for every OTHER firm regardless, since
+    that decision only depends on FIRMS_NEEDING_DESCRIPTION, not `overrides`.
 
-    Always rewrites the managed A:K range as long as there's at least one
+    Always rewrites the managed A:M range as long as there's at least one
     data row -- unlike prune_closed_postings, this never skips based on
     whether a value *looks* unchanged, since e.g. a plain-text date and a
     real Sheets date read back identically from get_all_values()'s string
@@ -270,7 +335,18 @@ def refresh_worksheet(
         name: (header.index(name) if name in header else None) for name in FIELDS
     }
     company_type_by_firm = {
-        board["firm"]: board["company_type"] for board in config.GREENHOUSE_BOARDS
+        board["firm"]: board["company_type"]
+        for board_list in (config.GREENHOUSE_BOARDS, config.LEVER_BOARDS, config.ASHBY_BOARDS)
+        for board in board_list
+    }
+    source_by_firm = {
+        board["firm"]: source
+        for board_list, source in (
+            (config.GREENHOUSE_BOARDS, "Greenhouse"),
+            (config.LEVER_BOARDS, "Lever"),
+            (config.ASHBY_BOARDS, "Ashby"),
+        )
+        for board in board_list
     }
 
     def read(row: list[str], name: str) -> str:
@@ -284,8 +360,10 @@ def refresh_worksheet(
     new_rows = []
     seniority_changed = 0
     company_type_changed = 0
+    source_changed = 0
     location_changed = 0
     first_published_changed = 0
+    description_changed = 0
     for row, url_cell in zip(data_rows, url_formula_cells):
         values = {name: read(row, name) for name in FIELDS}
 
@@ -298,6 +376,11 @@ def refresh_worksheet(
         if new_company_type is not None and values["company_type"] != new_company_type:
             company_type_changed += 1
             values["company_type"] = new_company_type
+
+        new_source = source_by_firm.get(values["board"])
+        if new_source is not None and values["source"] != new_source:
+            source_changed += 1
+            values["source"] = new_source
 
         fresh = overrides.get((values["board"], values["job_id"])) if overrides else None
 
@@ -314,6 +397,15 @@ def refresh_worksheet(
                 first_published_changed += 1
                 values["first_published"] = fresh_fp
 
+        if values["board"] not in FIRMS_NEEDING_DESCRIPTION:
+            if values["description"]:
+                description_changed += 1
+                values["description"] = ""
+        elif fresh is not None and fresh.description:
+            if values["description"] != fresh.description:
+                description_changed += 1
+                values["description"] = fresh.description
+
         values["first_published"] = normalize_date(values["first_published"])
         values["updated_at"] = normalize_date(values["updated_at"])
         values["scraped_date"] = normalize_date(values["scraped_date"])
@@ -327,20 +419,25 @@ def refresh_worksheet(
         value_input_option="USER_ENTERED",
     )
     format_date_columns(worksheet)
+    format_description_column(worksheet)
+    set_basic_filter(worksheet)
     logger.info(
         "refresh: rewrote %d row(s) into current column order -- "
-        "%d seniority, %d company_type, %d location, %d first_published changed",
+        "%d seniority, %d company_type, %d source, %d location, "
+        "%d first_published, %d description changed",
         len(new_rows),
         seniority_changed,
         company_type_changed,
+        source_changed,
         location_changed,
         first_published_changed,
+        description_changed,
     )
 
 
 def refresh_all() -> None:
     """Refresh every (category, region) tab in the spreadsheet, one at a time."""
-    overrides = _greenhouse_overrides()
+    overrides = _fetch_overrides()
     spreadsheet = get_spreadsheet()
     for category, _keywords in CATEGORIES:
         for region in REGIONS:
