@@ -31,12 +31,21 @@ Sent via a raw HTTP POST to Telegram's Bot API rather than a bot framework
 (e.g. aiogram, used by the sibling data-career-hustler-bot) -- this fires
 one message and exits; there's no dispatcher, no updates to receive, no
 long-running process to justify one.
+
+    uv run python -m jobscraper.telegram --check
+
+sends a one-off test message via check_connection() to verify
+TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID actually work, without waiting for a
+real run to have new PAC postings to report -- see check_connection's own
+docstring for how its error handling deliberately differs from send_digest's.
 """
 
 from __future__ import annotations
 
+import argparse
 import html
 import logging
+import sys
 
 import requests
 
@@ -222,3 +231,62 @@ def _send_message(text: str) -> None:
         payload["message_thread_id"] = config.TELEGRAM_THREAD_ID
     response = requests.post(url, json=payload, timeout=15)
     response.raise_for_status()
+
+
+def check_connection() -> bool:
+    """Send a one-off test message, print the result, and return whether it
+    worked -- a manual diagnostic for `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`,
+    run via `uv run python -m jobscraper.telegram --check`.
+
+    Deliberately the opposite of send_digest's behavior in both respects
+    this differs from it: "not configured" and a send failure are both
+    reported (printed and returned as False) rather than silently no-op'd
+    or logged-and-swallowed -- the whole point of running this by hand is to
+    surface exactly what's wrong, not hide it the way an automated run
+    should.
+    """
+    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+        print(
+            "Not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env"
+        )
+        return False
+
+    try:
+        _send_message(
+            "✅ latest-job-scraper: test message from `--check` -- "
+            "if you can see this, the bot can reach this chat."
+        )
+    except Exception as exc:
+        print(f"Failed to send: {exc}")
+        return False
+
+    where = f"chat {config.TELEGRAM_CHAT_ID}"
+    if config.TELEGRAM_THREAD_ID is not None:
+        where += f", thread {config.TELEGRAM_THREAD_ID}"
+    print(f"Sent OK to {where}.")
+    return True
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    parser = argparse.ArgumentParser(
+        description="Optional Telegram digest for latest-job-scraper. "
+        "This module has no standalone run mode of its own -- main.py calls "
+        "send_digest() directly -- only --check is available here."
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Send a one-off test message to verify TELEGRAM_BOT_TOKEN/"
+            "TELEGRAM_CHAT_ID actually work, without waiting for real new "
+            "postings."
+        ),
+    )
+    args = parser.parse_args()
+    if not args.check:
+        parser.print_help()
+        sys.exit(1)
+    sys.exit(0 if check_connection() else 1)

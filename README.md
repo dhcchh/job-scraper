@@ -10,6 +10,7 @@ cp .env.example .env                       # fill in, see Setup below
 
 uv run python -m jobscraper.main           # run the scraper once
 uv run python -m jobscraper.sheets.backfill  # re-apply current classification/formatting to existing rows
+uv run python -m jobscraper.telegram --check # send a one-off test message, to verify Telegram setup
 uv run pytest                              # tests -- safe to run even with a real .env, see below
 ```
 
@@ -56,7 +57,10 @@ integration later: add its vars here too.
    newly appended DA/BI, DS/ML/Algos, and SWE/DE postings (PAC only) as
    grouped counts (e.g. "3 new SWE/DE roles from Grab available in
    Singapore") with a link back to the sheet, not a per-job listing. Leave
-   any of the three unset to skip this entirely — see `telegram.py`.
+   any of the three unset to skip this entirely — see `telegram.py`. Run
+   `uv run python -m jobscraper.telegram --check` after setting these to
+   confirm the bot can actually reach the chat, without waiting for a real
+   run to have new PAC postings to report.
 
 ## Architecture
 

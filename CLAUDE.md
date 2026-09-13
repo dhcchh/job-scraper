@@ -209,7 +209,13 @@ use a small fake `Worksheet`.
   would make the manual topic unreadable. A single message over Telegram's
   4096-character cap splits into a few, on section/line boundaries only
   (`telegram._chunk`) -- never mid-line, since a truncated `<a href=...>`
-  would send Telegram malformed HTML.
+  would send Telegram malformed HTML. `uv run python -m jobscraper.telegram
+  --check` sends a one-off test message via `telegram.check_connection()`
+  to verify `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` work, without waiting
+  for a real run to have new PAC postings -- deliberately the opposite of
+  `send_digest`'s "not configured"/failure handling: both are printed and
+  returned as `False` rather than no-op'd or logged-and-swallowed, since
+  the point of a manual check is to surface what's wrong, not hide it.
 
 ## Open work
 

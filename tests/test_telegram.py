@@ -257,3 +257,58 @@ def test_send_digest_stops_after_a_failed_chunk(monkeypatch):
     telegram.send_digest({"DA/BI": many_jobs}, spreadsheet_url=_SHEET_URL)  # must not raise
 
     assert len(calls) == 1  # stopped after the first failure, no retry storm
+
+
+def test_check_connection_reports_not_configured_without_calling_post(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", None)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_CHAT_ID", 123)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("must not call requests.post when unconfigured")
+
+    monkeypatch.setattr(telegram.requests, "post", fail)
+
+    assert telegram.check_connection() is False
+    assert "Not configured" in capsys.readouterr().out
+
+
+def test_check_connection_sends_and_reports_success(monkeypatch, capsys):
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(telegram.config, "TELEGRAM_CHAT_ID", -100123)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_THREAD_ID", 42)
+
+    calls = []
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+    def fake_post(url, json, timeout):
+        calls.append(json)
+        return _FakeResponse()
+
+    monkeypatch.setattr(telegram.requests, "post", fake_post)
+
+    assert telegram.check_connection() is True
+    assert len(calls) == 1
+    assert calls[0]["chat_id"] == -100123
+    assert calls[0]["message_thread_id"] == 42
+    out = capsys.readouterr().out
+    assert "Sent OK" in out
+    assert "-100123" in out
+    assert "42" in out
+
+
+def test_check_connection_reports_a_send_failure_without_raising(monkeypatch, capsys):
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(telegram.config, "TELEGRAM_CHAT_ID", 123)
+
+    def fake_post(url, json, timeout):
+        raise ConnectionError("network down")
+
+    monkeypatch.setattr(telegram.requests, "post", fake_post)
+
+    assert telegram.check_connection() is False  # not swallowed like send_digest
+    assert "Failed to send" in capsys.readouterr().out
