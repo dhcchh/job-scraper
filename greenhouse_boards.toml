@@ -161,3 +161,8 @@ company_type = "Enterprise/Productivity Software"
 token = "airbnb"
 firm = "Airbnb"
 company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "bridgewater89"
+firm = "Bridgewater"
+company_type = "Prop Trading/Hedge Fund"
