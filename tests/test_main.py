@@ -45,11 +45,12 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     # Empty by default so a test that only cares about Greenhouse behavior
     # doesn't also fetch the real, committed company_toml/lever_boards.toml
     # / company_toml/ashby_boards.toml / company_toml/smartrecruiters_boards.toml
-    # over the network -- a test exercising one of those loops overrides it
-    # itself.
+    # / company_toml/eightfold_boards.toml over the network -- a test
+    # exercising one of those loops overrides it itself.
     monkeypatch.setattr(main.config, "LEVER_BOARDS", [])
     monkeypatch.setattr(main.config, "ASHBY_BOARDS", [])
     monkeypatch.setattr(main.config, "SMARTRECRUITERS_BOARDS", [])
+    monkeypatch.setattr(main.config, "EIGHTFOLD_BOARDS", [])
     # No-op by default -- see module docstring. A test that wants to inspect
     # what main.run() passed send_digest overrides this itself, after
     # calling _patch_sheet_functions.
@@ -245,6 +246,88 @@ def test_run_fetches_and_merges_smartrecruiters_boards_alongside_greenhouse(
     )
     assert pac_jobs == [gh_job]
     assert row_jobs == [sr_job]
+
+
+def test_run_fetches_and_merges_eightfold_boards_alongside_greenhouse(monkeypatch):
+    monkeypatch.setattr(
+        main.config,
+        "GREENHOUSE_BOARDS",
+        [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}],
+    )
+
+    gh_job = _job("Acme", "1", location="Singapore")
+    eightfold_job = _job("Millennium", "2", location="London, United Kingdom")
+
+    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(
+        main,
+        "fetch_eightfold_jobs",
+        lambda token, domain, firm, company_type: [eightfold_job],
+    )
+
+    prune_calls: list[set[str]] = []
+    append_calls: list[tuple] = []
+    _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
+    # Override _patch_sheet_functions' empty-by-default EIGHTFOLD_BOARDS --
+    # this test specifically exercises the Eightfold loop.
+    monkeypatch.setattr(
+        main.config,
+        "EIGHTFOLD_BOARDS",
+        [
+            {
+                "token": "mlp",
+                "firm": "Millennium",
+                "company_type": "Prop Trading/Hedge Fund",
+                "domain": "mlp.com",
+            }
+        ],
+    )
+
+    main.run()
+
+    assert all(fetched_boards == {"Acme", "Millennium"} for fetched_boards in prune_calls)
+    pac_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - PAC"
+    )
+    row_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - RoW"
+    )
+    assert pac_jobs == [gh_job]
+    assert row_jobs == [eightfold_job]
+
+
+def test_run_treats_a_failed_eightfold_board_like_a_failed_greenhouse_board(
+    monkeypatch,
+):
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [])
+
+    def fake_fetch_eightfold_jobs(token, domain, firm, company_type):
+        raise RuntimeError("eightfold down")
+
+    monkeypatch.setattr(main, "fetch_eightfold_jobs", fake_fetch_eightfold_jobs)
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    # Override _patch_sheet_functions' empty-by-default EIGHTFOLD_BOARDS --
+    # this test specifically exercises the Eightfold loop's failure handling.
+    monkeypatch.setattr(
+        main.config,
+        "EIGHTFOLD_BOARDS",
+        [
+            {
+                "token": "bad",
+                "firm": "BadCo",
+                "company_type": "Big Tech",
+                "domain": "bad.com",
+            }
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
+
+    assert prune_calls
+    assert all(fetched_boards == set() for fetched_boards in prune_calls)
 
 
 def test_run_treats_a_failed_smartrecruiters_board_like_a_failed_greenhouse_board(

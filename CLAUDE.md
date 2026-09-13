@@ -30,26 +30,31 @@ use a small fake `Worksheet`.
 ## Architecture and invariants
 
 - The daily GitHub Actions workflow runs `jobscraper.main`. Each run fetches
-  every configured Greenhouse, Lever, Ashby, and SmartRecruiters board,
-  classifies postings into ten tabs (five categories × `PAC`/`RoW`), appends
-  jobs first seen this run, then removes jobs confirmed closed.
+  every configured Greenhouse, Lever, Ashby, SmartRecruiters, and Eightfold
+  board, classifies postings into ten tabs (five categories × `PAC`/`RoW`),
+  appends jobs first seen this run, then removes jobs confirmed closed.
 - `config.py` is the only module that reads environment variables,
   `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
-  `company_toml/ashby_boards.toml`, and
-  `company_toml/smartrecruiters_boards.toml`; import `jobscraper.config`
+  `company_toml/ashby_boards.toml`,
+  `company_toml/smartrecruiters_boards.toml`, and
+  `company_toml/eightfold_boards.toml`; import `jobscraper.config`
   rather than copying its settings at import time. Board tokens are checked
   in and are not secrets.
   `_load_boards` validates every `[[boards]]` entry has `token`, `firm`, and
   `company_type` at import time, raising `ValueError` naming the offending
   entry and field(s) rather than letting a typo surface as a `KeyError` deep
-  in `main.py`'s fetch loop.
+  in `main.py`'s fetch loop. Eightfold's boards file also requires `domain`
+  (via `_load_boards`' `extra_required` param) -- that board's API needs
+  both the company's Eightfold subdomain (`token`) and its own domain
+  (`domain`) as a query param, unlike the other four board types' single
+  identifier; see `job_boards/eightfold/client.py`.
 - `Job` in `models.py` is the shared data shape. Keep `FIELDS`,
   `Job.to_row()`, and the sheet header aligned. The row identity is
   `(board, job_id)`, not `job_id` alone, because Greenhouse IDs are tenant
   scoped. `first_published` is the best available Greenhouse "went live"
   signal; `updated_at` can change after edits and `scraped_date` is only when
   this project first saw the job. `source` records which board system
-  ("Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters") a posting came from -- distinct from
+  ("Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters"/"Eightfold") a posting came from -- distinct from
   `board`, which is the firm's name -- and is stamped as a fixed literal by
   each `job_boards/*/client.py`, not read from any API response.
   `description` is the full JD text, but ONLY for a firm in
@@ -65,9 +70,12 @@ use a small fake `Worksheet`.
   (unlike every other column, which is never guess-blanked). Where it is
   populated: Greenhouse's client runs `models.strip_html` over its HTML
   `content` field, Lever's and Ashby's clients use each API's own
-  ready-made plain text instead. SmartRecruiters' client never populates it
-  regardless of `FIRMS_NEEDING_DESCRIPTION` -- see
-  `job_boards/smartrecruiters/client.py` for why. `FIELDS`' current order is
+  ready-made plain text instead. SmartRecruiters' and Eightfold's clients
+  never populate it regardless of `FIRMS_NEEDING_DESCRIPTION` -- see
+  `job_boards/smartrecruiters/client.py` and `job_boards/eightfold/
+  client.py` for why (the JD isn't in either's list response at all, and
+  it's unconfirmed whether Eightfold even has a separate per-posting detail
+  endpoint with real JD text). `FIELDS`' current order is
   `first_published, updated_at, board, title, location, seniority,
   company_type, url, department, job_id, scraped_date, source,
   description` (columns A-M) -- see `models.py`'s `FIELDS` comment for why.
@@ -109,10 +117,38 @@ use a small fake `Worksheet`.
   `location` object, not a pre-split per-office array like the other three
   boards), so its client's `_location` normalizes just `location.city` with
   no `" | "`-joining needed.
+- `eightfold/client.py` fetches `https://<subdomain>.eightfold.ai/api/apply/
+  v2/jobs`, a real but UNDOCUMENTED endpoint -- found by inspecting a real
+  customer's (Millennium's, at mlp.eightfold.ai) own rendered careers page,
+  not a published API contract, so unlike the other four boards there is no
+  guarantee Eightfold won't change its shape or start requiring auth
+  without notice. Constraints this board type has that the other four
+  don't: (1) it needs BOTH a subdomain (`token`) and the company's own
+  domain (`domain`) as a query param -- a mismatched pairing 403s rather
+  than 404s; (2) the server ignores the requested page size and always
+  returns exactly 10 postings per page (confirmed up to `num=100`), so a
+  firm with Millennium's ~230 open postings costs ~23 requests where a
+  similarly-sized Greenhouse/Ashby board costs 1-3; (3) confirmed working
+  for exactly one live deployment (Millennium's) -- a couple of other
+  guessed subdomains 403'd, most likely from wrong guesses rather than a
+  real restriction, but each Eightfold tenant can configure its own
+  WAF/bot-protection differently, so a new Eightfold firm needs its own
+  dry-run before being added, same as every other board type's "Adding a
+  board" workflow, not an assumption it'll work because Millennium's does.
+  Unlike Lever/Ashby/SmartRecruiters, it DOES expose a real edited-at
+  signal (`t_update`, alongside `t_create`) -- both Unix epoch seconds, not
+  an ISO 8601 string like every other board here -- so `updated_at` is
+  populated same as Greenhouse's. `locations` is already pre-split like the
+  other boards' per-office lists, but each entry already comes as "City,
+  Country" (sometimes "City, Region, Country") rather than a bare city
+  name; `job_id` is Eightfold's own internal numeric `id` (what
+  `canonicalPositionUrl` is keyed on), not `ats_job_id` (the underlying
+  company ATS's own requisition number, e.g. "REQ-30793").
 - Build locations from Greenhouse's `offices[]`, Lever's
   `categories.allLocations`, Ashby's `location` +
-  `secondaryLocations[].location`, or SmartRecruiters' single `location.city`,
-  normalize each office, remove duplicates, then join with `" | "`. Do not
+  `secondaryLocations[].location`, SmartRecruiters' single `location.city`,
+  or Eightfold's `locations`, normalize each office, remove duplicates,
+  then join with `" | "`. Do not
   split `location.name`/`categories.location` by commas: it is free text.
   `normalize_location.py` intentionally falls back to a cleaned unknown
   value rather than guessing. Add a canonical mapping before treating a new
@@ -120,7 +156,14 @@ use a small fake `Worksheet`.
   Stripe-style `Location(s)`, a trailing 2-letter country code in parens,
   Spotify-style `(... Mix)` work-arrangement annotations, a repeated "City,
   City" wrapper, and (seeded from Ashby's Airwallex/Snowflake boards) a
-  spaced-out ISO-code prefix like `"AU - Sydney"` before lookup.
+  spaced-out ISO-code prefix like `"AU - Sydney"` before lookup. The lookup
+  table itself also carries whole-string entries (seeded from Millennium's
+  live Eightfold board) for a "City, Region, Country" triple neither the
+  bare-city nor "City, Country" conventions above cover (e.g. "Tokyo,
+  Tokyo, Japan", "New York, New York, United States of America") --
+  `classify_region` still classifies these correctly even unmapped (it only
+  reads whatever's after the last comma), so an unmapped one is a
+  display-only inconsistency, not a PAC/RoW bug.
 - `classify_region` routes a posting to PAC if any normalized office is in a
   PAC country. `_PAC_COUNTRIES` deliberately excludes Malaysia, Indonesia,
   Thailand, the Philippines, and Cambodia even though Grab's SmartRecruiters

@@ -1,6 +1,6 @@
 # latest-job-scraper
 
-Fetches job postings from Greenhouse, Lever, Ashby, and SmartRecruiters boards daily, classifies them, and writes them into a Google Sheet.
+Fetches job postings from Greenhouse, Lever, Ashby, SmartRecruiters, and Eightfold boards daily, classifies them, and writes them into a Google Sheet.
 
 ## Run it
 
@@ -30,8 +30,9 @@ integration later: add its vars here too.
 
 1. **Board tokens** — add each firm as a `[[boards]]` entry in
    `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
-   `company_toml/ashby_boards.toml`, or
-   `company_toml/smartrecruiters_boards.toml` (checked in — see "Adding a
+   `company_toml/ashby_boards.toml`,
+   `company_toml/smartrecruiters_boards.toml`, or
+   `company_toml/eightfold_boards.toml` (checked in — see "Adding a
    board").
 2. **Google Sheets access** — in Google Cloud Console: enable the Sheets
    API, create a service account + JSON key, then **Share** your target
@@ -80,7 +81,8 @@ src/jobscraper/
 │   ├── greenhouse/client.py           # Greenhouse Job Board API fetch + retry
 │   ├── lever/client.py                # Lever Postings API fetch + retry
 │   ├── ashby/client.py                # Ashby Posting API fetch + retry
-│   └── smartrecruiters/client.py      # SmartRecruiters Posting API fetch + retry
+│   ├── smartrecruiters/client.py      # SmartRecruiters Posting API fetch + retry
+│   └── eightfold/client.py            # Eightfold reverse-engineered jobs API fetch + retry
 └── sheets/
     ├── writer.py                      # append new rows, prune closed postings
     └── backfill.py                    # re-apply current classifiers to existing rows
@@ -96,23 +98,30 @@ src/jobscraper/
 - **Location normalization**: `normalize_location.py` cleans up each
   office name via a curated lookup table, reading each board's pre-split
   per-office field (Greenhouse's `offices`, Lever's `categories.allLocations`,
-  Ashby's `location` + `secondaryLocations`, or SmartRecruiters' single
-  `location.city`) rather than parsing an ambiguous free-text location
-  string — see the module docstrings for why that field can't be safely
-  comma-split.
+  Ashby's `location` + `secondaryLocations`, SmartRecruiters' single
+  `location.city`, or Eightfold's `locations`) rather than parsing an
+  ambiguous free-text location string — see the module docstrings for why
+  that field can't be safely comma-split.
 - **Seniority**: `classify_seniority.py` tags a best-effort level
   (Intern/Junior/.../Unspecified) off the title, computed once at fetch time.
 - **Fetching**: `greenhouse/client.py` hits each board's public Job Board API
   (`content=true`); `lever/client.py` hits each site's public Postings API
   (`?mode=json`); `ashby/client.py` hits each board's public Posting API;
   `smartrecruiters/client.py` hits each company's public (paginated) Posting
-  API. All four retry connection errors/timeouts/5xx/429 up to 3 times total
-  (2s/4s backoff); other 4xx raise immediately. `main.py` logs and skips a
-  board that still fails, rather than letting it trigger false pruning
-  elsewhere. Neither Lever's, Ashby's, nor SmartRecruiters' API exposes an
-  edited-at timestamp, so `updated_at` is always `""` for a job from any of
-  them — `first_published` comes from Lever's `createdAt`/Ashby's
-  `publishedAt`/SmartRecruiters' `releasedDate` instead.
+  API; `eightfold/client.py` hits each company's (paginated) jobs API. All
+  five retry connection errors/timeouts/5xx/429 up to 3 times total (2s/4s
+  backoff); other 4xx raise immediately. `main.py` logs and skips a board
+  that still fails, rather than letting it trigger false pruning elsewhere.
+  Neither Lever's, Ashby's, nor SmartRecruiters' API exposes an edited-at
+  timestamp, so `updated_at` is always `""` for a job from any of them —
+  `first_published` comes from Lever's `createdAt`/Ashby's
+  `publishedAt`/SmartRecruiters' `releasedDate` instead. Eightfold is the
+  exception: it exposes both `t_create` and `t_update`, so `updated_at` is
+  populated there too, same as Greenhouse. Unlike the other four,
+  Eightfold's API is not documented/public — see `job_boards/eightfold/
+  client.py`'s module docstring for what that means in practice (no
+  contract to rely on, a hard 10-postings-per-page cap regardless of what's
+  requested, and only confirmed working for one live deployment).
 - **Job description**: kept in the sheet (`description` column), but only
   for a firm in `models.FIRMS_NEEDING_DESCRIPTION` (currently Qube Research
   & Technologies and Squarepoint) — every other posting's `description` is
@@ -124,18 +133,21 @@ src/jobscraper/
   employers' own apply pages already show the JD fine. Where it is
   populated: Greenhouse's `content` field is HTML and gets run through
   `models.strip_html`; Lever's and Ashby's APIs already hand back plain
-  text, so their clients use that directly. SmartRecruiters' client never
-  populates it — the full JD isn't in the list endpoint this project fetches
-  at all, and no live SmartRecruiters board needs it today.
+  text, so their clients use that directly. SmartRecruiters' and
+  Eightfold's clients never populate it — the full JD isn't in either's
+  list endpoint (unconfirmed whether Eightfold even has a separate
+  per-posting detail endpoint with real JD text), and no live board on
+  either needs it today.
 - **Identity**: a posting is uniquely identified by `(board, job_id)`, not
   `job_id` alone — every board assigns ids per tenant, so two different
   firms' boards can (and do) reuse the same id. `board` is the firm's
   readable name from `company_toml/greenhouse_boards.toml`/
   `company_toml/lever_boards.toml`/`company_toml/ashby_boards.toml`/
-  `company_toml/smartrecruiters_boards.toml` (not the board token/slug), and
+  `company_toml/smartrecruiters_boards.toml`/
+  `company_toml/eightfold_boards.toml` (not the board token/slug), and
   `job_id` is that board's own id for the posting, kept as a string
-  (Greenhouse's and SmartRecruiters' are numeric, Lever's and Ashby's are
-  UUIDs).
+  (Greenhouse's, SmartRecruiters', and Eightfold's are numeric, Lever's and
+  Ashby's are UUIDs).
 - **Dedup/pruning**: keyed on that same `(board, job_id)` pair — a run
   appends a row the first time it sees one, never re-appends it while
   still open, and deletes it once it's gone from that board's feed, via one
@@ -174,16 +186,18 @@ See `CLAUDE.md` for design rationale and edge-case invariants.
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~57 boards (39
-Greenhouse, 5 Lever, 11 Ashby, 2 SmartRecruiters). Realistic ceiling:
-**somewhere around 2,000-5,000 companies**, not the 10,000+ the raw minutes
-math alone would suggest:
+Google Sheet as the datastore — works fine at today's ~61 boards (40
+Greenhouse, 5 Lever, 12 Ashby, 3 SmartRecruiters, 1 Eightfold). Realistic
+ceiling: **somewhere around 2,000-5,000 companies**, not the 10,000+ the
+raw minutes math alone would suggest:
 
 - **GitHub Actions minutes, idealized**: fetching is sequential (see
   `job_boards/greenhouse/client.py`, `job_boards/lever/client.py`,
-  `job_boards/ashby/client.py`, and `job_boards/smartrecruiters/client.py`),
-  ~0.25s/board observed (57 boards ≈ 14s
-  total). This repo is a private GitHub repo, so its free tier is 2,000
+  `job_boards/ashby/client.py`, `job_boards/smartrecruiters/client.py`, and
+  `job_boards/eightfold/client.py`), ~0.25s/board observed for the first
+  four (61 boards ≈ 14s total, though Eightfold's own hard 10-per-page
+  pagination cap makes ITS boards individually far more expensive — see
+  below). This repo is a private GitHub repo, so its free tier is 2,000
   Actions minutes/month, shared
   across every private repo on the account. At 0.25s/board with negligible
   fixed overhead, that budget alone isn't exhausted until roughly
@@ -192,14 +206,25 @@ math alone would suggest:
   (2s/4s each) aren't in that math, and at real scale some % of boards
   fail transiently every run. `get_all_values()` also re-reads each tab's
   *entire* accumulated history every run, so runtime grows with total
-  tracked postings over time, not just company count that day.
+  tracked postings over time, not just company count that day. An
+  Eightfold-hosted firm compounds this on its own: its API ignores the
+  requested page size and always returns 10 postings per page, so a firm
+  with ~230 open postings (Millennium's own count) costs ~23 requests
+  where a similarly-sized Greenhouse/Ashby board costs 1-3 — this board
+  type doesn't scale to many companies the way the other four do.
 - **The real unknown: the board platforms themselves.** This design hits
-  thousands of different Greenhouse-, Lever-, Ashby-, and
-  SmartRecruiters-hosted board subdomains sequentially from one CI runner
-  IP. Each board is a different tenant, but
-  each platform's own infrastructure is likely shared at the network/WAF
-  layer — untested whether/when that starts looking like abusive traffic
-  and gets throttled, independent of anything on this side.
+  thousands of different Greenhouse-, Lever-, Ashby-, SmartRecruiters-, and
+  Eightfold-hosted board subdomains sequentially from one CI runner IP.
+  Each board is a different tenant, but each platform's own infrastructure
+  is likely shared at the network/WAF layer — untested whether/when that
+  starts looking like abusive traffic and gets throttled, independent of
+  anything on this side. Eightfold specifically is a bigger unknown than
+  the other four here: its API isn't documented/public at all (this
+  project's client reverse-engineers the same request a browser makes),
+  confirmed working for only one live deployment so far, and a couple of
+  other guessed subdomains returned 403s that may or may not generalize to
+  a real restriction on other tenants — see `job_boards/eightfold/
+  client.py`'s module docstring.
 - **Sheets' own hard cap**: a spreadsheet holds at most 10,000,000 cells
   (~770,000 rows at `FIELDS`' 13 columns). Where this binds depends on
   postings-per-company; today's sample (large quant/trading firms, ~45
@@ -245,7 +270,24 @@ firm = "Grab"                        # readable name, shown in the board column
 company_type = "Consumer/Marketplace" # free-form label, no fixed list
 ```
 
-Commit and push — all four files are checked in and read directly by local
+```toml
+# company_toml/eightfold_boards.toml
+[[boards]]
+token = "mlp"                             # subdomain from <token>.eightfold.ai
+firm = "Millennium"                       # readable name, shown in the board column
+company_type = "Prop Trading/Hedge Fund"  # free-form label, no fixed list
+domain = "mlp.com"                        # the company's own domain -- required by
+                                           # this board type only, see below
+```
+
+Eightfold needs real per-firm verification before adding it here — unlike
+the other four, it has no documented public API, only one live deployment
+has been confirmed to work, and `domain` (the company's own domain, not its
+Eightfold subdomain) is required alongside `token` or the API returns a 403
+rather than a job list. See `job_boards/eightfold/client.py`'s module
+docstring before adding a second Eightfold-hosted firm.
+
+Commit and push — all five files are checked in and read directly by local
 runs and CI, no other config changes needed.
 
 ## Cron / CI

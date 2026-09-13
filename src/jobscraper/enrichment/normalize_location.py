@@ -282,6 +282,34 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "ciudad de méxico": "Mexico City, Mexico",
     # A ward of Tokyo on Wise's board, not a separate city.
     "chuo city": "Tokyo, Japan",
+    # Eightfold's own `locations` entries already come as "City, Country"
+    # (see job_boards/eightfold/client.py's module docstring) -- but
+    # Millennium's live board also mixes in a THIRD shape neither format
+    # above covers: a full "City, State/Region, Country" triple (e.g.
+    # "Tokyo, Tokyo, Japan", where the region repeats the city name, same
+    # idea as the "City, City" wrapper _DUPLICATE_NAME_RE handles for a
+    # 2-part string, just one comma over). Same "needs a dry-run tuning
+    # pass" story as every other board's first addition -- classify_region
+    # already reads these correctly off the raw, unmapped string (it only
+    # needs whatever's after the LAST comma), so leaving one of these
+    # unmapped is a display-only inconsistency, not a PAC/RoW
+    # misclassification -- these are just the ones seeded from Millennium's
+    # live data so far.
+    "new york, new york, united states of america": "New York, NY",
+    "miami, florida, united states of america": "Miami, FL",
+    "dallas, texas, united states of america": "Dallas, TX",
+    "secaucus, new jersey, united states of america": "Secaucus, NJ",
+    "chicago, illinois, united states of america": "Chicago, IL",
+    "bangalore, karnataka, india": "Bangalore, India",
+    "mumbai, maharashtra, india": "Mumbai, India",
+    "tokyo, tokyo, japan": "Tokyo, Japan",
+    "shanghai, shanghai, china": "Shanghai, China",
+    # Eightfold spells this out as the full country name rather than the
+    # "UAE" abbreviation every other board's raw data already uses.
+    "dubai, united arab emirates": "Dubai, UAE",
+    # "London, London, United Kingdom" -- same repeated-name idea as
+    # _DUPLICATE_NAME_RE's "City, City" wrapper, one comma over.
+    "london, london, united kingdom": "London, United Kingdom",
 }
 
 

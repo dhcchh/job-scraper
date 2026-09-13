@@ -26,16 +26,23 @@ _BOARDS_FILE = _COMPANY_TOML_DIR / "greenhouse_boards.toml"
 _LEVER_BOARDS_FILE = _COMPANY_TOML_DIR / "lever_boards.toml"
 _ASHBY_BOARDS_FILE = _COMPANY_TOML_DIR / "ashby_boards.toml"
 _SMARTRECRUITERS_BOARDS_FILE = _COMPANY_TOML_DIR / "smartrecruiters_boards.toml"
+_EIGHTFOLD_BOARDS_FILE = _COMPANY_TOML_DIR / "eightfold_boards.toml"
 
 
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
 
 
-def _load_boards(path: Path) -> list[dict]:
+def _load_boards(path: Path, *, extra_required: tuple[str, ...] = ()) -> list[dict]:
+    """`extra_required` adds board-type-specific required fields on top of
+    the universal token/firm/company_type -- e.g. Eightfold's `domain` (see
+    company_toml/eightfold_boards.toml and job_boards/eightfold/client.py's
+    module docstring for why that board type needs a second identifier the
+    other three don't)."""
+    required = _REQUIRED_BOARD_FIELDS + extra_required
     with open(path, "rb") as f:
         boards = tomllib.load(f)["boards"]
     for index, board in enumerate(boards, start=1):
-        missing = [field for field in _REQUIRED_BOARD_FIELDS if not board.get(field)]
+        missing = [field for field in required if not board.get(field)]
         if missing:
             identifier = board.get("firm") or board.get("token") or f"#{index}"
             raise ValueError(
@@ -59,6 +66,19 @@ ASHBY_BOARDS: list[dict] = _load_boards(_ASHBY_BOARDS_FILE)
 # Same shape again -- SmartRecruiters' `token` is its company identifier
 # (jobs.smartrecruiters.com/<token>), same idea as Lever's/Ashby's slug.
 SMARTRECRUITERS_BOARDS: list[dict] = _load_boards(_SMARTRECRUITERS_BOARDS_FILE)
+
+# Eightfold's `token` is its per-company subdomain
+# (<token>.eightfold.ai), same idea as Lever's/Ashby's slug -- but this
+# board type also requires `domain` (the company's own domain, e.g.
+# "mlp.com"), a second identifier the Eightfold API itself needs as a query
+# param and the other three board types don't. See
+# job_boards/eightfold/client.py's module docstring for why, and for real
+# constraints on this board type the other four don't have (no documented
+# public API contract, only confirmed working for one live deployment, a
+# hard 10-per-page pagination cap).
+EIGHTFOLD_BOARDS: list[dict] = _load_boards(
+    _EIGHTFOLD_BOARDS_FILE, extra_required=("domain",)
+)
 
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit
