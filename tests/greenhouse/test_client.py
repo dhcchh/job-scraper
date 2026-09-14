@@ -94,9 +94,7 @@ def test_fetch_greenhouse_jobs_populates_description_only_for_a_firm_needing_it(
     }
     monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FakeResponse(response))
 
-    (needed,) = client.fetch_greenhouse_jobs(
-        "qube", "Qube Research & Technologies", "Prop Trading/Hedge Fund"
-    )
+    (needed,) = client.fetch_greenhouse_jobs("qrt", "QRT", "Prop Trading/Hedge Fund")
     (not_needed,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
     assert needed.description == "Do the thing."

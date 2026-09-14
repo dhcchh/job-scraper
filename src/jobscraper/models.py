@@ -72,9 +72,7 @@ DATE_FIELDS: tuple[str, ...] = (
 # problem -- sheets/backfill.py blanks `description` back to "" for any
 # firm that's since been removed from it, so narrowing this set cleans up
 # the sheet on the next backfill too, not just widening it.
-FIRMS_NEEDING_DESCRIPTION: frozenset[str] = frozenset(
-    {"Qube Research & Technologies", "Squarepoint"}
-)
+FIRMS_NEEDING_DESCRIPTION: frozenset[str] = frozenset({"QRT", "Squarepoint"})
 
 # The display text every job posting link uses instead of its raw url --
 # see hyperlink_formula. One constant rather than per-Job text since the

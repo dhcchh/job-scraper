@@ -531,7 +531,7 @@ def test_refresh_leaves_first_published_unchanged_when_no_override_for_that_row(
     assert row[header.index("first_published")] == "2026-05-01"
 
 
-_A_FIRM_NEEDING_DESCRIPTION = "Qube Research & Technologies"  # in FIRMS_NEEDING_DESCRIPTION
+_A_FIRM_NEEDING_DESCRIPTION = "QRT"  # in FIRMS_NEEDING_DESCRIPTION
 
 
 def test_refresh_fills_in_description_for_a_header_that_predates_the_column():
