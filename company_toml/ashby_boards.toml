@@ -59,3 +59,13 @@ company_type = "Applied AI Products"
 token = "cohere"
 firm = "Cohere"
 company_type = "AI Lab"
+
+[[boards]]
+token = "clickhouse"
+firm = "ClickHouse"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "cantina"
+firm = "Cantina"
+company_type = "AI Lab"
