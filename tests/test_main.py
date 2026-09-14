@@ -129,6 +129,56 @@ def test_run_routes_jobs_to_category_and_region_tabs(monkeypatch):
     assert row_jobs == [row_job]
 
 
+def test_run_drops_a_job_wholly_in_an_excluded_country(monkeypatch):
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    excluded_job = _job("Acme", "1", location="Hanoi, Vietnam")
+    kept_job = _job("Acme", "2", location="Singapore")
+
+    monkeypatch.setattr(
+        main,
+        "fetch_greenhouse_jobs",
+        lambda token, firm, company_type: [excluded_job, kept_job],
+    )
+
+    prune_calls: list[set[str]] = []
+    append_calls: list[tuple] = []
+    _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
+
+    main.run()
+
+    all_appended = [job for _worksheet, jobs in append_calls for job in jobs]
+    assert excluded_job not in all_appended
+    assert kept_job in all_appended
+
+
+def test_run_keeps_a_multi_location_job_pairing_an_excluded_country_with_pac(
+    monkeypatch,
+):
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    # Vietnam alone would be excluded, but Singapore is a real, keepable
+    # office on this same posting -- PAC-wins precedence, not dropped.
+    mixed_job = _job("Acme", "1", location="Hanoi, Vietnam | Singapore")
+
+    monkeypatch.setattr(
+        main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [mixed_job]
+    )
+
+    prune_calls: list[set[str]] = []
+    append_calls: list[tuple] = []
+    _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
+
+    main.run()
+
+    pac_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - PAC"
+    )
+    assert pac_jobs == [mixed_job]
+
+
 def test_run_fetches_and_merges_lever_boards_alongside_greenhouse(monkeypatch):
     monkeypatch.setattr(
         main.config,
@@ -540,13 +590,14 @@ def test_build_summary_markdown_reports_failure_and_per_tab_counts():
         total_boards=2,
         total_jobs=10,
         noise_count=3,
+        excluded_count=2,
         tab_stats={"SWE/DE - PAC": (2, 1, 0), "SWE/DE - RoW": (5, 4, 1)},
     )
 
     assert "## Job scraper run: partial failure" in markdown
     assert "[Test Sheet](https://example.com/sheet)" in markdown
     assert "Boards fetched: 1/2 -- failed: BadCo" in markdown
-    assert "Jobs fetched: 10 (3 filtered as noise)" in markdown
+    assert "Jobs fetched: 10 (3 filtered as noise, 2 excluded by country)" in markdown
     assert "Appended: 5 new row(s)" in markdown
     assert "Pruned: 1 closed posting(s)" in markdown
     assert "| SWE/DE - PAC | 2 | 1 | 0 |" in markdown
@@ -562,6 +613,7 @@ def test_build_summary_markdown_reports_success_when_nothing_failed():
         total_boards=1,
         total_jobs=1,
         noise_count=0,
+        excluded_count=0,
         tab_stats={},
     )
 

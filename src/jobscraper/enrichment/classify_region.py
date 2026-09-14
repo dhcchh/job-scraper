@@ -30,6 +30,19 @@ name, no New Zealand or South Korea posting exists yet to verify against)
 table (e.g. a future "Auckland" or "Tokyo" office) won't be recognized as
 PAC until that city is added there too, since this module only ever reads
 the country normalize_location.py already put after the last comma.
+
+Separately, `is_excluded` gates a job out of the sheet ENTIRELY -- PAC or
+RoW, doesn't matter -- for a country where relocation for a Singapore-based
+candidate is a non-starter: pay isn't comparable and there's no incentive
+to move. This is not just "not PAC": India, for instance, has always been
+RoW rather than PAC, but until this existed an India posting would still
+land in a RoW tab like any other. `_EXCLUDED_COUNTRIES` is a separate set
+from `_PAC_COUNTRIES` -- a country can be neither (most of RoW), PAC, or
+excluded, but never more than one of those. See `is_excluded` for the
+"any office counts for PAC, but ALL offices must be excluded to drop the
+whole posting" precedence -- a multi-location posting pairing an excluded
+country with a real PAC or RoW office still gets kept and classified
+normally by classify_region, same as any other multi-location posting.
 """
 
 from __future__ import annotations
@@ -48,6 +61,27 @@ _PAC_COUNTRIES = {
     "Thailand",
 }
 
+# Countries this project never posts a job for at all, regardless of
+# PAC/RoW -- see the module docstring's "Separately" paragraph. Disjoint
+# from _PAC_COUNTRIES by construction (nothing here should ever also be a
+# PAC country); kept as its own set rather than folded into a bigger
+# lookup so is_excluded's "every office must match" logic stays entirely
+# separate from classify_region's "any office matches" one.
+_EXCLUDED_COUNTRIES = {
+    "Vietnam",
+    "Malaysia",
+    "Indonesia",
+    "India",
+}
+
+
+def _offices(location: str) -> list[str]:
+    """`location` split on " | " into its individual, stripped offices,
+    blank pieces dropped -- the shared parsing classify_region and
+    is_excluded both build on.
+    """
+    return [office.strip() for office in location.split("|") if office.strip()]
+
 
 def classify_region(location: str) -> str:
     """"PAC" if ANY office in `location` is in a PAC country, else "RoW".
@@ -59,11 +93,30 @@ def classify_region(location: str) -> str:
     and a posting listing Singapore alongside London still qualifies for
     that even though it's also open elsewhere.
     """
-    for office in location.split("|"):
-        office = office.strip()
-        if office and _country_of(office) in _PAC_COUNTRIES:
+    for office in _offices(location):
+        if _country_of(office) in _PAC_COUNTRIES:
             return "PAC"
     return "RoW"
+
+
+def is_excluded(location: str) -> bool:
+    """True if EVERY office in `location` is in an excluded country --
+    the whole posting should be dropped, not just kept out of PAC.
+
+    The opposite quantifier from classify_region's "any office is PAC"
+    deliberately: a posting listing Ho Chi Minh City ALONGSIDE Singapore
+    still has a real, keepable reason to be on the sheet (the Singapore
+    office), so it's classified normally (into PAC, same PAC-wins
+    precedence as always) rather than dropped just because one of its
+    several offices happens to be excluded. Only a posting with NO
+    non-excluded office anywhere is excluded outright. An empty/unparseable
+    location is never excluded -- same "don't guess" default
+    classify_region itself falls back to (RoW) for that case.
+    """
+    offices = _offices(location)
+    if not offices:
+        return False
+    return all(_country_of(office) in _EXCLUDED_COUNTRIES for office in offices)
 
 
 def _country_of(place: str) -> str:

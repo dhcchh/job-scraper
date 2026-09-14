@@ -44,6 +44,16 @@ a field" caution (see CLAUDE.md) applied to whole rows instead of a single
 column -- not an oversight; if that's ever wrong for a specific posting, fix
 classify_job's keywords and rerun, don't special-case it here.
 
+A row whose (refreshed) location is wholly in a classify_region.is_excluded
+country -- unlike the no-category case above -- is genuinely removed from
+the sheet entirely, not left in place: this project has decided outright
+not to carry those postings (see CLAUDE.md's classify_region bullet), so an
+existing row that predates that decision, or whose location was corrected
+by this same refresh into now being wholly excluded, shouldn't survive it
+either. A multi-location row pairing an excluded country with a real PAC or
+RoW office is unaffected -- is_excluded only fires when EVERY office is
+excluded -- and gets classified (and possibly moved) normally instead.
+
 A (board, job_id) key seen more than once across the ten tabs (shouldn't
 happen in normal operation -- sheets.writer.append_jobs dedupes within a
 tab at write time, and a job is only ever classified into exactly one tab
@@ -59,7 +69,12 @@ import logging
 
 import gspread
 
-from jobscraper.enrichment.classify_region import REGIONS, classify_region, tab_name
+from jobscraper.enrichment.classify_region import (
+    REGIONS,
+    classify_region,
+    is_excluded,
+    tab_name,
+)
 from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
 from jobscraper.models import FIELDS, Job
 from jobscraper.sheets.backfill import (
@@ -111,19 +126,20 @@ def _read_tab_rows(
     overrides: dict[tuple[str, str], Job],
     origin_category: str,
     origin_region: str,
-) -> list[tuple[str, dict[str, str]]]:
-    """Every row in this tab, recomputed, each paired with its destination
-    tab name.
+) -> tuple[list[tuple[str, dict[str, str]]], int]:
+    """Every KEPT row in this tab, recomputed, each paired with its
+    destination tab name, plus how many rows were dropped outright (see
+    module docstring's is_excluded paragraph).
 
     origin_category/origin_region are this row's CURRENT tab -- where a row
     stays if classify_job now returns None for it (see module docstring).
     """
     all_values = worksheet.get_all_values()
     if not all_values:
-        return []
+        return [], 0
     header, *data_rows = all_values
     if not data_rows:
-        return []
+        return [], 0
 
     old_index = {
         name: (header.index(name) if name in header else None) for name in FIELDS
@@ -132,6 +148,7 @@ def _read_tab_rows(
 
     origin_tab = tab_name(origin_category, origin_region)
     rows: list[tuple[str, dict[str, str]]] = []
+    dropped = 0
     for row, url_cell in zip(data_rows, url_formula_cells):
         values = _recompute_row_values(
             row, url_cell, old_index, company_type_by_firm, source_by_firm, overrides
@@ -147,10 +164,21 @@ def _read_tab_rows(
                 origin_tab,
             )
             dest = origin_tab
+        elif is_excluded(values["location"]):
+            logger.warning(
+                "full_refresh: dropping %r (board=%s, job_id=%s) -- every "
+                "office in %r is an excluded country",
+                values["title"],
+                values["board"],
+                values["job_id"],
+                values["location"],
+            )
+            dropped += 1
+            continue
         else:
             dest = tab_name(category, classify_region(values["location"]))
         rows.append((dest, values))
-    return rows
+    return rows, dropped
 
 
 def _write_tab(worksheet: gspread.Worksheet, rows: list[list[str]]) -> None:
@@ -207,18 +235,21 @@ def refresh_all() -> None:
 
     seen_keys: dict[tuple[str, str], str] = {}
     moved = 0
+    dropped_total = 0
     for category, _keywords in CATEGORIES:
         for region in REGIONS:
             origin_tab = tab_name(category, region)
             logger.info("full_refresh: reading %s", origin_tab)
-            for dest_tab, values in _read_tab_rows(
+            rows, dropped = _read_tab_rows(
                 worksheets[origin_tab],
                 company_type_by_firm,
                 source_by_firm,
                 overrides,
                 category,
                 region,
-            ):
+            )
+            dropped_total += dropped
+            for dest_tab, values in rows:
                 key = (values["board"], values["job_id"])
                 if key in seen_keys:
                     logger.warning(
@@ -238,7 +269,12 @@ def refresh_all() -> None:
         logger.info("full_refresh: writing %s (%d rows)", tab, len(buckets[tab]))
         _write_tab(worksheet, [[values[name] for name in FIELDS] for values in buckets[tab]])
 
-    logger.info("full_refresh: done, %d row(s) moved to a different tab", moved)
+    logger.info(
+        "full_refresh: done, %d row(s) moved to a different tab, %d row(s) "
+        "dropped (excluded country)",
+        moved,
+        dropped_total,
+    )
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 import pytest
 
-from jobscraper.enrichment.classify_region import classify_region, tab_name
+from jobscraper.enrichment.classify_region import classify_region, is_excluded, tab_name
 
 
 @pytest.mark.parametrize(
@@ -48,3 +48,38 @@ def test_classify_region_tolerates_missing_spaces_around_pipe():
 def test_tab_name_format():
     assert tab_name("SWE/DE", "PAC") == "SWE/DE - PAC"
     assert tab_name("QT/QR", "RoW") == "QT/QR - RoW"
+
+
+@pytest.mark.parametrize(
+    "location,expected",
+    [
+        ("Hanoi, Vietnam", True),
+        ("Ho Chi Minh City, Vietnam", True),
+        ("Kuala Lumpur, Malaysia", True),
+        ("Jakarta, Indonesia", True),
+        ("Gurgaon, India", True),
+        ("Bangkok, Thailand", False),  # ASEAN, but the one PAC exception
+        ("London, United Kingdom", False),
+        ("Singapore", False),
+        ("Remote", False),
+        ("", False),
+    ],
+)
+def test_is_excluded_single_location(location, expected):
+    assert is_excluded(location) == expected
+
+
+def test_is_excluded_requires_every_office_to_be_excluded():
+    # One non-excluded office (even a RoW one, not just PAC) is reason
+    # enough to keep the posting -- opposite quantifier from
+    # classify_region's "any office is PAC".
+    assert is_excluded("Hanoi, Vietnam | London, United Kingdom") is False
+    assert is_excluded("Hanoi, Vietnam | Singapore") is False
+
+
+def test_is_excluded_true_when_every_office_is_excluded():
+    assert is_excluded("Hanoi, Vietnam | Jakarta, Indonesia") is True
+
+
+def test_is_excluded_tolerates_missing_spaces_around_pipe():
+    assert is_excluded("Hanoi, Vietnam|Jakarta, Indonesia") is True

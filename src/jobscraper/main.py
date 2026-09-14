@@ -31,7 +31,13 @@ Singapore and wants local/regional roles easy to find rather than mixed in
 with everything else. A job matching no category (HR, Legal, Sales, ...) is
 dropped rather than written anywhere -- region is only ever computed for a
 job that already has a category, so a noise job's location is never
-classified at all. Each job's seniority level (Intern, Senior, Manager,
+classified at all. A job that DOES have a category is then checked against
+classify_region.is_excluded -- every one of its offices in a country with
+no comparable pay/relocation incentive (India, Vietnam, Malaysia,
+Indonesia; see that module) -- and dropped the same way a noise job is,
+before region is ever computed, if so; a multi-location posting pairing an
+excluded country with a real PAC or RoW office is kept and classified
+normally instead. Each job's seniority level (Intern, Senior, Manager,
 ... or "Unspecified") is computed earlier, at fetch time -- see
 classify_seniority.classify_seniority and job_boards/greenhouse/client.py
 -- so it's already set on every Job here and just rides along as a column.
@@ -86,6 +92,7 @@ from jobscraper import config
 from jobscraper.enrichment.classify_region import (
     REGIONS,
     classify_region,
+    is_excluded,
     tab_name,
 )
 from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
@@ -235,19 +242,25 @@ def run() -> None:
         for region in REGIONS
     }
     noise_count = 0
+    excluded_count = 0
     for job in all_jobs:
         category = classify_job(job)
         if category is None:
             noise_count += 1
             continue
+        if is_excluded(job.location):
+            excluded_count += 1
+            continue
         region = classify_region(job.location)
         jobs_by_tab[tab_name(category, region)].append(job)
 
     logger.info(
-        "classified %d job(s) across %d tab(s), filtered %d as noise",
-        len(all_jobs) - noise_count,
+        "classified %d job(s) across %d tab(s), filtered %d as noise, "
+        "%d as excluded-country",
+        len(all_jobs) - noise_count - excluded_count,
         len(jobs_by_tab),
         noise_count,
+        excluded_count,
     )
 
     tab_stats: dict[str, tuple[int, int, int]] = {}
@@ -272,6 +285,7 @@ def run() -> None:
         total_boards=total_boards,
         total_jobs=len(all_jobs),
         noise_count=noise_count,
+        excluded_count=excluded_count,
         tab_stats=tab_stats,
     )
     _write_job_summary(markdown)
@@ -310,6 +324,7 @@ def _build_summary_markdown(
     total_boards: int,
     total_jobs: int,
     noise_count: int,
+    excluded_count: int,
     tab_stats: dict[str, tuple[int, int, int]],
 ) -> str:
     """The run summary as GitHub-flavored Markdown, for _write_job_summary.
@@ -327,7 +342,8 @@ def _build_summary_markdown(
         "",
         f"- Boards fetched: {len(succeeded_firms)}/{total_boards}"
         + (f" -- failed: {', '.join(sorted(failed_firms))}" if failed_firms else ""),
-        f"- Jobs fetched: {total_jobs} ({noise_count} filtered as noise)",
+        f"- Jobs fetched: {total_jobs} ({noise_count} filtered as noise, "
+        f"{excluded_count} excluded by country)",
         f"- Appended: {total_appended} new row(s)",
         f"- Pruned: {total_pruned} closed posting(s)",
         "",

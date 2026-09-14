@@ -127,8 +127,9 @@ def test_classify_returns_none_for_a_recruiter_title():
 def test_read_tab_rows_keeps_a_row_on_its_current_tab_when_unchanged():
     worksheet = _FakeWorksheet([list(FIELDS), _row(title="Software Engineer", location="Singapore")])
 
-    rows = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
+    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
 
+    assert dropped == 0
     assert len(rows) == 1
     dest, values = rows[0]
     assert dest == "SWE/DE - PAC"
@@ -142,7 +143,7 @@ def test_read_tab_rows_moves_a_row_whose_region_changed():
         [list(FIELDS), _row(title="Software Engineer", location="Bangkok, Thailand")]
     )
 
-    rows = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
+    rows, _dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
 
     dest, _values = rows[0]
     assert dest == "SWE/DE - PAC"
@@ -156,7 +157,7 @@ def test_read_tab_rows_moves_a_row_whose_category_changed():
         [list(FIELDS), _row(title="Quantitative Researcher", location="Singapore")]
     )
 
-    rows = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
+    rows, _dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
 
     dest, _values = rows[0]
     assert dest == "QT/QR - PAC"
@@ -170,20 +171,55 @@ def test_read_tab_rows_leaves_a_row_with_no_category_on_its_origin_tab(caplog):
     )
 
     with caplog.at_level(logging.WARNING):
-        rows = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
+        rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
 
+    assert dropped == 0
     dest, _values = rows[0]
     assert dest == "SWE/DE - PAC"
     assert "no longer matches any category" in caplog.text
 
 
+def test_read_tab_rows_drops_a_row_wholly_in_an_excluded_country(caplog):
+    worksheet = _FakeWorksheet(
+        [list(FIELDS), _row(title="Software Engineer", location="Hanoi, Vietnam")]
+    )
+
+    with caplog.at_level(logging.WARNING):
+        rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
+
+    assert rows == []
+    assert dropped == 1
+    assert "dropping" in caplog.text
+    assert "excluded country" in caplog.text
+
+
+def test_read_tab_rows_keeps_a_multi_location_row_with_one_non_excluded_office():
+    # Vietnam alone would be excluded, but Singapore is a real, keepable
+    # office -- kept and classified normally (PAC wins), not dropped.
+    worksheet = _FakeWorksheet(
+        [
+            list(FIELDS),
+            _row(title="Software Engineer", location="Hanoi, Vietnam | Singapore"),
+        ]
+    )
+
+    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
+
+    assert dropped == 0
+    dest, _values = rows[0]
+    assert dest == "SWE/DE - PAC"
+
+
 def test_read_tab_rows_empty_sheet_returns_nothing():
-    assert full_refresh._read_tab_rows(_FakeWorksheet([]), {}, {}, {}, "SWE/DE", "PAC") == []
+    assert full_refresh._read_tab_rows(_FakeWorksheet([]), {}, {}, {}, "SWE/DE", "PAC") == (
+        [],
+        0,
+    )
 
 
 def test_read_tab_rows_header_only_returns_nothing():
     worksheet = _FakeWorksheet([list(FIELDS)])
-    assert full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC") == []
+    assert full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC") == ([], 0)
 
 
 def test_write_tab_grows_the_grid_when_more_rows_than_before():
@@ -262,3 +298,25 @@ def test_refresh_all_dedupes_a_key_seen_on_two_tabs(monkeypatch, caplog):
     )
     assert total_rows_written == 1
     assert "skipping duplicate" in caplog.text
+
+
+def test_refresh_all_drops_a_row_wholly_in_an_excluded_country(monkeypatch, caplog):
+    _empty_boards(monkeypatch)
+    monkeypatch.setattr(full_refresh, "_config_lookup_tables", lambda: ({}, {}))
+
+    row_source = _FakeWorksheet(
+        [list(FIELDS), _row(board="Acme", job_id="1", location="Hanoi, Vietnam")],
+        row_count=2,
+    )
+    worksheets = _all_tab_worksheets({"SWE/DE - RoW": row_source})
+    _patch_tabs(monkeypatch, worksheets)
+
+    with caplog.at_level(logging.WARNING):
+        full_refresh.refresh_all()
+
+    assert row_source.updated_with == [list(FIELDS)]
+    total_rows_written = sum(
+        len(ws.updated_with) - 1 for ws in worksheets.values() if ws.updated_with
+    )
+    assert total_rows_written == 0
+    assert "excluded country" in caplog.text

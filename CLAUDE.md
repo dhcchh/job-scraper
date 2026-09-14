@@ -176,14 +176,32 @@ use a small fake `Worksheet`.
   Taiwan/New Zealand/Thailand. `_PAC_COUNTRIES` deliberately excludes every
   other ASEAN country -- Malaysia, Indonesia, Vietnam, the Philippines, and
   Cambodia -- even though Grab's SmartRecruiters board posts the majority
-  of its jobs there, plus India, on the same basis: pay isn't comparable to
-  Singapore's, so those postings land in RoW. Thailand is the one ASEAN
-  exception, added because Bangkok pay is comparable -- whole-country, not
-  Bangkok-only, consistent with every other entry here being a country
-  rather than a city. This was a conscious decision (not an oversight) when
-  SmartRecruiters/Grab was added, to keep today's scope rather than widen
-  it. `classify_roles.classify_job` returns `None` for recruiter titles
-  before applying category keywords; keyword precedence is intentional.
+  of its jobs there. Thailand is the one ASEAN exception, added because
+  Bangkok pay is comparable -- whole-country, not Bangkok-only, consistent
+  with every other entry here being a country rather than a city. This was
+  a conscious decision (not an oversight) when SmartRecruiters/Grab was
+  added, to keep today's scope rather than widen it.
+  `classify_roles.classify_job` returns `None` for recruiter titles before
+  applying category keywords; keyword precedence is intentional.
+- `classify_region.is_excluded` is a separate, stricter gate than PAC/RoW:
+  Vietnam, Malaysia, Indonesia, and India are excluded entirely -- not
+  posted at all, PAC or RoW -- because pay isn't comparable to Singapore's
+  and there's no incentive to relocate there. Unlike `classify_region`'s
+  "any office is PAC" precedence, `is_excluded` requires EVERY office in a
+  (possibly `" | "`-joined) location to be excluded before dropping the
+  whole posting -- a job listing Hanoi alongside Singapore or even just
+  London still has a real, keepable office, so it's kept and classified
+  normally. `main.py`'s per-job loop checks this right after
+  `classify_job` finds a category (a noise job is already dropped by then,
+  so its location is never checked) and before `classify_region` ever
+  runs, incrementing its own `excluded_count` separate from `noise_count`
+  in both the log line and `_build_summary_markdown`.
+  `sheets/full_refresh.py` applies the same check when reclassifying an
+  existing row and, unlike its conservative "leave it in place" handling
+  of a row whose category becomes `None`, actually removes a
+  now-wholly-excluded row from the sheet -- this project has decided
+  outright not to carry those postings, so a stale row predating that
+  decision shouldn't survive a refresh either.
 - `sheets/writer.py` deduplicates and prunes by `(board, job_id)`. Only prune
   boards fetched successfully (and all tokens for a multi-token firm).
   Pruning uses an atomic Sheets batch of row deletions, but concurrent writers
