@@ -58,6 +58,8 @@ def test_tab_name_format():
         ("Kuala Lumpur, Malaysia", True),
         ("Jakarta, Indonesia", True),
         ("Gurgaon, India", True),
+        ("Yerevan, Armenia", True),
+        ("Montevideo, Uruguay", True),
         ("Bangkok, Thailand", False),  # ASEAN, but the one PAC exception
         ("London, United Kingdom", False),
         ("Singapore", False),

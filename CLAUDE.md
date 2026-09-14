@@ -184,9 +184,10 @@ use a small fake `Worksheet`.
   `classify_roles.classify_job` returns `None` for recruiter titles before
   applying category keywords; keyword precedence is intentional.
 - `classify_region.is_excluded` is a separate, stricter gate than PAC/RoW:
-  Vietnam, Malaysia, Indonesia, and India are excluded entirely -- not
-  posted at all, PAC or RoW -- because pay isn't comparable to Singapore's
-  and there's no incentive to relocate there. Unlike `classify_region`'s
+  Vietnam, Malaysia, Indonesia, India, Armenia, and Uruguay are excluded
+  entirely -- not posted at all, PAC or RoW -- because pay isn't
+  comparable to Singapore's and there's no incentive to relocate there.
+  Unlike `classify_region`'s
   "any office is PAC" precedence, `is_excluded` requires EVERY office in a
   (possibly `" | "`-joined) location to be excluded before dropping the
   whole posting -- a job listing Hanoi alongside Singapore or even just

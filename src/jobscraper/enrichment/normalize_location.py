@@ -278,6 +278,13 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "berlin": "Berlin, Germany",
     "brussels": "Brussels, Belgium",
     "bogota": "Bogota, Colombia",
+    # Added alongside Armenia/Uruguay joining
+    # classify_region._EXCLUDED_COUNTRIES -- not yet confirmed against a
+    # specific live board's exact raw value like most entries here, but
+    # needed so a bare city office normalizes to a real "City, Country"
+    # is_excluded can actually match on.
+    "montevideo": "Montevideo, Uruguay",
+    "yerevan": "Yerevan, Armenia",
     "johannesburg": "Johannesburg, South Africa",
     "ottawa": "Ottawa, Canada",
     "ciudad de méxico": "Mexico City, Mexico",

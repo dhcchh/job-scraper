@@ -66,12 +66,17 @@ _PAC_COUNTRIES = {
 # from _PAC_COUNTRIES by construction (nothing here should ever also be a
 # PAC country); kept as its own set rather than folded into a bigger
 # lookup so is_excluded's "every office must match" logic stays entirely
-# separate from classify_region's "any office matches" one.
+# separate from classify_region's "any office matches" one. Vietnam,
+# Malaysia, Indonesia, and India were the original four (see CLAUDE.md's
+# is_excluded bullet); Armenia and Uruguay were added later on the same
+# pay/relocation-incentive basis.
 _EXCLUDED_COUNTRIES = {
     "Vietnam",
     "Malaysia",
     "Indonesia",
     "India",
+    "Armenia",
+    "Uruguay",
 }
 
 

@@ -191,6 +191,15 @@ def test_normalize_location_maps_vietnamese_cities():
     assert normalize_location("VN-Ho Chi Minh City") == "Ho Chi Minh City, Vietnam"
 
 
+def test_normalize_location_maps_montevideo_and_yerevan():
+    # Added alongside Uruguay/Armenia joining
+    # classify_region._EXCLUDED_COUNTRIES -- not confirmed against a
+    # specific live board yet, unlike most entries here (see
+    # normalize_location.py's comment).
+    assert normalize_location("Montevideo") == "Montevideo, Uruguay"
+    assert normalize_location("Yerevan") == "Yerevan, Armenia"
+
+
 def test_normalize_location_maps_grasshopper_internal_office_codes():
     # Grasshopper's live Greenhouse board sets offices[].name to an internal
     # short code rather than a readable place name -- confirmed against
