@@ -171,13 +171,17 @@ use a small fake `Worksheet`.
   reads whatever's after the last comma), so an unmapped one is a
   display-only inconsistency, not a PAC/RoW bug.
 - `classify_region` routes a posting to PAC if any normalized office is in a
-  PAC country. `_PAC_COUNTRIES` deliberately excludes Malaysia, Indonesia,
-  Thailand, the Philippines, and Cambodia even though Grab's SmartRecruiters
-  board posts the majority of its jobs there -- a conscious decision (not an
-  oversight) when SmartRecruiters/Grab was added, to keep today's
-  Singapore/Hong Kong/Australia/Japan/South Korea/China/Taiwan/New
-  Zealand/Vietnam scope rather than widen it; those Grab postings land in
-  RoW. `classify_roles.classify_job` returns `None` for recruiter titles
+  PAC country: Singapore/Hong Kong/Australia/Japan/South Korea/China/
+  Taiwan/New Zealand/Thailand. `_PAC_COUNTRIES` deliberately excludes every
+  other ASEAN country -- Malaysia, Indonesia, Vietnam, the Philippines, and
+  Cambodia -- even though Grab's SmartRecruiters board posts the majority
+  of its jobs there, plus India, on the same basis: pay isn't comparable to
+  Singapore's, so those postings land in RoW. Thailand is the one ASEAN
+  exception, added because Bangkok pay is comparable -- whole-country, not
+  Bangkok-only, consistent with every other entry here being a country
+  rather than a city. This was a conscious decision (not an oversight) when
+  SmartRecruiters/Grab was added, to keep today's scope rather than widen
+  it. `classify_roles.classify_job` returns `None` for recruiter titles
   before applying category keywords; keyword precedence is intentional.
 - `sheets/writer.py` deduplicates and prunes by `(board, job_id)`. Only prune
   boards fetched successfully (and all tokens for a multi-token firm).
