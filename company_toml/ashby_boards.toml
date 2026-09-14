@@ -53,7 +53,7 @@ company_type = "Applied AI Products"
 [[boards]]
 token = "plaud"
 firm = "Plaud"
-company_type = "Consumer Hardware/Devices"
+company_type = "Applied AI Products"
 
 [[boards]]
 token = "cohere"
