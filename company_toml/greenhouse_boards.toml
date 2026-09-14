@@ -156,6 +156,11 @@ firm = "Airbnb"
 company_type = "Consumer/Marketplace"
 
 [[boards]]
+token = "agoda"
+firm = "Agoda"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
 token = "bridgewater89"
 firm = "Bridgewater"
 company_type = "Prop Trading/Hedge Fund"

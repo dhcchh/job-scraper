@@ -156,6 +156,29 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "seoul": "Seoul, South Korea",
     "shanghai": "Shanghai, China",
     "singapore": "Singapore",
+    # Agoda-specific noise: its Greenhouse board names its actual office
+    # buildings rather than a bare city ("Bangkok (One Bangkok Office)",
+    # "Singapore (Guoco) " -- trailing space in the raw data too). Left
+    # unmapped, neither exact-matches the lookup table or classify_region's
+    # bare-country check, so a real PAC posting (Thailand, Singapore) would
+    # silently land in RoW -- same failure shape as every other office-name
+    # wrapper on this page.
+    "bangkok (one bangkok office)": "Bangkok, Thailand",
+    "singapore (guoco)": "Singapore",
+    "foshan": "Foshan, China",
+    "yokohama": "Yokohama, Japan",
+    # Bali is Indonesia, one of classify_region.is_excluded's excluded
+    # countries -- unmapped, it wouldn't resolve to a "City, Country" form
+    # is_excluded can match on, so an Agoda Bali posting would wrongly stay
+    # in scope.
+    "bali": "Bali, Indonesia",
+    # Agoda's Pune office carries an internal building code
+    # ("Pune (AP81)-PNQ") its Greenhouse board's offices[].name never
+    # spells out plainly elsewhere -- same is_excluded risk as "bali" above
+    # (India is excluded), mapped as a whole string per the "chicago qts"/
+    # Snowflake "-mso" convention above since the code isn't a fixed,
+    # safely-stripped suffix.
+    "pune (ap81)-pnq": "Pune, India",
     "sydney": "Sydney, Australia",
     "sydney, new south wales, australia": "Sydney, Australia",
     "taipei": "Taipei, Taiwan",
