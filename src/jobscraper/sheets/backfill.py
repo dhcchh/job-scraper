@@ -317,6 +317,98 @@ def _renormalize_location(value: str) -> str:
     return " | ".join(normalized)
 
 
+def _config_lookup_tables() -> tuple[dict[str, str], dict[str, str]]:
+    """(company_type_by_firm, source_by_firm), from the current
+    *_boards.toml files -- shared by refresh_worksheet and
+    sheets.full_refresh so both look a row's `board` up against identical,
+    up-to-date config rather than each keeping its own copy.
+    """
+    company_type_by_firm = {
+        board["firm"]: board["company_type"]
+        for board_list in (
+            config.GREENHOUSE_BOARDS,
+            config.LEVER_BOARDS,
+            config.ASHBY_BOARDS,
+            config.SMARTRECRUITERS_BOARDS,
+            config.EIGHTFOLD_BOARDS,
+        )
+        for board in board_list
+    }
+    source_by_firm = {
+        board["firm"]: source
+        for board_list, source in (
+            (config.GREENHOUSE_BOARDS, "Greenhouse"),
+            (config.LEVER_BOARDS, "Lever"),
+            (config.ASHBY_BOARDS, "Ashby"),
+            (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
+            (config.EIGHTFOLD_BOARDS, "Eightfold"),
+        )
+        for board in board_list
+    }
+    return company_type_by_firm, source_by_firm
+
+
+def _recompute_row_values(
+    row: list[str],
+    url_cell: str,
+    old_index: dict[str, int | None],
+    company_type_by_firm: dict[str, str],
+    source_by_firm: dict[str, str],
+    overrides: dict[tuple[str, str], Job] | None,
+) -> dict[str, str]:
+    """One row's FIELDS, recomputed from current classifiers/config/overrides
+    -- every column EXCEPT which tab the row belongs on.
+
+    Shared by refresh_worksheet (rewrites a row in place, in its current
+    tab) and sheets.full_refresh (which also re-routes a row to a different
+    tab when its category or region has changed) so both apply identical
+    column logic to a row; only what happens to a row whose classification
+    changed differs between the two callers. See refresh_worksheet's own
+    docstring for what each field does and why.
+    """
+
+    def read(name: str) -> str:
+        i = old_index[name]
+        if i is None or i >= len(row):
+            return ""
+        return row[i]
+
+    values = {name: read(name) for name in FIELDS}
+
+    values["seniority"] = classify_seniority(values["title"], values["department"])
+
+    new_company_type = company_type_by_firm.get(values["board"])
+    if new_company_type is not None:
+        values["company_type"] = new_company_type
+
+    new_source = source_by_firm.get(values["board"])
+    if new_source is not None:
+        values["source"] = new_source
+
+    fresh = overrides.get((values["board"], values["job_id"])) if overrides else None
+
+    values["location"] = (
+        fresh.location if fresh is not None else _renormalize_location(values["location"])
+    )
+
+    if fresh is not None and fresh.first_published:
+        fresh_fp = normalize_date(fresh.first_published)
+        if fresh_fp:
+            values["first_published"] = fresh_fp
+
+    if values["board"] not in FIRMS_NEEDING_DESCRIPTION:
+        values["description"] = ""
+    elif fresh is not None and fresh.description:
+        values["description"] = fresh.description
+
+    values["first_published"] = normalize_date(values["first_published"])
+    values["updated_at"] = normalize_date(values["updated_at"])
+    values["scraped_date"] = normalize_date(values["scraped_date"])
+    values["url"] = hyperlink_formula(_extract_url(url_cell))
+
+    return values
+
+
 def refresh_worksheet(
     worksheet: gspread.Worksheet,
     *,
@@ -364,28 +456,7 @@ def refresh_worksheet(
     old_index = {
         name: (header.index(name) if name in header else None) for name in FIELDS
     }
-    company_type_by_firm = {
-        board["firm"]: board["company_type"]
-        for board_list in (
-            config.GREENHOUSE_BOARDS,
-            config.LEVER_BOARDS,
-            config.ASHBY_BOARDS,
-            config.SMARTRECRUITERS_BOARDS,
-            config.EIGHTFOLD_BOARDS,
-        )
-        for board in board_list
-    }
-    source_by_firm = {
-        board["firm"]: source
-        for board_list, source in (
-            (config.GREENHOUSE_BOARDS, "Greenhouse"),
-            (config.LEVER_BOARDS, "Lever"),
-            (config.ASHBY_BOARDS, "Ashby"),
-            (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
-            (config.EIGHTFOLD_BOARDS, "Eightfold"),
-        )
-        for board in board_list
-    }
+    company_type_by_firm, source_by_firm = _config_lookup_tables()
 
     def read(row: list[str], name: str) -> str:
         i = old_index[name]
@@ -403,51 +474,23 @@ def refresh_worksheet(
     first_published_changed = 0
     description_changed = 0
     for row, url_cell in zip(data_rows, url_formula_cells):
-        values = {name: read(row, name) for name in FIELDS}
-
-        new_seniority = classify_seniority(values["title"], values["department"])
-        if values["seniority"] != new_seniority:
-            seniority_changed += 1
-            values["seniority"] = new_seniority
-
-        new_company_type = company_type_by_firm.get(values["board"])
-        if new_company_type is not None and values["company_type"] != new_company_type:
-            company_type_changed += 1
-            values["company_type"] = new_company_type
-
-        new_source = source_by_firm.get(values["board"])
-        if new_source is not None and values["source"] != new_source:
-            source_changed += 1
-            values["source"] = new_source
-
-        fresh = overrides.get((values["board"], values["job_id"])) if overrides else None
-
-        new_location = (
-            fresh.location if fresh is not None else _renormalize_location(values["location"])
+        old_values = {name: read(row, name) for name in FIELDS}
+        values = _recompute_row_values(
+            row, url_cell, old_index, company_type_by_firm, source_by_firm, overrides
         )
-        if values["location"] != new_location:
+
+        if old_values["seniority"] != values["seniority"]:
+            seniority_changed += 1
+        if old_values["company_type"] != values["company_type"]:
+            company_type_changed += 1
+        if old_values["source"] != values["source"]:
+            source_changed += 1
+        if old_values["location"] != values["location"]:
             location_changed += 1
-            values["location"] = new_location
-
-        if fresh is not None and fresh.first_published:
-            fresh_fp = normalize_date(fresh.first_published)
-            if fresh_fp and values["first_published"] != fresh_fp:
-                first_published_changed += 1
-                values["first_published"] = fresh_fp
-
-        if values["board"] not in FIRMS_NEEDING_DESCRIPTION:
-            if values["description"]:
-                description_changed += 1
-                values["description"] = ""
-        elif fresh is not None and fresh.description:
-            if values["description"] != fresh.description:
-                description_changed += 1
-                values["description"] = fresh.description
-
-        values["first_published"] = normalize_date(values["first_published"])
-        values["updated_at"] = normalize_date(values["updated_at"])
-        values["scraped_date"] = normalize_date(values["scraped_date"])
-        values["url"] = hyperlink_formula(_extract_url(url_cell))
+        if old_values["first_published"] != values["first_published"]:
+            first_published_changed += 1
+        if old_values["description"] != values["description"]:
+            description_changed += 1
 
         new_rows.append([values[name] for name in FIELDS])
 

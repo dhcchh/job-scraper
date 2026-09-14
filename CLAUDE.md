@@ -8,6 +8,7 @@ cp .env.example .env
 
 uv run python -m jobscraper.main              # live scrape: append new and prune closed jobs
 uv run python -m jobscraper.sheets.backfill   # refresh existing rows after metadata/classifier changes
+uv run python -m jobscraper.sheets.full_refresh  # also re-routes rows across tabs after a category/region change
 
 uv run pytest
 uv run pytest tests/sheets/test_writer.py
@@ -219,6 +220,22 @@ use a small fake `Worksheet`.
   since a JD can be legitimately edited, blanking it back to "" for every
   other firm) but deliberately does not move rows between tabs or rename
   board values, which could lose data if interrupted.
+- `sheets/full_refresh.py` is manual only, for the one thing `backfill.py`
+  deliberately punts on: it also re-routes a row to a different tab when
+  `classify_roles.classify_job`'s category or `classify_region`'s PAC
+  country list puts it somewhere else now (e.g. the Thailand/Vietnam PAC
+  swap above). Every other column is recomputed the same way `backfill.py`
+  does -- both share `backfill._recompute_row_values` rather than
+  duplicating that logic. It reads and reclassifies all ten tabs into
+  memory FIRST and only starts writing once every row's destination tab is
+  known, so an interrupted run can't strand a row between its old and new
+  tab; it is still not one atomic transaction across the ten separate
+  writes that follow (no distributed lock -- see Open Work below). A row
+  whose title no longer matches any category at all stays on the tab it's
+  already on rather than being dropped. A `(board, job_id)` seen on more
+  than one tab (shouldn't happen in normal operation) keeps its first
+  occurrence and logs a warning for the rest, rather than writing the
+  same posting into two tabs.
 - The scraper logs the spreadsheet title/URL and writes a GitHub Actions job
   summary. Workflow-level concurrency protects Action-triggered runs; it does
   not protect a local run pointed at the production sheet.
