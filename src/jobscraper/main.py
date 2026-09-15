@@ -70,7 +70,7 @@ below.
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add a client module with its own fetch_<board>_jobs() ->
     list[Job], and extend the fetch loop below the same way Greenhouse,
-    Lever, and Ashby already are.
+    Lever, Ashby, and SmartRecruiters already are.
   - more/edited categories: see enrichment/classify_roles.py's
     CATEGORIES -- add a keyword there, or a whole new category + matching
     spreadsheet tab (x2, one per region -- see classify_region.tab_name).

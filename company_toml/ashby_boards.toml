@@ -54,3 +54,8 @@ company_type = "AI Lab"
 token = "plaud"
 firm = "Plaud"
 company_type = "AI Lab"
+
+[[boards]]
+token = "cognition"
+firm = "Cognition"
+company_type = "AI Lab"
