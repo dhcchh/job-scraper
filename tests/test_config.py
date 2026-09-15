@@ -5,7 +5,7 @@ a firm is added or removed.
 
 import pytest
 
-from jobscraper.config import _load_boards, _optional_int
+from jobscraper.config import _load_boards, _optional_int, _required_env
 
 
 def test_load_boards_parses_token_firm_and_company_type(tmp_path):
@@ -79,3 +79,14 @@ def test_optional_int_none_when_blank(monkeypatch):
     # workflow's env block, not simply absent -- must not raise on int("").
     monkeypatch.setenv("SOME_INT", "")
     assert _optional_int("SOME_INT") is None
+
+
+def test_required_env_returns_a_set_value(monkeypatch):
+    monkeypatch.setenv("SOME_VAR", "value")
+    assert _required_env("SOME_VAR") == "value"
+
+
+def test_required_env_raises_a_clear_error_when_unset(monkeypatch):
+    monkeypatch.delenv("SOME_VAR", raising=False)
+    with pytest.raises(RuntimeError, match="SOME_VAR"):
+        _required_env("SOME_VAR")

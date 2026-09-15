@@ -60,13 +60,24 @@ ASHBY_BOARDS: list[dict] = _load_boards(_ASHBY_BOARDS_FILE)
 # (jobs.smartrecruiters.com/<token>), same idea as Lever's/Ashby's slug.
 SMARTRECRUITERS_BOARDS: list[dict] = _load_boards(_SMARTRECRUITERS_BOARDS_FILE)
 
+
+def _required_env(name: str) -> str:
+    """A required environment variable, or a clear error naming it."""
+    try:
+        return os.environ[name]
+    except KeyError:
+        raise RuntimeError(
+            f"required environment variable {name!r} is not set -- see .env.example"
+        ) from None
+
+
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit
 #
 # Tab names aren't configured here -- sheets.writer.get_worksheet() opens one
 # tab per jobscraper.enrichment.classify_roles.CATEGORIES entry, by
 # that category's name.
-GOOGLE_SHEET_ID: str = os.environ["GOOGLE_SHEET_ID"]
+GOOGLE_SHEET_ID: str = _required_env("GOOGLE_SHEET_ID")
 
 # Optional: the spreadsheet's exact display title. GOOGLE_SHEET_ID is set
 # independently here (.env) and in the GitHub Actions secret, with nothing
@@ -78,7 +89,7 @@ GOOGLE_SHEET_TITLE: str | None = os.environ.get("GOOGLE_SHEET_TITLE") or None
 # The full service account JSON key, as one raw string -- not a file path.
 # This is what lets a GitHub Actions secret carry it without a "write secret
 # to a temp file" workflow step. Parsed with json.loads() in sheets/writer.py.
-GOOGLE_SERVICE_ACCOUNT_JSON: str = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+GOOGLE_SERVICE_ACCOUNT_JSON: str = _required_env("GOOGLE_SERVICE_ACCOUNT_JSON")
 
 
 def _optional_int(name: str) -> int | None:

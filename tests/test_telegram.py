@@ -312,3 +312,45 @@ def test_check_connection_reports_a_send_failure_without_raising(monkeypatch, ca
 
     assert telegram.check_connection() is False  # not swallowed like send_digest
     assert "Failed to send" in capsys.readouterr().out
+
+
+def test_check_connection_redacts_the_bot_token_from_a_failure_message(
+    monkeypatch, capsys
+):
+    # requests exceptions embed the request URL, which embeds the token.
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "secret-token")
+    monkeypatch.setattr(telegram.config, "TELEGRAM_CHAT_ID", 123)
+
+    def fake_post(url, json, timeout):
+        raise ConnectionError(
+            f"HTTPSConnectionPool(host='api.telegram.org', port=443): "
+            f"Max retries exceeded with url: /botsecret-token/sendMessage"
+        )
+
+    monkeypatch.setattr(telegram.requests, "post", fake_post)
+
+    assert telegram.check_connection() is False
+    out = capsys.readouterr().out
+    assert "secret-token" not in out
+    assert "<redacted>" in out
+
+
+def test_main_runs_check_connection_when_check_flag_passed(monkeypatch):
+    monkeypatch.setattr(telegram, "check_connection", lambda: True)
+    assert telegram.main(["--check"]) == 0
+
+    monkeypatch.setattr(telegram, "check_connection", lambda: False)
+    assert telegram.main(["--check"]) == 1
+
+
+def test_main_exits_with_a_usage_error_when_check_flag_is_missing(monkeypatch, capsys):
+    def fail():
+        raise AssertionError("must not run the check when --check is missing")
+
+    monkeypatch.setattr(telegram, "check_connection", fail)
+
+    with pytest.raises(SystemExit) as exc_info:
+        telegram.main([])
+
+    assert exc_info.value.code == 2  # argparse's usage-error code, not check_connection's
+    assert "--check" in capsys.readouterr().err

@@ -196,7 +196,7 @@ def send_digest(new_jobs_by_category: dict[str, list[Job]], spreadsheet_url: str
     straight through to build_digest_text for the trailing sheet link --
     this module never opens the spreadsheet itself.
     """
-    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+    if not _is_configured():
         logger.debug("telegram digest: not configured, skipping")
         return
 
@@ -217,6 +217,11 @@ def send_digest(new_jobs_by_category: dict[str, list[Job]], spreadsheet_url: str
             )
             return
     logger.info("telegram digest: sent in %d message(s)", len(chunks))
+
+
+def _is_configured() -> bool:
+    """Whether TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID are both set."""
+    return bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)
 
 
 def _send_message(text: str) -> None:
@@ -245,7 +250,7 @@ def check_connection() -> bool:
     surface exactly what's wrong, not hide it the way an automated run
     should.
     """
-    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+    if not _is_configured():
         print(
             "Not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env"
         )
@@ -253,11 +258,13 @@ def check_connection() -> bool:
 
     try:
         _send_message(
-            "✅ latest-job-scraper: test message from `--check` -- "
+            "✅ latest-job-scraper: test message from <code>--check</code> -- "
             "if you can see this, the bot can reach this chat."
         )
     except Exception as exc:
-        print(f"Failed to send: {exc}")
+        # str(exc) can embed the request URL, which embeds the bot token.
+        message = str(exc).replace(config.TELEGRAM_BOT_TOKEN, "<redacted>")
+        print(f"Failed to send: {message}")
         return False
 
     where = f"chat {config.TELEGRAM_CHAT_ID}"
@@ -267,26 +274,15 @@ def check_connection() -> bool:
     return True
 
 
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
-    parser = argparse.ArgumentParser(
-        description="Optional Telegram digest for latest-job-scraper. "
-        "This module has no standalone run mode of its own -- main.py calls "
-        "send_digest() directly -- only --check is available here."
-    )
+def main(argv: list[str] | None = None) -> int:
+    """Parse CLI args and run `--check`; returns the process exit code."""
+    parser = argparse.ArgumentParser(prog="python -m jobscraper.telegram")
     parser.add_argument(
-        "--check",
-        action="store_true",
-        help=(
-            "Send a one-off test message to verify TELEGRAM_BOT_TOKEN/"
-            "TELEGRAM_CHAT_ID actually work, without waiting for real new "
-            "postings."
-        ),
+        "--check", action="store_true", required=True, help="verify Telegram setup"
     )
-    args = parser.parse_args()
-    if not args.check:
-        parser.print_help()
-        sys.exit(1)
-    sys.exit(0 if check_connection() else 1)
+    parser.parse_args(argv)
+    return 0 if check_connection() else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
