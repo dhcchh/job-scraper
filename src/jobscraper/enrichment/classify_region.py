@@ -7,12 +7,12 @@ instead of scanning every region mixed together. See `tab_name` for the
 "{category} - {region}" naming this project's spreadsheet tabs already use.
 
 PAC here means Pacific-adjacent from a Singapore vantage point: Singapore,
-Hong Kong, Australia, Japan, South Korea, China, Taiwan, New Zealand,
-Vietnam. Everything else -- Europe, the Americas, the Middle East, and
-South Asia (e.g. Gurgaon, Mumbai, Bangalore) -- is RoW. This is a product
-choice, not a geographic one (India is "Asia-Pacific" in plenty of other
-contexts); if that's ever wrong for a posting, fix it here, not by
-special-casing main.py.
+Hong Kong, Australia, Japan, South Korea, China, Taiwan, New Zealand.
+Everything else -- Europe, the Americas, the Middle East, South Asia (e.g.
+Gurgaon, Mumbai, Bangalore), and _EXCLUDED_COUNTRIES below -- is RoW. This
+is a product choice, not a geographic one (India is "Asia-Pacific" in
+plenty of other contexts); if that's ever wrong for a posting, fix it here,
+not by special-casing main.py.
 
 Same tuning-pass caveat as classify_roles.py/classify_seniority.py/
 normalize_location.py: _PAC_COUNTRIES was seeded from real data (today's
@@ -37,8 +37,27 @@ _PAC_COUNTRIES = {
     "China",
     "Taiwan",
     "New Zealand",
-    "Vietnam",
 }
+
+# Southeast Asian countries with real posting volume on boards this project
+# already fetches (Grab and WorldQuant post heavily into Vietnam; Grab also
+# into Malaysia/Indonesia/Thailand/the Philippines/Cambodia) that are
+# deliberately kept out of _PAC_COUNTRIES rather than folded in -- listed
+# explicitly here, not just left off _PAC_COUNTRIES, so the exclusion reads
+# as a decision the next person can see and not silently undo by adding one
+# back to _PAC_COUNTRIES. These land in RoW.
+_EXCLUDED_COUNTRIES = {
+    "Vietnam",
+    "Malaysia",
+    "Indonesia",
+    "Thailand",
+    "Philippines",
+    "Cambodia",
+}
+
+assert not (_PAC_COUNTRIES & _EXCLUDED_COUNTRIES), (
+    "a country can't be both a PAC country and a deliberate exclusion"
+)
 
 
 def classify_region(location: str) -> str:

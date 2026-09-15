@@ -161,11 +161,12 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "taipei": "Taipei, Taiwan",
     "tel aviv": "Tel Aviv, Israel",
     "apac": "Asia-Pacific",
-    # Vietnam is a PAC country in classify_region's list; these cities get
+    # Vietnam is RoW in classify_region's list, but these cities still get
     # the same "City, Country" treatment as every other PAC/RoW city above
-    # rather than being left as raw board noise. Confirmed on WorldQuant's
-    # live Greenhouse board ("Hanoi", "Ho Chi Minh City") and Spotify's live
-    # Lever board ("Ho Chi Minh", without "City").
+    # rather than being left as raw board noise -- normalization doesn't
+    # depend on the PAC/RoW split. Confirmed on WorldQuant's live Greenhouse
+    # board ("Hanoi", "Ho Chi Minh City") and Spotify's live Lever board
+    # ("Ho Chi Minh", without "City").
     "hanoi": "Hanoi, Vietnam",
     "ho chi minh": "Ho Chi Minh City, Vietnam",
     "ho chi minh city": "Ho Chi Minh City, Vietnam",
@@ -265,9 +266,9 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "pasig city": "Pasig City, Philippines",
     "phnom penh": "Phnom Penh, Cambodia",
     "suzhou": "Suzhou, China",
-    # Vietnam is a PAC country in classify_region's list; HCMC is Grab's own
-    # abbreviation for the city already mapped above as "Ho Chi Minh"/"Ho
-    # Chi Minh City".
+    # HCMC is Grab's own abbreviation for the city already mapped above as
+    # "Ho Chi Minh"/"Ho Chi Minh City" (Vietnam is RoW in classify_region's
+    # list, same as the other Southeast Asian cities above).
     "hcmc": "Ho Chi Minh City, Vietnam",
     "cluj napoca": "Cluj-Napoca, Romania",
     "tallinn": "Tallinn, Estonia",

@@ -90,7 +90,7 @@ src/jobscraper/
   into one of `CATEGORIES` (or drops it as noise if nothing matches).
 - **Region (PAC/RoW)**: `classify_region.py` buckets a job's location into
   `"PAC"` (Singapore/Hong Kong/Australia/Japan/South Korea/China/Taiwan/New
-  Zealand/Vietnam) or `"RoW"`, so the target Singapore-based audience can
+  Zealand) or `"RoW"`, so the target Singapore-based audience can
   find local roles without wading through everything else. Category ×
   region picks the tab.
 - **Location normalization**: `normalize_location.py` cleans up each

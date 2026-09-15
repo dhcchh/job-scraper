@@ -122,13 +122,19 @@ use a small fake `Worksheet`.
   City" wrapper, and (seeded from Ashby's Airwallex/Snowflake boards) a
   spaced-out ISO-code prefix like `"AU - Sydney"` before lookup.
 - `classify_region` routes a posting to PAC if any normalized office is in a
-  PAC country. `_PAC_COUNTRIES` deliberately excludes Malaysia, Indonesia,
-  Thailand, the Philippines, and Cambodia even though Grab's SmartRecruiters
-  board posts the majority of its jobs there -- a conscious decision (not an
-  oversight) when SmartRecruiters/Grab was added, to keep today's
-  Singapore/Hong Kong/Australia/Japan/South Korea/China/Taiwan/New
-  Zealand/Vietnam scope rather than widen it; those Grab postings land in
-  RoW. `classify_roles.classify_job` returns `None` for recruiter titles
+  PAC country. `_EXCLUDED_COUNTRIES` (Vietnam, Malaysia, Indonesia, Thailand,
+  the Philippines, Cambodia) lists, explicitly rather than by omission from
+  `_PAC_COUNTRIES`, the Southeast Asian countries with real posting volume on
+  boards this project fetches (Grab's SmartRecruiters board posts the
+  majority of its jobs into Malaysia/Indonesia/Thailand/the
+  Philippines/Cambodia; Grab and WorldQuant both post heavily into Vietnam)
+  that are deliberately kept out of PAC rather than folded in, to keep
+  today's Singapore/Hong Kong/Australia/Japan/South Korea/China/Taiwan/New
+  Zealand scope rather than widen it -- a conscious decision (not an
+  oversight), reaffirmed when Vietnam was moved from `_PAC_COUNTRIES` into
+  `_EXCLUDED_COUNTRIES`. A module-level assertion keeps the two sets
+  disjoint so a country can't silently end up in both. Those postings land
+  in RoW. `classify_roles.classify_job` returns `None` for recruiter titles
   before applying category keywords; keyword precedence is intentional.
 - `sheets/writer.py` deduplicates and prunes by `(board, job_id)`. Only prune
   boards fetched successfully (and all tokens for a multi-token firm).

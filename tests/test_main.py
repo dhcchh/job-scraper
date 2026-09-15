@@ -536,6 +536,42 @@ def test_run_sends_telegram_digest_with_newly_appended_pac_jobs(monkeypatch):
     assert new_jobs["DS/ML/Algos"] == []
 
 
+def test_run_excludes_deliberately_excluded_countries_from_pac_digest(monkeypatch):
+    # Regression test: Vietnam (and the other Southeast Asian countries in
+    # classify_region._EXCLUDED_COUNTRIES) previously counted as PAC, so
+    # postings from Grab/WorldQuant/etc. in Hanoi/Ho Chi Minh City/Kuala
+    # Lumpur/... were showing up in the PAC-only Telegram digest.
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    vietnam_job = _job(
+        "Acme", "1", title="Software Engineer", location="Hanoi, Vietnam"
+    )
+    malaysia_job = _job(
+        "Acme", "2", title="Software Engineer", location="Kuala Lumpur, Malaysia"
+    )
+    monkeypatch.setattr(
+        main,
+        "fetch_greenhouse_jobs",
+        lambda token, firm, company_type: [vietnam_job, malaysia_job],
+    )
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+
+    digest_calls = []
+    monkeypatch.setattr(
+        main,
+        "send_digest",
+        lambda new_jobs, spreadsheet_url: digest_calls.append(new_jobs),
+    )
+
+    main.run()
+
+    (new_jobs,) = digest_calls
+    assert new_jobs["SWE/DE"] == []
+
+
 def test_run_sends_telegram_digest_even_on_partial_failure(monkeypatch):
     # The digest must still report what a successful board actually
     # appended, even though the run as a whole fails and raises below --
