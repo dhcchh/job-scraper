@@ -185,11 +185,14 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
 # and Quantitative Research" both hit a real keyword (bare "quant"/"machine
 # learning") and were routing into QT/QR and DS/ML/Algos respectively despite
 # being recruiting-org postings, not IC ones. Deliberately "recruiter", not
-# "recruiting" -- the latter also shows up as a trailing department-style
-# qualifier on a genuine IC posting (Anthropic's "People Research Scientist,
-# Recruiting", a real research scientist role for the people/recruiting org)
-# that vetoing on "recruiting" would wrongly drop; "recruiter" never does,
-# confirmed dry-running this against all 29 boards' live postings.
+# "recruiting" -- the latter also shows up both as a trailing department-style
+# qualifier (Anthropic's "People Research Scientist, Recruiting", a real
+# research scientist role for the people/recruiting org) and as a leading
+# qualifier naming which org a genuine IC role supports (Anthropic's
+# "Recruiting Analytics Data Engineer", department "People" -- a real data
+# engineer role, not a recruiter) -- vetoing on "recruiting" would wrongly
+# drop both; "recruiter" never does, confirmed dry-running this against all
+# 29 boards' live postings.
 _RECRUITER_RE = re.compile(r"\brecruiter\b", re.IGNORECASE)
 
 # Same idea as the recruiter veto above: a Solutions Architect/Architecture
