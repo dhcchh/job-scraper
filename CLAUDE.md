@@ -229,6 +229,16 @@ use a small fake `Worksheet`.
   `SDE II`, and `L4/L5`) rather than classifying it as `Unspecified`.
 - If more than one person operates the production sheet, add a distributed
   lock; GitHub Actions concurrency cannot prevent an overlapping local run.
+- Add a `job_boards/eightfold/client.py` (Eightfold Talent Platform, e.g.
+  Millennium's careers page) the same way Greenhouse/Lever/Ashby/
+  SmartRecruiters were added. The production sheet already has Millennium
+  rows stamped `source="Eightfold"` with recent `scraped_date`s, but
+  `company_toml/*.toml` and this repo's entire git history have zero
+  mention of Millennium or Eightfold -- that data is coming from some
+  writer outside this codebase (possibly uncommitted/unpushed work on
+  another device, possibly a separate script). Once the real source is
+  found, port it into a proper client module here instead of leaving a
+  second, undocumented writer touching the same spreadsheet.
 
 ## Scale
 
