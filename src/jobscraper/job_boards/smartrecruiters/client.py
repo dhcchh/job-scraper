@@ -54,9 +54,10 @@ job_boards/greenhouse/client.py. Every Job returned here is stamped
 `source="SmartRecruiters"` -- a fixed literal, not anything read from the
 response -- see models.Job's docstring.
 
-Retries the same way as the Greenhouse/Lever/Ashby clients (transient
-failures, 3 attempts, exponential backoff) -- see that module's docstring
-for the reasoning, unchanged here. One difference worth knowing:
+Retries via job_boards._http.get_with_retries, the same shared retry policy
+(transient failures, 3 attempts, exponential backoff) every board client
+uses -- see that module's docstring for the reasoning. One difference worth
+knowing:
 SmartRecruiters returns HTTP 200 with `totalFound: 0` for a nonexistent
 company identifier rather than a 404 -- same "200 but empty" shape already
 called out for Lever in this project's board-adding workflow, not something
@@ -68,10 +69,15 @@ from __future__ import annotations
 
 import datetime
 import logging
-import time
 
+# Not called directly here anymore (job_boards._http.get_with_retries does
+# the actual GET) -- kept as the target
+# tests/smartrecruiters/test_client.py's monkeypatch.setattr(client.requests,
+# "get", ...) patches, since `requests` is the same module object wherever
+# it's imported, so patching it here still reaches _http's call.
 import requests
 
+from jobscraper.job_boards._http import get_with_retries
 from jobscraper.models import Job, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
@@ -80,10 +86,6 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.smartrecruiters.com/v1/companies"
 JOBS_SITE_URL = "https://jobs.smartrecruiters.com"
-
-# Same reasoning and values as job_boards/greenhouse/client.py.
-_MAX_ATTEMPTS = 3
-_BACKOFF_SECONDS = 2.0
 
 # The server's own cap -- requesting more (200, 500, ...) still returns 100
 # (confirmed against live Grab/Wise data), so fetch_smartrecruiters_jobs
@@ -150,7 +152,8 @@ def _fetch_all_pages(company_identifier: str, url: str) -> list[dict]:
     offset = 0
     total_found = None
     while total_found is None or offset < total_found:
-        response = _get_with_retries(
+        response = get_with_retries(
+            "smartrecruiters",
             company_identifier,
             url,
             params={"offset": offset, "limit": _PAGE_LIMIT},
@@ -163,47 +166,6 @@ def _fetch_all_pages(company_identifier: str, url: str) -> list[dict]:
         postings.extend(page)
         offset += len(page)
     return postings
-
-
-def _get_with_retries(
-    company_identifier: str, url: str, *, params: dict
-) -> requests.Response:
-    """GET url, retrying transient failures with exponential backoff.
-
-    Identical policy to job_boards/greenhouse/client.py's helper of the same
-    name -- see that module's docstring for the reasoning.
-    """
-    attempt = 1
-    while True:
-        try:
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            return response
-        except (
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout,
-            requests.exceptions.HTTPError,
-        ) as exc:
-            if attempt >= _MAX_ATTEMPTS or not _is_retryable(exc):
-                raise
-            delay = _BACKOFF_SECONDS * (2 ** (attempt - 1))
-            logger.warning(
-                "smartrecruiters[%s]: attempt %d/%d failed (%s), retrying in %.0fs",
-                company_identifier,
-                attempt,
-                _MAX_ATTEMPTS,
-                exc,
-                delay,
-            )
-            time.sleep(delay)
-            attempt += 1
-
-
-def _is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, requests.exceptions.HTTPError):
-        status = exc.response.status_code if exc.response is not None else None
-        return status is not None and (status >= 500 or status == 429)
-    return isinstance(exc, (requests.exceptions.ConnectionError, requests.exceptions.Timeout))
 
 
 def _to_job(

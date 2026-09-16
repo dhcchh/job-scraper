@@ -60,28 +60,29 @@ job_boards/greenhouse/client.py. Every Job returned here is stamped
 `source="Eightfold"` -- a fixed literal, not anything read from the
 response -- see models.Job's docstring.
 
-Retries the same way as the other four clients (transient failures, 3
-attempts, exponential backoff) -- see job_boards/greenhouse/client.py's
-docstring for the reasoning, unchanged here.
+Retries via job_boards._http.get_with_retries, the same shared retry policy
+(transient failures, 3 attempts, exponential backoff) every board client
+uses -- see that module's docstring for the reasoning.
 """
 
 from __future__ import annotations
 
 import datetime
 import logging
-import time
 
+# Not called directly here anymore (job_boards._http.get_with_retries does
+# the actual GET) -- kept as the target
+# tests/eightfold/test_client.py's monkeypatch.setattr(client.requests,
+# "get", ...) patches, since `requests` is the same module object wherever
+# it's imported, so patching it here still reaches _http's call.
 import requests
 
+from jobscraper.job_boards._http import get_with_retries
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
 
 logger = logging.getLogger(__name__)
-
-# Same reasoning and values as job_boards/greenhouse/client.py.
-_MAX_ATTEMPTS = 3
-_BACKOFF_SECONDS = 2.0
 
 # The server's own fixed page size -- requesting more (50, 100, ...) still
 # returns 10 (confirmed against Millennium's live board), so
@@ -145,8 +146,8 @@ def _fetch_all_pages(board_slug: str, url: str) -> list[dict]:
     start = 0
     total: int | None = None
     while total is None or start < total:
-        response = _get_with_retries(
-            board_slug, url, params={"start": start, "num": _PAGE_SIZE}
+        response = get_with_retries(
+            "eightfold", board_slug, url, params={"start": start, "num": _PAGE_SIZE}
         )
         payload = response.json()
         total = payload.get("count", 0)
@@ -156,45 +157,6 @@ def _fetch_all_pages(board_slug: str, url: str) -> list[dict]:
         positions.extend(page)
         start += len(page)
     return positions
-
-
-def _get_with_retries(board_slug: str, url: str, *, params: dict) -> requests.Response:
-    """GET url, retrying transient failures with exponential backoff.
-
-    Identical policy to job_boards/greenhouse/client.py's helper of the same
-    name -- see that module's docstring for the reasoning.
-    """
-    attempt = 1
-    while True:
-        try:
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            return response
-        except (
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout,
-            requests.exceptions.HTTPError,
-        ) as exc:
-            if attempt >= _MAX_ATTEMPTS or not _is_retryable(exc):
-                raise
-            delay = _BACKOFF_SECONDS * (2 ** (attempt - 1))
-            logger.warning(
-                "eightfold[%s]: attempt %d/%d failed (%s), retrying in %.0fs",
-                board_slug,
-                attempt,
-                _MAX_ATTEMPTS,
-                exc,
-                delay,
-            )
-            time.sleep(delay)
-            attempt += 1
-
-
-def _is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, requests.exceptions.HTTPError):
-        status = exc.response.status_code if exc.response is not None else None
-        return status is not None and (status >= 500 or status == 429)
-    return isinstance(exc, (requests.exceptions.ConnectionError, requests.exceptions.Timeout))
 
 
 def _to_job(

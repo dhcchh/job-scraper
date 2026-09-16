@@ -8,7 +8,11 @@ tab, prune closed ones.
 Loops over GREENHOUSE_BOARDS, then LEVER_BOARDS, then ASHBY_BOARDS, then
 SMARTRECRUITERS_BOARDS, then EIGHTFOLD_BOARDS, from config -- one board at a
 time within each, no concurrency, since this runs once a day and there's no
-rate-limit pressure at this scale. All five loops feed the same
+rate-limit pressure at this scale. The five board types share one loop body
+(see run()'s board_sources), each entry pairing its config board list with
+its own fetch_<board>_jobs function and a lowercase source label for the
+"skipped this board" log line -- the five board types differ only in which
+board list/fetch function/label that is. All five feed the same
 all_jobs/succeeded_firms/failed_firms accumulators, so a firm's board type
 is otherwise invisible past this point -- prune_closed_postings only ever
 reasons about firms. A board whose fetch fails
@@ -112,97 +116,43 @@ def run() -> None:
         "writing to spreadsheet %r (%s)", spreadsheet.title, spreadsheet.url
     )
 
+    # Built fresh on every run() call (not a module-level constant) so a
+    # test's monkeypatch.setattr(main, "fetch_greenhouse_jobs", ...) /
+    # monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", ...) -- which
+    # rebind names in this module's/config's own namespace -- are picked up:
+    # each entry below is a fresh lookup of those names at call time, not a
+    # reference captured once at import time.
+    board_sources = (
+        ("greenhouse", config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),
+        ("lever", config.LEVER_BOARDS, fetch_lever_jobs),
+        ("ashby", config.ASHBY_BOARDS, fetch_ashby_jobs),
+        ("smartrecruiters", config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
+        ("eightfold", config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
+    )
+
     all_jobs: list[Job] = []
     succeeded_firms: set[str] = set()
     failed_firms: set[str] = set()
     succeeded_entries = 0
-    for board in config.GREENHOUSE_BOARDS:
-        firm = board["firm"]
-        try:
-            jobs = fetch_greenhouse_jobs(board["token"], firm, board["company_type"])
-        except Exception:
-            logger.exception(
-                "greenhouse[%s]: failed to fetch after retries, skipping this "
-                "board for the rest of the run",
-                firm,
-            )
-            failed_firms.add(firm)
-            continue
-        all_jobs.extend(jobs)
-        succeeded_firms.add(firm)
-        succeeded_entries += 1
+    for source, boards, fetch in board_sources:
+        for board in boards:
+            firm = board["firm"]
+            try:
+                jobs = fetch(board["token"], firm, board["company_type"])
+            except Exception:
+                logger.exception(
+                    "%s[%s]: failed to fetch after retries, skipping this "
+                    "board for the rest of the run",
+                    source,
+                    firm,
+                )
+                failed_firms.add(firm)
+                continue
+            all_jobs.extend(jobs)
+            succeeded_firms.add(firm)
+            succeeded_entries += 1
 
-    for board in config.LEVER_BOARDS:
-        firm = board["firm"]
-        try:
-            jobs = fetch_lever_jobs(board["token"], firm, board["company_type"])
-        except Exception:
-            logger.exception(
-                "lever[%s]: failed to fetch after retries, skipping this "
-                "board for the rest of the run",
-                firm,
-            )
-            failed_firms.add(firm)
-            continue
-        all_jobs.extend(jobs)
-        succeeded_firms.add(firm)
-        succeeded_entries += 1
-
-    for board in config.ASHBY_BOARDS:
-        firm = board["firm"]
-        try:
-            jobs = fetch_ashby_jobs(board["token"], firm, board["company_type"])
-        except Exception:
-            logger.exception(
-                "ashby[%s]: failed to fetch after retries, skipping this "
-                "board for the rest of the run",
-                firm,
-            )
-            failed_firms.add(firm)
-            continue
-        all_jobs.extend(jobs)
-        succeeded_firms.add(firm)
-        succeeded_entries += 1
-
-    for board in config.SMARTRECRUITERS_BOARDS:
-        firm = board["firm"]
-        try:
-            jobs = fetch_smartrecruiters_jobs(board["token"], firm, board["company_type"])
-        except Exception:
-            logger.exception(
-                "smartrecruiters[%s]: failed to fetch after retries, skipping this "
-                "board for the rest of the run",
-                firm,
-            )
-            failed_firms.add(firm)
-            continue
-        all_jobs.extend(jobs)
-        succeeded_firms.add(firm)
-        succeeded_entries += 1
-
-    for board in config.EIGHTFOLD_BOARDS:
-        firm = board["firm"]
-        try:
-            jobs = fetch_eightfold_jobs(board["token"], firm, board["company_type"])
-        except Exception:
-            logger.exception(
-                "eightfold[%s]: failed to fetch after retries, skipping this "
-                "board for the rest of the run",
-                firm,
-            )
-            failed_firms.add(firm)
-            continue
-        all_jobs.extend(jobs)
-        succeeded_firms.add(firm)
-        succeeded_entries += 1
-
-    total_boards = (
-        len(config.GREENHOUSE_BOARDS)
-        + len(config.LEVER_BOARDS)
-        + len(config.ASHBY_BOARDS)
-        + len(config.SMARTRECRUITERS_BOARDS)
-        + len(config.EIGHTFOLD_BOARDS)
-    )
+    total_boards = sum(len(boards) for _source, boards, _fetch in board_sources)
 
     # A firm can have more than one board token (e.g. Optiver has two) --
     # only treat a firm as "fully fetched" this run if every one of its
