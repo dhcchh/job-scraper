@@ -9,3 +9,8 @@ company_type = "Consumer/Marketplace"
 token = "Wise"
 firm = "Wise"
 company_type = "Fintech"
+
+[[boards]]
+token = "Canva"
+firm = "Canva"
+company_type = "Enterprise/Productivity Software"

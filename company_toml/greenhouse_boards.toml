@@ -219,3 +219,13 @@ company_type = "Prop Trading/Hedge Fund"
 token = "exoduspoint"
 firm = "ExodusPoint"
 company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "agoda"
+firm = "Agoda"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "vercel"
+firm = "Vercel"
+company_type = "Data/Cloud Infrastructure"
