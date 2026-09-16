@@ -22,3 +22,8 @@ company_type = "Prop Trading/Hedge Fund"
 token = "csit"
 firm = "CSIT"
 company_type = "Government/Defense Tech"
+
+[[boards]]
+token = "belvederetrading"
+firm = "Belvedere Trading"
+company_type = "Prop Trading/Hedge Fund"

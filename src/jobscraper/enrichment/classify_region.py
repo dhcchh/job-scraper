@@ -79,6 +79,10 @@ _EXCLUDED_COUNTRIES = {
     "Uruguay",
 }
 
+assert not (_PAC_COUNTRIES & _EXCLUDED_COUNTRIES), (
+    "a country can't be both a PAC country and a deliberate exclusion"
+)
+
 
 def _offices(location: str) -> list[str]:
     """`location` split on " | " into its individual, stripped offices,

@@ -45,6 +45,24 @@ def test_classify_region_tolerates_missing_spaces_around_pipe():
     assert classify_region("Singapore|London, United Kingdom") == "PAC"
 
 
+@pytest.mark.parametrize(
+    "location",
+    [
+        "Hanoi, Vietnam",
+        "Ho Chi Minh City, Vietnam",
+        "Kuala Lumpur, Malaysia",
+        "Jakarta, Indonesia",
+        "Pasig City, Philippines",
+        "Phnom Penh, Cambodia",
+    ],
+)
+def test_classify_region_deliberately_excluded_countries_are_row(location):
+    # These have real posting volume (Grab, WorldQuant) but are kept out of
+    # PAC on purpose -- Thailand is the one ASEAN exception, see
+    # _PAC_COUNTRIES in classify_region.py.
+    assert classify_region(location) == "RoW"
+
+
 def test_tab_name_format():
     assert tab_name("SWE/DE", "PAC") == "SWE/DE - PAC"
     assert tab_name("QT/QR", "RoW") == "QT/QR - RoW"

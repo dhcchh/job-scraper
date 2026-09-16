@@ -119,6 +119,17 @@ def test_classify_job_does_not_veto_recruiting_as_a_department_qualifier():
     assert classify_job(_job("People Research Scientist, Recruiting")) == "DS/ML/Algos"
 
 
+def test_classify_job_does_not_veto_recruiting_as_a_leading_qualifier():
+    # Same veto-avoidance as above, opposite word order: "Recruiting" can
+    # also lead a genuine IC title, naming the org the role supports rather
+    # than being the role itself -- confirmed on Anthropic's live Greenhouse
+    # board ("Recruiting Analytics Data Engineer", department "People", a
+    # real data engineer role, not a recruiter).
+    assert classify_job(
+        _job("Recruiting Analytics Data Engineer", department="People")
+    ) == "SWE/DE"
+
+
 def test_classify_job_vetoes_solutions_architect_even_with_a_real_keyword():
     # Confirmed on Cloudflare's live Greenhouse board: both titles matched
     # SWE/DE's bare "developer" keyword via their own trailing "(Developer

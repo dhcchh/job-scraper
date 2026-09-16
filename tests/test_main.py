@@ -1,7 +1,8 @@
 """Tests for main.run()'s per-board error handling, startup spreadsheet-id
 logging, and end-of-run job summary.
 
-fetch_greenhouse_jobs/fetch_lever_jobs/fetch_ashby_jobs, get_spreadsheet,
+fetch_greenhouse_jobs/fetch_lever_jobs/fetch_ashby_jobs/
+fetch_smartrecruiters_jobs/fetch_eightfold_jobs, get_spreadsheet,
 get_worksheet, append_jobs and
 prune_closed_postings are all monkeypatched here -- this exercises only
 run()'s own orchestration (which boards it treats as "fetched" for pruning
@@ -408,6 +409,70 @@ def test_run_treats_a_failed_smartrecruiters_board_like_a_failed_greenhouse_boar
     assert all(fetched_boards == set() for fetched_boards in prune_calls)
 
 
+def test_run_fetches_and_merges_eightfold_boards_alongside_greenhouse(monkeypatch):
+    monkeypatch.setattr(
+        main.config,
+        "GREENHOUSE_BOARDS",
+        [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}],
+    )
+
+    gh_job = _job("Acme", "1", location="Singapore")
+    ef_job = _job("Millennium", "2", location="London, United Kingdom")
+
+    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(
+        main, "fetch_eightfold_jobs", lambda token, firm, company_type: [ef_job]
+    )
+
+    prune_calls: list[set[str]] = []
+    append_calls: list[tuple] = []
+    _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
+    # Override _patch_sheet_functions' empty-by-default EIGHTFOLD_BOARDS --
+    # this test specifically exercises the Eightfold loop.
+    monkeypatch.setattr(
+        main.config,
+        "EIGHTFOLD_BOARDS",
+        [{"token": "mlp", "firm": "Millennium", "company_type": "Prop Trading/Hedge Fund"}],
+    )
+
+    main.run()
+
+    assert all(fetched_boards == {"Acme", "Millennium"} for fetched_boards in prune_calls)
+    pac_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - PAC"
+    )
+    row_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - RoW"
+    )
+    assert pac_jobs == [gh_job]
+    assert row_jobs == [ef_job]
+
+
+def test_run_treats_a_failed_eightfold_board_like_a_failed_greenhouse_board(monkeypatch):
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [])
+
+    def fake_fetch_eightfold_jobs(token, firm, company_type):
+        raise RuntimeError("eightfold down")
+
+    monkeypatch.setattr(main, "fetch_eightfold_jobs", fake_fetch_eightfold_jobs)
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    # Override _patch_sheet_functions' empty-by-default EIGHTFOLD_BOARDS --
+    # this test specifically exercises the Eightfold loop's failure handling.
+    monkeypatch.setattr(
+        main.config,
+        "EIGHTFOLD_BOARDS",
+        [{"token": "bad", "firm": "BadCo", "company_type": "Big Tech"}],
+    )
+
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
+
+    assert prune_calls
+    assert all(fetched_boards == set() for fetched_boards in prune_calls)
+
+
 def test_run_treats_a_failed_ashby_board_like_a_failed_greenhouse_board(monkeypatch):
     monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [])
 
@@ -669,6 +734,42 @@ def test_run_sends_telegram_digest_with_newly_appended_pac_jobs(monkeypatch):
     assert new_jobs["DA/BI"] == [da_bi_job]
     assert new_jobs["SWE/DE"] == []
     assert new_jobs["DS/ML/Algos"] == []
+
+
+def test_run_excludes_deliberately_excluded_countries_from_pac_digest(monkeypatch):
+    # Regression test: Vietnam (and the other Southeast Asian countries in
+    # classify_region._EXCLUDED_COUNTRIES) previously counted as PAC, so
+    # postings from Grab/WorldQuant/etc. in Hanoi/Ho Chi Minh City/Kuala
+    # Lumpur/... were showing up in the PAC-only Telegram digest.
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    vietnam_job = _job(
+        "Acme", "1", title="Software Engineer", location="Hanoi, Vietnam"
+    )
+    malaysia_job = _job(
+        "Acme", "2", title="Software Engineer", location="Kuala Lumpur, Malaysia"
+    )
+    monkeypatch.setattr(
+        main,
+        "fetch_greenhouse_jobs",
+        lambda token, firm, company_type: [vietnam_job, malaysia_job],
+    )
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+
+    digest_calls = []
+    monkeypatch.setattr(
+        main,
+        "send_digest",
+        lambda new_jobs, spreadsheet_url: digest_calls.append(new_jobs),
+    )
+
+    main.run()
+
+    (new_jobs,) = digest_calls
+    assert new_jobs["SWE/DE"] == []
 
 
 def test_run_sends_telegram_digest_even_on_partial_failure(monkeypatch):

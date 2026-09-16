@@ -247,6 +247,7 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
         (config.LEVER_BOARDS, fetch_lever_jobs),
         (config.ASHBY_BOARDS, fetch_ashby_jobs),
         (config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
+        (config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
     ):
         for board in board_list:
             firm = board["firm"]
@@ -262,29 +263,6 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
                 continue
             for job in jobs:
                 overrides[(job.board, job.job_id)] = job
-
-    # Eightfold needs an extra `domain` positional arg (see
-    # job_boards/eightfold/client.py's module docstring) that the other
-    # four board types don't, so it can't share the uniform
-    # (token, firm, company_type) call shape the loop above uses -- handled
-    # as its own small loop instead of forcing an awkward adapter into that
-    # shared shape.
-    for board in config.EIGHTFOLD_BOARDS:
-        firm = board["firm"]
-        try:
-            jobs = fetch_eightfold_jobs(
-                board["token"], board["domain"], firm, board["company_type"]
-            )
-        except Exception:
-            logger.warning(
-                "refresh: couldn't re-fetch %s for location/first_published"
-                "/description overrides, its rows keep whatever they "
-                "already have",
-                firm,
-            )
-            continue
-        for job in jobs:
-            overrides[(job.board, job.job_id)] = job
     return overrides
 
 

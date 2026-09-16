@@ -69,3 +69,13 @@ company_type = "Data/Cloud Infrastructure"
 token = "cantina"
 firm = "Cantina"
 company_type = "AI Lab"
+
+[[boards]]
+token = "cognition"
+firm = "Cognition"
+company_type = "Applied AI Products"
+
+[[boards]]
+token = "voleon"
+firm = "The Voleon Group"
+company_type = "Prop Trading/Hedge Fund"

@@ -417,14 +417,7 @@ def test_fetch_overrides_merges_greenhouse_lever_ashby_smartrecruiters_and_eight
     monkeypatch.setattr(
         backfill.config,
         "EIGHTFOLD_BOARDS",
-        [
-            {
-                "token": "ef",
-                "firm": "EightfoldCo",
-                "company_type": "Big Tech",
-                "domain": "eightfoldco.com",
-            }
-        ],
+        [{"token": "ef", "firm": "EightfoldCo", "company_type": "Big Tech"}],
     )
 
     gh_job = _job_stub("GreenhouseCo", "1", "Singapore")
@@ -448,7 +441,7 @@ def test_fetch_overrides_merges_greenhouse_lever_ashby_smartrecruiters_and_eight
     monkeypatch.setattr(
         backfill,
         "fetch_eightfold_jobs",
-        lambda token, domain, firm, company_type: [eightfold_job],
+        lambda token, firm, company_type: [eightfold_job],
     )
 
     overrides = backfill._fetch_overrides()

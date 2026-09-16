@@ -201,6 +201,31 @@ firm = "Adyen"
 company_type = "Fintech"
 
 [[boards]]
+token = "imc"
+firm = "IMC Trading"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "dvtrading"
+firm = "DV Trading"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "oldmissioncapital"
+firm = "Old Mission"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "pdtpartners"
+firm = "PDT Partners"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "exoduspoint"
+firm = "ExodusPoint"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
 token = "vercel"
 firm = "Vercel"
 company_type = "Data/Cloud Infrastructure"

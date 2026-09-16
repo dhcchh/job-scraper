@@ -19,8 +19,9 @@ load_dotenv()
 # than as one long comma-separated string. Grouped under company_toml/
 # (rather than the repo root) so the root isn't cluttered as more board
 # platforms are added -- see company_toml/greenhouse_boards.toml,
-# company_toml/lever_boards.toml, company_toml/ashby_boards.toml, and
-# company_toml/smartrecruiters_boards.toml themselves.
+# company_toml/lever_boards.toml, company_toml/ashby_boards.toml,
+# company_toml/smartrecruiters_boards.toml, and
+# company_toml/eightfold_boards.toml themselves.
 _COMPANY_TOML_DIR = Path(__file__).resolve().parents[2] / "company_toml"
 _BOARDS_FILE = _COMPANY_TOML_DIR / "greenhouse_boards.toml"
 _LEVER_BOARDS_FILE = _COMPANY_TOML_DIR / "lever_boards.toml"
@@ -32,17 +33,11 @@ _EIGHTFOLD_BOARDS_FILE = _COMPANY_TOML_DIR / "eightfold_boards.toml"
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
 
 
-def _load_boards(path: Path, *, extra_required: tuple[str, ...] = ()) -> list[dict]:
-    """`extra_required` adds board-type-specific required fields on top of
-    the universal token/firm/company_type -- e.g. Eightfold's `domain` (see
-    company_toml/eightfold_boards.toml and job_boards/eightfold/client.py's
-    module docstring for why that board type needs a second identifier the
-    other three don't)."""
-    required = _REQUIRED_BOARD_FIELDS + extra_required
+def _load_boards(path: Path) -> list[dict]:
     with open(path, "rb") as f:
         boards = tomllib.load(f)["boards"]
     for index, board in enumerate(boards, start=1):
-        missing = [field for field in required if not board.get(field)]
+        missing = [field for field in _REQUIRED_BOARD_FIELDS if not board.get(field)]
         if missing:
             identifier = board.get("firm") or board.get("token") or f"#{index}"
             raise ValueError(
@@ -67,18 +62,9 @@ ASHBY_BOARDS: list[dict] = _load_boards(_ASHBY_BOARDS_FILE)
 # (jobs.smartrecruiters.com/<token>), same idea as Lever's/Ashby's slug.
 SMARTRECRUITERS_BOARDS: list[dict] = _load_boards(_SMARTRECRUITERS_BOARDS_FILE)
 
-# Eightfold's `token` is its per-company subdomain
-# (<token>.eightfold.ai), same idea as Lever's/Ashby's slug -- but this
-# board type also requires `domain` (the company's own domain, e.g.
-# "mlp.com"), a second identifier the Eightfold API itself needs as a query
-# param and the other three board types don't. See
-# job_boards/eightfold/client.py's module docstring for why, and for real
-# constraints on this board type the other four don't have (no documented
-# public API contract, only confirmed working for one live deployment, a
-# hard 10-per-page pagination cap).
-EIGHTFOLD_BOARDS: list[dict] = _load_boards(
-    _EIGHTFOLD_BOARDS_FILE, extra_required=("domain",)
-)
+# Same shape again -- Eightfold's `token` is a company's own Eightfold
+# subdomain (<token>.eightfold.ai), same idea as Ashby's/Lever's slug.
+EIGHTFOLD_BOARDS: list[dict] = _load_boards(_EIGHTFOLD_BOARDS_FILE)
 
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit

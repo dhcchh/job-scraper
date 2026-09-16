@@ -44,11 +44,10 @@ use a small fake `Worksheet`.
   `_load_boards` validates every `[[boards]]` entry has `token`, `firm`, and
   `company_type` at import time, raising `ValueError` naming the offending
   entry and field(s) rather than letting a typo surface as a `KeyError` deep
-  in `main.py`'s fetch loop. Eightfold's boards file also requires `domain`
-  (via `_load_boards`' `extra_required` param) -- that board's API needs
-  both the company's Eightfold subdomain (`token`) and its own domain
-  (`domain`) as a query param, unlike the other four board types' single
-  identifier; see `job_boards/eightfold/client.py`.
+  in `main.py`'s fetch loop. All five board types need only that same
+  `token`/`firm`/`company_type` shape -- Eightfold's `token` is its own
+  subdomain (`<token>.eightfold.ai`), same idea as Lever's/Ashby's slug; see
+  `job_boards/eightfold/client.py`.
 - `Job` in `models.py` is the shared data shape. Keep `FIELDS`,
   `Job.to_row()`, and the sheet header aligned. The row identity is
   `(board, job_id)`, not `job_id` alone, because Greenhouse IDs are tenant
@@ -59,9 +58,9 @@ use a small fake `Worksheet`.
   `board`, which is the firm's name -- and is stamped as a fixed literal by
   each `job_boards/*/client.py`, not read from any API response.
   `description` is the full JD text, but ONLY for a firm in
-  `models.FIRMS_NEEDING_DESCRIPTION` -- currently just Qube Research &
-  Technologies and Squarepoint, the two confirmed cases whose own apply
-  page can't be trusted to show the JD at all (Qube's JD only ever lands
+  `models.FIRMS_NEEDING_DESCRIPTION` -- currently just QRT (Qube Research &
+  Technologies) and Squarepoint, the two confirmed cases whose own apply
+  page can't be trusted to show the JD at all (QRT's JD only ever lands
   in a client-side hydration blob, invisible/unsearchable on the rendered
   page; Squarepoint's `absolute_url` redirects to a generic careers
   listing rather than the specific posting). Every other posting's
@@ -80,9 +79,14 @@ use a small fake `Worksheet`.
   `first_published, updated_at, board, title, location, seniority,
   company_type, url, department, job_id, scraped_date, source,
   description` (columns A-M) -- see `models.py`'s `FIELDS` comment for why.
+- All five board clients share one retry helper,
+  `job_boards/_http.get_with_retries` (3 attempts, exponential 2s/4s
+  backoff, retrying only a connection error/timeout or a 5xx/429
+  HTTPError -- anything else, e.g. a bad/renamed board token, raises
+  immediately) -- tested once in `tests/job_boards/test_http.py` rather
+  than once per board. `main.py` logs and skips a board whose fetch still
+  fails after those retries, so it cannot trigger false pruning elsewhere.
 - `greenhouse/client.py` fetches the public Job Board API with `content=true`.
-  It retries transient failures three times; `main.py` logs and skips a board
-  that still fails so it cannot trigger false pruning elsewhere.
 - `lever/client.py` fetches the public Postings API (`?mode=json`) the same
   way, with the same retry/skip behavior. Lever's response has no edited-at
   timestamp at all, so `first_published` comes from `createdAt` and
@@ -115,47 +119,64 @@ use a small fake `Worksheet`.
   against live postings) rather than read from a field, since the list
   response's own `ref` field is the API endpoint URL, not a candidate-facing
   page. A SmartRecruiters posting is only ever open in one office (a single
-  `location` object, not a pre-split per-office array like the other three
+  `location` object, not a pre-split per-office array like the other four
   boards), so its client's `_location` normalizes just `location.city` with
   no `" | "`-joining needed.
-- `eightfold/client.py` fetches `https://<subdomain>.eightfold.ai/api/apply/
-  v2/jobs`, a real but UNDOCUMENTED endpoint -- found by inspecting a real
-  customer's (Millennium's, at mlp.eightfold.ai) own rendered careers page,
-  not a published API contract, so unlike the other four boards there is no
-  guarantee Eightfold won't change its shape or start requiring auth
-  without notice. Constraints this board type has that the other four
-  don't: (1) it needs BOTH a subdomain (`token`) and the company's own
-  domain (`domain`) as a query param -- a mismatched pairing 403s rather
-  than 404s; (2) the server ignores the requested page size and always
-  returns exactly 10 postings per page (confirmed up to `num=100`), so a
+- `eightfold/client.py` fetches a company's own Eightfold Apply API
+  (`<slug>.eightfold.ai/api/apply/v2/jobs`), same retry/skip behavior --
+  confirmed against Millennium's live board (`mlp`). This is a real but
+  UNDOCUMENTED endpoint -- found by inspecting a real customer's rendered
+  careers page, not a published API contract, so unlike the other four
+  boards there is no guarantee Eightfold won't change its shape or start
+  requiring auth without notice. Unlike the other four boards, there is no
+  single shared host: each company gets its own Eightfold subdomain, so
+  `token` (company_toml/eightfold_boards.toml) is that subdomain, not a
+  path segment off a common base URL -- a `domain` query param (the
+  company's own corporate domain) shows up in the site's own browser
+  traffic, but confirmed identical responses with and without it (and a
+  wrong domain 404s rather than 403s), so it's left off rather than
+  carrying a second, redundant identifier per board in company_toml.
+  Paginated via `start`/`num`, but the server always returns exactly 10
+  positions per page regardless of what `num` asks for (confirmed
+  requesting up to 500), so the client pages in fixed strides of 10 using
+  the response's own `count` as the stopping point, not a
+  client-chosen/server-capped page size like SmartRecruiters', meaning a
   firm with Millennium's ~230 open postings costs ~23 requests where a
-  similarly-sized Greenhouse/Ashby board costs 1-3; (3) most Eightfold
-  tenants block this query pattern outright -- confirmed, not just
-  suspected: of 7 real, verified Eightfold-hosted firms tried (found via
-  each one's own actual careers page, not a guessed subdomain), only
-  Millennium and Albemarle were reachable this way; Morgan Stanley,
-  Micron, Eaton, and Vodafone all returned the same 403
-  `{"message": "Not authorized for ..."}` even with the exact
-  subdomain/domain pairing taken from their own live page. Each Eightfold
-  tenant clearly configures its own WAF/bot-protection independently, so a
-  new Eightfold firm needs its own dry-run before being added, same as
-  every other board type's "Adding a board" workflow -- expect roughly 2
-  in 7 to actually work, not an assumption it'll work because Millennium's
-  does.
-  Unlike Lever/Ashby/SmartRecruiters, it DOES expose a real edited-at
-  signal (`t_update`, alongside `t_create`) -- both Unix epoch seconds, not
-  an ISO 8601 string like every other board here -- so `updated_at` is
-  populated same as Greenhouse's. `locations` is already pre-split like the
-  other boards' per-office lists, but each entry already comes as "City,
-  Country" (sometimes "City, Region, Country") rather than a bare city
-  name; `job_id` is Eightfold's own internal numeric `id` (what
+  similarly-sized Greenhouse/Ashby board costs 1-3. Most Eightfold tenants
+  block this query pattern outright -- confirmed, not just suspected: of 7
+  real, verified Eightfold-hosted firms tried (found via each one's own
+  actual careers page, not a guessed subdomain), only Millennium and
+  Albemarle were reachable this way; Morgan Stanley, Micron, Eaton, and
+  Vodafone all returned the same 403 `{"message": "Not authorized for
+  ..."}` even from their own live subdomain. Each Eightfold tenant clearly
+  configures its own WAF/bot-protection independently, so a new Eightfold
+  firm needs its own dry-run before being added, same as every other board
+  type's "Adding a board" workflow -- expect roughly 2 in 7 to actually
+  work, not an assumption it'll work because Millennium's does.
+  Unlike Lever/Ashby/SmartRecruiters, Eightfold gives a genuine `t_update`
+  separate from `t_create` (both Unix epoch seconds, confirmed differing on
+  real Millennium postings), so both `first_published` and `updated_at` are
+  populated, same as Greenhouse. `department` is a plain, always-populated
+  top-level string. `locations[]` is Eightfold's own pre-split per-office
+  list (same role as the other boards' own pre-split location fields) but
+  each entry is itself a hierarchical `"City, Region, Country"` string
+  rather than a bare city -- `_location` keeps just the leading city
+  segment before normalizing, since normalize_location.py's table is keyed
+  by bare cities and already knows the right country; this is also what
+  collapses Eightfold's own redundant `"Tokyo, Tokyo, Japan"`/`"Shanghai,
+  Shanghai, China"` duplication into the clean form every other board
+  already produces, with no changes needed to normalize_location.py
+  itself. `job_id` is Eightfold's own internal numeric `id` (what
   `canonicalPositionUrl` is keyed on), not `ats_job_id` (the underlying
-  company ATS's own requisition number, e.g. "REQ-30793").
+  company ATS's own requisition number, e.g. "REQ-30793"). The list
+  endpoint's own `job_description` is always `""` on every live posting
+  checked, so `description` stays unconditionally `""` here too (no live
+  Eightfold board is in `FIRMS_NEEDING_DESCRIPTION`).
 - Build locations from Greenhouse's `offices[]`, Lever's
   `categories.allLocations`, Ashby's `location` +
   `secondaryLocations[].location`, SmartRecruiters' single `location.city`,
-  or Eightfold's `locations`, normalize each office, remove duplicates,
-  then join with `" | "`. Do not
+  or Eightfold's `locations[]` (leading city segment only -- see above),
+  normalize each office, remove duplicates, then join with `" | "`. Do not
   split `location.name`/`categories.location` by commas: it is free text.
   `normalize_location.py` intentionally falls back to a cleaned unknown
   value rather than guessing. Add a canonical mapping before treating a new
@@ -186,17 +207,19 @@ use a small fake `Worksheet`.
 - `classify_region.is_excluded` is a separate, stricter gate than PAC/RoW:
   Vietnam, Malaysia, Indonesia, India, Armenia, and Uruguay are excluded
   entirely -- not posted at all, PAC or RoW -- because pay isn't
-  comparable to Singapore's and there's no incentive to relocate there.
-  Unlike `classify_region`'s
-  "any office is PAC" precedence, `is_excluded` requires EVERY office in a
-  (possibly `" | "`-joined) location to be excluded before dropping the
-  whole posting -- a job listing Hanoi alongside Singapore or even just
-  London still has a real, keepable office, so it's kept and classified
-  normally. `main.py`'s per-job loop checks this right after
-  `classify_job` finds a category (a noise job is already dropped by then,
-  so its location is never checked) and before `classify_region` ever
-  runs, incrementing its own `excluded_count` separate from `noise_count`
-  in both the log line and `_build_summary_markdown`.
+  comparable to Singapore's and there's no incentive to relocate there. A
+  module-level assertion keeps `_PAC_COUNTRIES` and `_EXCLUDED_COUNTRIES`
+  disjoint so a country can't silently end up in both. Unlike
+  `classify_region`'s "any office is PAC" precedence, `is_excluded`
+  requires EVERY office in a (possibly `" | "`-joined) location to be
+  excluded before dropping the whole posting -- a job listing Hanoi
+  alongside Singapore or even just London still has a real, keepable
+  office, so it's kept and classified normally. `main.py`'s per-job loop
+  checks this right after `classify_job` finds a category (a noise job is
+  already dropped by then, so its location is never checked) and before
+  `classify_region` ever runs, incrementing its own `excluded_count`
+  separate from `noise_count` in both the log line and
+  `_build_summary_markdown`.
   `sheets/full_refresh.py` applies the same check when reclassifying an
   existing row and, unlike its conservative "leave it in place" handling
   of a row whose category becomes `None`, actually removes a

@@ -45,47 +45,6 @@ def test_load_boards_raises_on_missing_field(tmp_path, missing_field):
         _load_boards(boards_file)
 
 
-def test_load_boards_raises_on_missing_extra_required_field(tmp_path):
-    # Eightfold's `domain` -- required on top of token/firm/company_type,
-    # see config.EIGHTFOLD_BOARDS -- validates the same way.
-    boards_file = tmp_path / "eightfold_boards.toml"
-    boards_file.write_text(
-        """
-        [[boards]]
-        token = "mlp"
-        firm = "Millennium"
-        company_type = "Prop Trading/Hedge Fund"
-        """
-    )
-
-    with pytest.raises(ValueError, match="domain"):
-        _load_boards(boards_file, extra_required=("domain",))
-
-
-def test_load_boards_parses_extra_required_field_when_present(tmp_path):
-    boards_file = tmp_path / "eightfold_boards.toml"
-    boards_file.write_text(
-        """
-        [[boards]]
-        token = "mlp"
-        firm = "Millennium"
-        company_type = "Prop Trading/Hedge Fund"
-        domain = "mlp.com"
-        """
-    )
-
-    boards = _load_boards(boards_file, extra_required=("domain",))
-
-    assert boards == [
-        {
-            "token": "mlp",
-            "firm": "Millennium",
-            "company_type": "Prop Trading/Hedge Fund",
-            "domain": "mlp.com",
-        }
-    ]
-
-
 def test_load_boards_error_identifies_entry_by_firm(tmp_path):
     boards_file = tmp_path / "greenhouse_boards.toml"
     boards_file.write_text(
