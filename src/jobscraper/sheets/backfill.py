@@ -339,24 +339,24 @@ def refresh_worksheet(
     old_index = {
         name: (header.index(name) if name in header else None) for name in FIELDS
     }
+    # One listing of the four board lists, not two -- company_type_by_firm
+    # and source_by_firm both derive from it below instead of each
+    # re-enumerating config.GREENHOUSE_BOARDS/LEVER_BOARDS/ASHBY_BOARDS/
+    # SMARTRECRUITERS_BOARDS on their own.
+    board_lists_with_source = (
+        (config.GREENHOUSE_BOARDS, "Greenhouse"),
+        (config.LEVER_BOARDS, "Lever"),
+        (config.ASHBY_BOARDS, "Ashby"),
+        (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
+    )
     company_type_by_firm = {
         board["firm"]: board["company_type"]
-        for board_list in (
-            config.GREENHOUSE_BOARDS,
-            config.LEVER_BOARDS,
-            config.ASHBY_BOARDS,
-            config.SMARTRECRUITERS_BOARDS,
-        )
+        for board_list, _source in board_lists_with_source
         for board in board_list
     }
     source_by_firm = {
         board["firm"]: source
-        for board_list, source in (
-            (config.GREENHOUSE_BOARDS, "Greenhouse"),
-            (config.LEVER_BOARDS, "Lever"),
-            (config.ASHBY_BOARDS, "Ashby"),
-            (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
-        )
+        for board_list, source in board_lists_with_source
         for board in board_list
     }
 

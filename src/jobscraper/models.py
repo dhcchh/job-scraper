@@ -222,11 +222,12 @@ class Job:
       the same reason as seniority's default -- test Job(...) calls that
       don't care about it.
     source: which board system this posting was fetched from -- "Greenhouse",
-      "Lever", or "Ashby" -- a fact about which client fetched it, not
-      something in the API response itself, so each job_boards/*/client.py
-      stamps it as a fixed literal in its own `_to_job` rather than reading
-      it from `raw`. Defaults to "" for the same reason as company_type's
-      default -- test Job(...) calls that don't care about it.
+      "Lever", "Ashby", or "SmartRecruiters" -- a fact about which client
+      fetched it, not something in the API response itself, so each
+      job_boards/*/client.py stamps it as a fixed literal in its own
+      `_to_job` rather than reading it from `raw`. Defaults to "" for the
+      same reason as company_type's default -- test Job(...) calls that
+      don't care about it.
     description: the full JD text, but ONLY for a firm in
       FIRMS_NEEDING_DESCRIPTION -- "" for every other posting, even though
       every client could technically assemble one. Board-specific in how

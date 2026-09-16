@@ -71,9 +71,14 @@ use a small fake `Worksheet`.
   `first_published, updated_at, board, title, location, seniority,
   company_type, url, department, job_id, scraped_date, source,
   description` (columns A-M) -- see `models.py`'s `FIELDS` comment for why.
+- All four board clients share one retry helper,
+  `job_boards/_http.get_with_retries` (3 attempts, exponential 2s/4s
+  backoff, retrying only a connection error/timeout or a 5xx/429
+  HTTPError -- anything else, e.g. a bad/renamed board token, raises
+  immediately) -- tested once in `tests/job_boards/test_http.py` rather
+  than once per board. `main.py` logs and skips a board whose fetch still
+  fails after those retries, so it cannot trigger false pruning elsewhere.
 - `greenhouse/client.py` fetches the public Job Board API with `content=true`.
-  It retries transient failures three times; `main.py` logs and skips a board
-  that still fails so it cannot trigger false pruning elsewhere.
 - `lever/client.py` fetches the public Postings API (`?mode=json`) the same
   way, with the same retry/skip behavior. Lever's response has no edited-at
   timestamp at all, so `first_published` comes from `createdAt` and
