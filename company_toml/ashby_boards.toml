@@ -59,3 +59,8 @@ company_type = "AI Lab"
 token = "cognition"
 firm = "Cognition"
 company_type = "AI Lab"
+
+[[boards]]
+token = "voleon"
+firm = "The Voleon Group"
+company_type = "Prop Trading/Hedge Fund"
