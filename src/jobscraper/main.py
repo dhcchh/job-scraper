@@ -6,16 +6,17 @@ tab, prune closed ones.
     uv run python -m jobscraper.main
 
 Loops over GREENHOUSE_BOARDS, then LEVER_BOARDS, then ASHBY_BOARDS, then
-SMARTRECRUITERS_BOARDS, from config -- one board at a time within each, no
-concurrency, since this runs once a day and there's no rate-limit pressure
-at this scale. All four loops feed the same
+SMARTRECRUITERS_BOARDS, then EIGHTFOLD_BOARDS, from config -- one board at a
+time within each, no concurrency, since this runs once a day and there's no
+rate-limit pressure at this scale. All five loops feed the same
 all_jobs/succeeded_firms/failed_firms accumulators, so a firm's board type
 is otherwise invisible past this point -- prune_closed_postings only ever
 reasons about firms. A board whose fetch fails
 (greenhouse.client.fetch_greenhouse_jobs/lever.client.fetch_lever_jobs/
-ashby.client.fetch_ashby_jobs/smartrecruiters.client.fetch_smartrecruiters_jobs
-already retry transient errors -- see those modules -- so what reaches here
-has exhausted those) is skipped for pruning; its
+ashby.client.fetch_ashby_jobs/smartrecruiters.client.fetch_smartrecruiters_jobs/
+eightfold.client.fetch_eightfold_jobs already retry transient errors -- see
+those modules -- so what reaches here has exhausted those) is skipped for
+pruning; its
 firm is left out of fetched_boards, so prune_closed_postings never mistakes
 "we couldn't check this board" for "everything on it just closed".
 Successful boards are still updated, then the process fails after writing
@@ -70,7 +71,7 @@ below.
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add a client module with its own fetch_<board>_jobs() ->
     list[Job], and extend the fetch loop below the same way Greenhouse,
-    Lever, Ashby, and SmartRecruiters already are.
+    Lever, Ashby, SmartRecruiters, and Eightfold already are.
   - more/edited categories: see enrichment/classify_roles.py's
     CATEGORIES -- add a keyword there, or a whole new category + matching
     spreadsheet tab (x2, one per region -- see classify_region.tab_name).
@@ -89,6 +90,7 @@ from jobscraper.enrichment.classify_region import (
 )
 from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
 from jobscraper.job_boards.ashby.client import fetch_ashby_jobs
+from jobscraper.job_boards.eightfold.client import fetch_eightfold_jobs
 from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs
 from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
@@ -178,11 +180,28 @@ def run() -> None:
         succeeded_firms.add(firm)
         succeeded_entries += 1
 
+    for board in config.EIGHTFOLD_BOARDS:
+        firm = board["firm"]
+        try:
+            jobs = fetch_eightfold_jobs(board["token"], firm, board["company_type"])
+        except Exception:
+            logger.exception(
+                "eightfold[%s]: failed to fetch after retries, skipping this "
+                "board for the rest of the run",
+                firm,
+            )
+            failed_firms.add(firm)
+            continue
+        all_jobs.extend(jobs)
+        succeeded_firms.add(firm)
+        succeeded_entries += 1
+
     total_boards = (
         len(config.GREENHOUSE_BOARDS)
         + len(config.LEVER_BOARDS)
         + len(config.ASHBY_BOARDS)
         + len(config.SMARTRECRUITERS_BOARDS)
+        + len(config.EIGHTFOLD_BOARDS)
     )
 
     # A firm can have more than one board token (e.g. Optiver has two) --
@@ -195,9 +214,9 @@ def run() -> None:
 
     logger.info(
         # succeeded_entries/total counts board TOKENS across
-        # GREENHOUSE_BOARDS, LEVER_BOARDS, and ASHBY_BOARDS; fetched_boards
-        # counts distinct FIRMS, which is smaller whenever one firm has
-        # multiple tokens
+        # GREENHOUSE_BOARDS, LEVER_BOARDS, ASHBY_BOARDS, SMARTRECRUITERS_BOARDS,
+        # and EIGHTFOLD_BOARDS; fetched_boards counts distinct FIRMS, which is
+        # smaller whenever one firm has multiple tokens
         # (e.g. Optiver) -- comparing that against the token count would
         # make a fully successful run misleadingly print e.g. "14/15".
         "fetched %d jobs total across %d/%d board(s)%s",

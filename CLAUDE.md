@@ -106,12 +106,40 @@ use a small fake `Worksheet`.
   against live postings) rather than read from a field, since the list
   response's own `ref` field is the API endpoint URL, not a candidate-facing
   page. A SmartRecruiters posting is only ever open in one office (a single
-  `location` object, not a pre-split per-office array like the other three
+  `location` object, not a pre-split per-office array like the other four
   boards), so its client's `_location` normalizes just `location.city` with
   no `" | "`-joining needed.
+- `eightfold/client.py` fetches a company's own Eightfold Apply API
+  (`<slug>.eightfold.ai/api/apply/v2/jobs`), same retry/skip behavior --
+  confirmed against Millennium's live board (`mlp`). Unlike the other four
+  boards, there is no single shared host: each company gets its own
+  Eightfold subdomain, so `token` (company_toml/eightfold_boards.toml) is
+  that subdomain, not a path segment off a common base URL. Paginated via
+  `start`/`num`, but the server always returns exactly 10 positions per
+  page regardless of what `num` asks for (confirmed requesting up to 500),
+  so the client pages in fixed strides of 10 using the response's own
+  `count` as the stopping point, not a client-chosen/server-capped page
+  size like SmartRecruiters'. Unlike Lever/Ashby/SmartRecruiters, Eightfold
+  gives a genuine `t_update` separate from `t_create` (both Unix epoch
+  seconds, confirmed differing on real Millennium postings), so both
+  `first_published` and `updated_at` are populated, same as Greenhouse.
+  `department` is a plain, always-populated top-level string. `locations[]`
+  is Eightfold's own pre-split per-office list (same role as the other
+  boards' own pre-split location fields) but each entry is itself a
+  hierarchical `"City, Region, Country"` string rather than a bare city --
+  `_location` keeps just the leading city segment before normalizing, since
+  normalize_location.py's table is keyed by bare cities and already knows
+  the right country; this is also what collapses Eightfold's own redundant
+  `"Tokyo, Tokyo, Japan"`/`"Shanghai, Shanghai, China"` duplication into the
+  clean form every other board already produces, with no changes needed to
+  normalize_location.py itself. The list endpoint's own `job_description`
+  is always `""` on every live posting checked, so `description` stays
+  unconditionally `""` here too (no live Eightfold board is in
+  `FIRMS_NEEDING_DESCRIPTION`).
 - Build locations from Greenhouse's `offices[]`, Lever's
   `categories.allLocations`, Ashby's `location` +
-  `secondaryLocations[].location`, or SmartRecruiters' single `location.city`,
+  `secondaryLocations[].location`, SmartRecruiters' single `location.city`,
+  or Eightfold's `locations[]` (leading city segment only -- see above),
   normalize each office, remove duplicates, then join with `" | "`. Do not
   split `location.name`/`categories.location` by commas: it is free text.
   `normalize_location.py` intentionally falls back to a cleaned unknown
@@ -229,16 +257,6 @@ use a small fake `Worksheet`.
   `SDE II`, and `L4/L5`) rather than classifying it as `Unspecified`.
 - If more than one person operates the production sheet, add a distributed
   lock; GitHub Actions concurrency cannot prevent an overlapping local run.
-- Add a `job_boards/eightfold/client.py` (Eightfold Talent Platform, e.g.
-  Millennium's careers page) the same way Greenhouse/Lever/Ashby/
-  SmartRecruiters were added. The production sheet already has Millennium
-  rows stamped `source="Eightfold"` with recent `scraped_date`s, but
-  `company_toml/*.toml` and this repo's entire git history have zero
-  mention of Millennium or Eightfold -- that data is coming from some
-  writer outside this codebase (possibly uncommitted/unpushed work on
-  another device, possibly a separate script). Once the real source is
-  found, port it into a proper client module here instead of leaving a
-  second, undocumented writer touching the same spreadsheet.
 
 ## Scale
 

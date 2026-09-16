@@ -1,0 +1,6 @@
+# Eightfold job boards to scrape.
+
+[[boards]]
+token = "mlp"
+firm = "Millennium"
+company_type = "Prop Trading/Hedge Fund"
