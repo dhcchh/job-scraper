@@ -14,7 +14,7 @@ tab's existing header and column order exactly as found (see its docstring)
 an already-written row can sit on stale classification/formatting/column
 order indefinitely without this.
 
-Eight things happen to every row, for every (category, region) tab:
+Nine things happen to every row, for every (category, region) tab:
   - `seniority`, `company_type`, and `source` are recomputed from columns
     already in the row -- `seniority` from the row's own
     `title`/`department` via the *current* classify_seniority.
@@ -45,6 +45,14 @@ Eight things happen to every row, for every (category, region) tab:
     existed, so there's no legacy cell to re-derive a value from, and a
     closed posting's row is left exactly as it already is (empty, if it
     predates the column) rather than guessed at.
+  - `salary` is recomputed unconditionally from that same fresh re-fetch,
+    for a row still open -- like `first_published`, there's no legacy cell
+    to re-derive it from, but like `location`, a fresh value (including "",
+    if compensation disclosure was removed) always overwrites whatever's
+    there rather than only filling in a blank; see models.Job.salary and
+    job_boards/lever/client.py's and job_boards/ashby/client.py's own
+    `_salary` for where this actually comes from. A closed posting's row,
+    with no override available, is left exactly as it already is.
   - `description` is recomputed unconditionally from
     models.FIRMS_NEEDING_DESCRIPTION, the same "always trust current code,
     not the existing cell" treatment as `company_type`/`source` above, not
@@ -235,7 +243,7 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
     job_id) -- one re-fetch of every board in config.GREENHOUSE_BOARDS,
     config.LEVER_BOARDS, config.ASHBY_BOARDS,
     config.SMARTRECRUITERS_BOARDS, and config.EIGHTFOLD_BOARDS (the same
-    five loops main.py's daily run makes) serves three different
+    five loops main.py's daily run makes) serves four different
     retroactive fixes without doubling the network cost:
 
     - `location`: the only way to correctly fix a legacy multi-location cell
@@ -256,12 +264,18 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
       unconditionally in refresh_worksheet, whether or not an override is
       available here -- that decision doesn't depend on this re-fetch at
       all.
+    - `salary` (models.Job.salary) -- same "no cell to re-derive from"
+      reasoning again, and like `description` (but unlike
+      `first_published`), this override replaces a stale-but-present value
+      too, including with "" if compensation is no longer disclosed. Unlike
+      `description`, there's no firm allowlist gating this one at all --
+      see models.Job.salary's own docstring for why.
 
-    A posting that's since closed has no entry here for either of the
-    first two -- refresh_worksheet falls back to best-effort
-    re-normalization for location, and leaves first_published exactly as
-    it already is (empty, for a row written before that column existed,
-    since there's nothing to recover it from once a posting is gone).
+    A posting that's since closed has no entry here for any of the above --
+    refresh_worksheet falls back to best-effort re-normalization for
+    location, and leaves first_published/salary exactly as they already are
+    (empty, for a row written before those columns existed, since there's
+    nothing to recover them from once a posting is gone).
 
     A board that fails to fetch (network error, bad token, ...) is logged
     and skipped -- its rows just get no override for any of these columns
@@ -386,6 +400,16 @@ def _recompute_row_values(
     column logic to a row; only what happens to a row whose classification
     changed differs between the two callers. See refresh_worksheet's own
     docstring for what each field does and why.
+
+    `salary` follows the same "only a fresh re-fetch can supply it, nothing
+    to re-derive from an existing cell" reasoning as `first_published` and
+    `description`'s overrides -- but unlike `description`, it isn't gated to
+    FIRMS_NEEDING_DESCRIPTION (see models.Job.salary), so a fresh value
+    (including "", if a posting's compensation disclosure was removed, or
+    the board doesn't support it) always wins when available, the same
+    unconditional-trust-the-fresh-fetch treatment `location` gets. A row
+    with no override at all (posting closed, or its board's fetch failed)
+    keeps whatever it already has.
     """
 
     values = _read_row_values(row, old_index)
@@ -416,6 +440,9 @@ def _recompute_row_values(
     elif fresh is not None and fresh.description:
         values["description"] = fresh.description
 
+    if fresh is not None:
+        values["salary"] = fresh.salary
+
     values["first_published"] = normalize_date(values["first_published"])
     values["updated_at"] = normalize_date(values["updated_at"])
     values["scraped_date"] = normalize_date(values["scraped_date"])
@@ -434,13 +461,14 @@ def refresh_worksheet(
     `overrides` -- (board, job_id) -> a freshly re-fetched Job, from
     _fetch_overrides() -- takes priority over _renormalize_location's
     best-effort cleanup for `location`, and is the *only* source for
-    `first_published` and for filling in `description` on a row whose firm
-    is in models.FIRMS_NEEDING_DESCRIPTION (nothing to re-derive either
-    from an existing cell). Omit it (the default) to fall back to
-    best-effort location cleanup and leave first_published untouched for
-    every row, e.g. when re-fetching boards isn't wanted for a given run --
-    `description` still gets blanked for every OTHER firm regardless, since
-    that decision only depends on FIRMS_NEEDING_DESCRIPTION, not `overrides`.
+    `first_published`, `salary`, and for filling in `description` on a row
+    whose firm is in models.FIRMS_NEEDING_DESCRIPTION (nothing to re-derive
+    any of those from an existing cell). Omit it (the default) to fall back
+    to best-effort location cleanup and leave first_published/salary
+    untouched for every row, e.g. when re-fetching boards isn't wanted for
+    a given run -- `description` still gets blanked for every OTHER firm
+    regardless, since that decision only depends on FIRMS_NEEDING_DESCRIPTION,
+    not `overrides`.
 
     Always rewrites the managed A:M range as long as there's at least one
     data row -- unlike prune_closed_postings, this never skips based on
@@ -466,6 +494,7 @@ def refresh_worksheet(
     location_changed = 0
     first_published_changed = 0
     description_changed = 0
+    salary_changed = 0
     for row, url_cell in zip(data_rows, url_formula_cells):
         old_values = _read_row_values(row, old_index)
         values = _recompute_row_values(
@@ -484,6 +513,8 @@ def refresh_worksheet(
             first_published_changed += 1
         if old_values["description"] != values["description"]:
             description_changed += 1
+        if old_values["salary"] != values["salary"]:
+            salary_changed += 1
 
         new_rows.append([values[name] for name in FIELDS])
 
@@ -498,7 +529,7 @@ def refresh_worksheet(
     logger.info(
         "refresh: rewrote %d row(s) into current column order -- "
         "%d seniority, %d company_type, %d source, %d location, "
-        "%d first_published, %d description changed",
+        "%d first_published, %d description, %d salary changed",
         len(new_rows),
         seniority_changed,
         company_type_changed,
@@ -506,6 +537,7 @@ def refresh_worksheet(
         location_changed,
         first_published_changed,
         description_changed,
+        salary_changed,
     )
 
 

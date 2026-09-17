@@ -107,6 +107,7 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
         "scraped_date",
         "source",
         "description",
+        "salary",
     ]
     assert row == [
         "",  # first_published: no such column in _OLD_HEADER, no override given
@@ -122,6 +123,7 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
         "2026-09-01",
         "",  # source: "Acme" isn't a real configured firm, no override given
         "",  # description: no such column in _OLD_HEADER, no override given
+        "",  # salary: no such column in _OLD_HEADER, no override given
     ]
 
 
@@ -613,7 +615,7 @@ def test_refresh_leaves_description_empty_for_a_firm_not_needing_it():
     assert row[header.index("description")] == ""
 
 
-def _job_stub(board, job_id, location, first_published="", description=""):
+def _job_stub(board, job_id, location, first_published="", description="", salary=""):
     from datetime import date
 
     from jobscraper.models import Job
@@ -629,4 +631,71 @@ def _job_stub(board, job_id, location, first_published="", description=""):
         date(2026, 9, 12),
         first_published=first_published,
         description=description,
+        salary=salary,
     )
+
+
+def test_refresh_fills_in_salary_for_a_header_that_predates_the_column():
+    # Same "column added after rows already existed" shape as
+    # first_published/description above -- _OLD_HEADER/_old_row have no
+    # salary column at all.
+    worksheet = _FakeWorksheet([_OLD_HEADER, _old_row(board="Acme", job_id="1")])
+
+    backfill.refresh_worksheet(
+        worksheet,
+        overrides={
+            ("Acme", "1"): _job_stub("Acme", "1", "Remote", salary="USD 55,000-65,000/year")
+        },
+    )
+
+    header, row = worksheet.updated_with
+    assert "salary" in header
+    assert row[header.index("salary")] == "USD 55,000-65,000/year"
+
+
+def test_refresh_leaves_salary_unchanged_when_no_override_for_that_row():
+    # Already-migrated row (has a real salary value) whose posting has since
+    # closed -- no override available, so it must not be blanked.
+    header_with_salary = _OLD_HEADER + ["salary"]
+    row_with_salary = _old_row(board="Acme", job_id="1") + ["USD 55,000-65,000/year"]
+    worksheet = _FakeWorksheet([header_with_salary, row_with_salary])
+
+    backfill.refresh_worksheet(worksheet, overrides={})
+
+    header, row = worksheet.updated_with
+    assert row[header.index("salary")] == "USD 55,000-65,000/year"
+
+
+def test_refresh_overwrites_stale_salary_when_fresh_differs():
+    # Unlike first_published, salary overwrites a non-empty existing value
+    # too -- a pay range can be legitimately edited (or its disclosure
+    # removed) after this project first saw it.
+    header_with_salary = _OLD_HEADER + ["salary"]
+    row_with_salary = _old_row(board="Acme", job_id="1") + ["USD 50,000-60,000/year"]
+    worksheet = _FakeWorksheet([header_with_salary, row_with_salary])
+
+    backfill.refresh_worksheet(
+        worksheet,
+        overrides={
+            ("Acme", "1"): _job_stub("Acme", "1", "Remote", salary="USD 55,000-65,000/year")
+        },
+    )
+
+    header, row = worksheet.updated_with
+    assert row[header.index("salary")] == "USD 55,000-65,000/year"
+
+
+def test_refresh_blanks_salary_when_fresh_override_no_longer_has_one():
+    # Unlike description (gated to a firm allowlist), a fresh override with
+    # salary == "" -- e.g. the board stopped disclosing it -- blanks a
+    # stale, previously-populated cell rather than leaving it stuck.
+    header_with_salary = _OLD_HEADER + ["salary"]
+    row_with_salary = _old_row(board="Acme", job_id="1") + ["USD 50,000-60,000/year"]
+    worksheet = _FakeWorksheet([header_with_salary, row_with_salary])
+
+    backfill.refresh_worksheet(
+        worksheet, overrides={("Acme", "1"): _job_stub("Acme", "1", "Remote", salary="")}
+    )
+
+    header, row = worksheet.updated_with
+    assert row[header.index("salary")] == ""

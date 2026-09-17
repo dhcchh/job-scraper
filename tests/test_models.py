@@ -40,6 +40,7 @@ def test_job_to_row_matches_fields_order():
         "2026-09-12",
         "",  # source defaults when not passed explicitly
         "",  # description defaults when not passed explicitly
+        "",  # salary defaults when not passed explicitly
     ]
 
 

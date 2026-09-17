@@ -123,6 +123,13 @@ def _to_job(
             if firm in FIRMS_NEEDING_DESCRIPTION
             else ""
         ),
+        # No structured pay field exists in this API at all -- confirmed
+        # across Stripe/Airbnb/Affirm/GitLab/Robinhood's live boards. A pay
+        # range, when a posting discloses one, is only ever freeform text
+        # buried in `content` (e.g. Robinhood: "the salary range for this
+        # role is ... aligned to one of 3 compensation zones"), in no
+        # consistent shape worth regexing out -- see models.Job.salary.
+        salary="",
     )
 
 

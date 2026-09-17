@@ -188,6 +188,10 @@ def _to_job(
             if firm in FIRMS_NEEDING_DESCRIPTION
             else ""
         ),
+        # No compensation field on any posting -- confirmed against
+        # Millennium's live board (the only reachable one) -- see
+        # models.Job.salary.
+        salary="",
     )
 
 

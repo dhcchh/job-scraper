@@ -64,6 +64,7 @@ def _row(board, job_id, scraped_date):
         "company_type": "",
         "source": "",
         "description": "",
+        "salary": "",
     }
     return [values[name] for name in writer.HEADER]
 

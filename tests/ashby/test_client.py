@@ -25,6 +25,10 @@ _SAMPLE_RESPONSE = {
             "publishedAt": "2025-06-15T09:00:00.000+00:00",
             "jobUrl": "https://jobs.ashbyhq.com/acme/1fc309c8",
             "applyUrl": "https://jobs.ashbyhq.com/acme/1fc309c8/application",
+            "compensation": {
+                "scrapeableCompensationSalarySummary": "$150K - $200K",
+                "compensationTierSummary": "$150K - $200K • Offers Equity",
+            },
         },
         {
             "id": "10dfc8bc-99ad-4ca2-ab76-853cb90a92c2",
@@ -57,6 +61,7 @@ def test_fetch_ashby_jobs_parses_response(monkeypatch):
 
     def fake_get(url, params=None, timeout=None):
         captured["url"] = url
+        captured["params"] = params
         return _FakeResponse(_SAMPLE_RESPONSE)
 
     monkeypatch.setattr(client.requests, "get", fake_get)
@@ -66,6 +71,9 @@ def test_fetch_ashby_jobs_parses_response(monkeypatch):
     )
 
     assert captured["url"] == f"{client.BASE_URL}/acme"
+    # includeCompensation=true is required or the response has no
+    # compensation data at all -- see the module docstring.
+    assert captured["params"] == {"includeCompensation": "true"}
     assert len(jobs) == 2
 
     first, second = jobs
@@ -79,12 +87,14 @@ def test_fetch_ashby_jobs_parses_response(monkeypatch):
     assert first.company_type == "Big Tech"
     assert first.first_published == "2025-06-15"
     assert first.updated_at == ""  # Ashby's API has no edited-at timestamp at all
+    assert first.salary == "$150K - $200K"
 
-    # Missing department/location/publishedAt degrade to "", not a crash.
+    # Missing department/location/publishedAt/compensation degrade to "", not a crash.
     assert second.department == ""
     assert second.location == ""
     assert second.seniority == "Unspecified"
     assert second.first_published == ""
+    assert second.salary == ""
 
 
 def test_fetch_ashby_jobs_populates_description_only_for_a_firm_needing_it(

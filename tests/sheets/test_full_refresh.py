@@ -51,6 +51,7 @@ def _row(
     first_published="",
     source="",
     description="",
+    salary="",
 ):
     values = {
         "first_published": first_published,
@@ -66,6 +67,7 @@ def _row(
         "scraped_date": scraped_date,
         "source": source,
         "description": description,
+        "salary": salary,
     }
     return [values[name] for name in FIELDS]
 

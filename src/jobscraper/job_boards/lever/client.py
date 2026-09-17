@@ -27,6 +27,14 @@ shape as job_boards/greenhouse/client.py, adapted to Lever's response shape:
   `content` per item. Same as every client, this only runs for a firm in
   models.FIRMS_NEEDING_DESCRIPTION; no live Lever board is in that set
   today.
+- A posting has `salaryRange` (`{min, max, currency, interval}`) only when
+  that employer opted in to Lever's own pay-transparency feature --
+  confirmed present on Belvedere Trading's live board (`{'min': 55000,
+  'max': 65000, 'currency': 'USD', 'interval': 'per-year-salary'}`), absent
+  on every other Lever board this project fetches. `_salary` formats it as
+  e.g. "USD 55,000-65,000/year"; unlike `description`, this is NOT gated to
+  a firm allowlist -- it's populated whenever a posting itself discloses a
+  range, "" otherwise, same as models.Job.salary's own docstring explains.
 
 `firm` (not the slug) is what ends up in Job.board, for the same readability
 and dedup-key reasons documented in job_boards/greenhouse/client.py. Every
@@ -127,6 +135,7 @@ def _to_job(
         company_type=company_type,
         source="Lever",
         description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
+        salary=_salary(raw),
     )
 
 
@@ -178,6 +187,37 @@ def _description(raw: dict) -> str:
         sections.append("\n".join(part for part in (header, body) if part))
     sections.append((raw.get("additionalPlain") or "").strip())
     return "\n\n".join(section for section in sections if section)
+
+
+def _salary(raw: dict) -> str:
+    """A human-readable pay range from `salaryRange`, or "" if absent.
+
+    `min`/`max` are plain numbers (not cents), `currency` is an ISO code
+    (e.g. "USD") -- see the module docstring for the one confirmed real
+    shape. Prefixes the currency code rather than guessing a symbol (a "$"
+    is wrong for most non-USD currencies), and collapses to a single amount
+    when min == max instead of e.g. "55,000-55,000". `interval` (e.g.
+    "per-year-salary") is reduced to just "year" by _interval_label for a
+    shorter cell; an interval shaped differently than that is shown as-is
+    rather than mangled by a pattern that doesn't apply to it.
+    """
+    salary_range = raw.get("salaryRange")
+    if not salary_range:
+        return ""
+    minimum = salary_range.get("min")
+    maximum = salary_range.get("max")
+    if minimum is None or maximum is None:
+        return ""
+    amount = f"{minimum:,}" if minimum == maximum else f"{minimum:,}-{maximum:,}"
+    text = " ".join(part for part in (salary_range.get("currency", ""), amount) if part)
+    interval = _interval_label(salary_range.get("interval", ""))
+    return f"{text}/{interval}" if interval else text
+
+
+def _interval_label(interval: str) -> str:
+    if interval.startswith("per-") and interval.endswith("-salary"):
+        return interval[len("per-") : -len("-salary")]
+    return interval
 
 
 def _created_at(raw: dict) -> datetime.date | None:

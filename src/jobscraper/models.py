@@ -35,6 +35,10 @@ import re
 # inserting means every column before it keeps its current letter, so
 # format_date_columns/set_basic_filter and each tab's conditional-formatting
 # rule (see CLAUDE.md) don't need to move.
+# `salary`, same reasoning again, is appended after `description`: it's only
+# ever populated for two of the five board types (see Job.salary), so most
+# rows will have it blank, which fits better trailing everything else than
+# sitting among the columns every row actually has a value in.
 FIELDS: tuple[str, ...] = (
     "first_published",
     "updated_at",
@@ -49,6 +53,7 @@ FIELDS: tuple[str, ...] = (
     "scraped_date",
     "source",
     "description",
+    "salary",
 )
 
 DATE_FIELDS: tuple[str, ...] = (
@@ -240,6 +245,31 @@ class Job:
       for those specific firms. Defaults to "" for the same reason as
       company_type's default -- test Job(...) calls that don't care about
       it.
+    salary: a human-readable pay range, or "" -- unlike `description`, NOT
+      gated to a firm allowlist; it's populated whenever a posting itself
+      actually discloses one, "" otherwise, since whether an employer
+      discloses pay varies posting to posting, not firm to firm. Only two of
+      the five board types expose anything structured to read this from:
+      Lever's `salaryRange` (`{min, max, currency, interval}`, present only
+      when that employer opted in to Lever's own pay-transparency feature --
+      confirmed present on Belvedere Trading's live board, absent on this
+      project's other four Lever boards) and Ashby's `compensation`
+      (present only when the client's request adds `includeCompensation=
+      true` -- confirmed silently omitted otherwise -- and even then only
+      for a firm that enabled it: confirmed present on 13 of this project's
+      22 Ashby boards, e.g. OpenAI 673/818 jobs, Exa 54/54, Sierra 183/209;
+      absent, e.g. Notion, Cursor, Mistral). Greenhouse has no structured
+      field at all -- confirmed across Stripe/Airbnb/Affirm/GitLab/
+      Robinhood's live boards -- a pay range, when a posting discloses one,
+      is only ever freeform text buried in `content` (e.g. Robinhood's "the
+      salary range for this role is ... aligned to one of 3 compensation
+      zones"), in no consistent shape worth regexing out. SmartRecruiters
+      and Eightfold expose no compensation field anywhere in their public
+      APIs either (confirmed against Grab's per-posting detail endpoint and
+      Millennium's live board, respectively). See each
+      job_boards/*/client.py's `_salary` for the exact per-board shape.
+      Defaults to "" for the same reason as company_type's default -- test
+      Job(...) calls that don't care about it.
     """
 
     board: str
@@ -255,6 +285,7 @@ class Job:
     first_published: str = ""
     source: str = ""
     description: str = ""
+    salary: str = ""
 
     def to_row(self) -> list[str]:
         """Render as a flat list of strings, in FIELDS order, for a sheet row.
@@ -280,4 +311,5 @@ class Job:
             normalize_date(self.scraped_date),
             self.source,
             self.description,
+            self.salary,
         ]

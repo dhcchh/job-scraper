@@ -87,6 +87,7 @@ def test_fetch_eightfold_jobs_parses_response(monkeypatch):
     assert first.updated_at == "2026-08-28"  # from t_update, epoch seconds
     assert first.source == "Eightfold"
     assert first.description == ""  # never populated -- see module docstring
+    assert first.salary == ""  # no compensation field on any posting
 
     # Missing department/locations and zero timestamps degrade to "", not a crash.
     assert second.department == ""

@@ -24,6 +24,12 @@ _SAMPLE_RESPONSE = [
             "location": "London",
             "allLocations": ["London"],
         },
+        "salaryRange": {
+            "min": 55000,
+            "max": 65000,
+            "currency": "USD",
+            "interval": "per-year-salary",
+        },
     },
     {
         "id": "10dfc8bc-99ad-4ca2-ab76-853cb90a92c2",
@@ -74,12 +80,14 @@ def test_fetch_lever_jobs_parses_response(monkeypatch):
     assert first.company_type == "Big Tech"
     assert first.first_published == "2025-06-15"
     assert first.updated_at == ""  # Lever's API has no edited-at timestamp at all
+    assert first.salary == "USD 55,000-65,000/year"
 
-    # Missing department/location/createdAt degrade to "", not a crash.
+    # Missing department/location/createdAt/salaryRange degrade to "", not a crash.
     assert second.department == ""
     assert second.location == ""
     assert second.seniority == "Unspecified"
     assert second.first_published == ""
+    assert second.salary == ""
 
 
 def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
@@ -205,3 +213,18 @@ def test_fetch_lever_jobs_raises_on_http_error(monkeypatch):
 
     with pytest.raises(client.requests.HTTPError):
         client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
+
+
+def test_salary_collapses_a_single_value_range():
+    # min == max -- must not render as "55,000-55,000".
+    raw = {"salaryRange": {"min": 80000, "max": 80000, "currency": "USD", "interval": "per-year-salary"}}
+    assert client._salary(raw) == "USD 80,000/year"
+
+
+def test_salary_keeps_an_interval_shaped_unlike_per_x_salary_as_is():
+    raw = {"salaryRange": {"min": 20, "max": 30, "currency": "USD", "interval": "hourly"}}
+    assert client._salary(raw) == "USD 20-30/hourly"
+
+
+def test_salary_missing_salary_range_is_empty_string():
+    assert client._salary({}) == ""

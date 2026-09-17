@@ -180,6 +180,10 @@ def _to_job(
         company_type=company_type,
         source="SmartRecruiters",
         description="",
+        # No compensation field anywhere in this API -- confirmed against
+        # both the list response and a real per-posting detail response
+        # (Grab) -- see models.Job.salary.
+        salary="",
     )
 
 

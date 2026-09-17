@@ -68,6 +68,7 @@ def test_fetch_greenhouse_jobs_parses_response(monkeypatch):
     assert first.company_type == "Big Tech"
     assert first.first_published == "2026-06-15"
     assert first.updated_at == "2026-09-01"
+    assert first.salary == ""  # Greenhouse has no structured pay field at all
 
     # Missing department/location degrade to "", not a crash.
     assert second.department == ""

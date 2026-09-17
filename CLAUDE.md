@@ -84,7 +84,43 @@ use a small fake `Worksheet`.
   have to add). `FIELDS`' current order is
   `first_published, updated_at, board, title, location, seniority,
   company_type, url, department, job_id, scraped_date, source,
-  description` (columns A-M) -- see `models.py`'s `FIELDS` comment for why.
+  description, salary` (columns A-N) -- see `models.py`'s `FIELDS` comment
+  for why.
+- `Job.salary` is a human-readable pay range, or "" -- unlike `description`,
+  NOT gated to a firm allowlist; it's populated whenever a posting itself
+  discloses one, "" otherwise, since disclosure varies posting to posting,
+  not firm to firm. Only two of the five board types expose anything
+  structured to read this from. Lever's `salaryRange`
+  (`{min, max, currency, interval}`) is present only when that employer
+  opted in to Lever's own pay-transparency feature -- confirmed present on
+  Belvedere Trading's live board, absent on this project's other four Lever
+  boards; `job_boards/lever/client.py`'s `_salary` formats it as e.g. "USD
+  55,000-65,000/year". Ashby's `compensation` object is omitted from the
+  response entirely unless the request adds `includeCompensation=true` --
+  confirmed silently absent otherwise on every board tried -- so
+  `job_boards/ashby/client.py`'s `fetch_ashby_jobs` always requests it, and
+  `_salary` reads `compensation.scrapeableCompensationSalarySummary` (a
+  short string Ashby already formats for exactly this purpose, e.g. "$257K
+  - $335K"), not `compensationTierSummary` (the fuller string Ashby's own
+  hosted page shows, which also appends "Offers Equity"/"Offers
+  Commission" -- too much for one sheet cell). Confirmed present on 13 of
+  this project's 22 Ashby boards (e.g. OpenAI 673/818 jobs, Exa 54/54,
+  Sierra 183/209), absent on the rest (e.g. Notion, Cursor, Mistral).
+  Greenhouse has no structured field at all -- confirmed across
+  Stripe/Airbnb/Affirm/GitLab/Robinhood's live boards -- a pay range, when
+  disclosed, is only ever freeform text buried in `content` (e.g.
+  Robinhood: "the salary range for this role is ... aligned to one of 3
+  compensation zones"), in no consistent shape worth regexing out, so
+  `job_boards/greenhouse/client.py` always sets `salary=""`.
+  SmartRecruiters and Eightfold expose no compensation field anywhere in
+  their public APIs either (confirmed against Grab's per-posting detail
+  endpoint and Millennium's live board, respectively), so both clients
+  always set `salary=""` too. `sheets/backfill.py` treats `salary` the same
+  as `location` -- a fresh re-fetch (when the posting is still open)
+  unconditionally overwrites whatever's in the cell, including with "" if
+  disclosure was removed, rather than only filling in a blank the way
+  `first_published` does; a closed posting's row, with no override
+  available, is left exactly as it already is.
 - All five board clients share one retry helper,
   `job_boards/_http.get_with_retries` (3 attempts, exponential 2s/4s
   backoff, retrying only a connection error/timeout or a 5xx/429

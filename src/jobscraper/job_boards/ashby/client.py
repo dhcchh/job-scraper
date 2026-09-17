@@ -31,6 +31,22 @@ adapted to Ashby's response shape:
   here is just that field verbatim. Same as every client, this only runs
   for a firm in models.FIRMS_NEEDING_DESCRIPTION; no live Ashby board is in
   that set today.
+- Unlike every other field this client reads, compensation data is left out
+  of the response entirely unless the request itself asks for it --
+  confirmed: the plain list endpoint (no extra params) never includes a
+  `compensation` key on any posting, on any board. `fetch_ashby_jobs`
+  always requests `includeCompensation=true`, at which point a posting
+  whose employer enabled pay transparency carries a `compensation` object;
+  `_salary` reads its own `scrapeableCompensationSalarySummary` field (a
+  short, plain string Ashby already formats for exactly this purpose, e.g.
+  "$257K - $335K") rather than `compensationTierSummary` (the fuller
+  string Ashby's own hosted page shows, which also appends "Offers Equity"/
+  "Offers Commission" -- too much for a single sheet cell). Confirmed
+  present on 13 of this project's 22 Ashby boards (e.g. OpenAI 673/818
+  jobs, Exa 54/54, Sierra 183/209), absent -- an all-null
+  `compensationTiers` -- on the rest (e.g. Notion, Cursor, Mistral). Unlike
+  `description`, this is NOT gated to a firm allowlist -- see
+  models.Job.salary's own docstring for why.
 
 `firm` (not the slug) is what ends up in Job.board, for the same
 readability and dedup-key reasons documented in
@@ -86,7 +102,9 @@ def fetch_ashby_jobs(
         scraped_date = datetime.date.today()
 
     url = f"{BASE_URL}/{board_slug}"
-    response = get_with_retries("ashby", board_slug, url)
+    response = get_with_retries(
+        "ashby", board_slug, url, params={"includeCompensation": "true"}
+    )
 
     payload = response.json()
     raw_jobs = payload.get("jobs", [])
@@ -133,6 +151,7 @@ def _to_job(
             if firm in FIRMS_NEEDING_DESCRIPTION
             else ""
         ),
+        salary=_salary(raw),
     )
 
 
@@ -140,6 +159,18 @@ def _department(raw: dict) -> str:
     """Org-unit label for this posting, or "" -- see the module docstring
     for why `team` is a real fallback here, not just a nice-to-have."""
     return raw.get("department") or raw.get("team") or ""
+
+
+def _salary(raw: dict) -> str:
+    """A human-readable pay range from `compensation`, or "" if absent.
+
+    See the module docstring for why `fetch_ashby_jobs` requests
+    `includeCompensation=true` in the first place, and why
+    `scrapeableCompensationSalarySummary` (not `compensationTierSummary`)
+    is the field read here.
+    """
+    compensation = raw.get("compensation") or {}
+    return (compensation.get("scrapeableCompensationSalarySummary") or "").strip()
 
 
 def _location(raw: dict) -> str:

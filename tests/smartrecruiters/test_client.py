@@ -87,6 +87,7 @@ def test_fetch_smartrecruiters_jobs_parses_response(monkeypatch):
     assert first.updated_at == ""  # no edited-at timestamp at all
     assert first.source == "SmartRecruiters"
     assert first.description == ""  # never populated -- see module docstring
+    assert first.salary == ""  # no compensation field anywhere in this API
 
     # Missing function/location/releasedDate degrade to "", not a crash.
     assert second.department == ""
