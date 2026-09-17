@@ -114,3 +114,8 @@ company_type = "Data/Cloud Infrastructure"
 token = "pinecone"
 firm = "Pinecone"
 company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "langchain"
+firm = "LangChain"
+company_type = "Applied AI Products"
