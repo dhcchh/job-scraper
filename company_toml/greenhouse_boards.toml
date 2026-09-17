@@ -229,3 +229,43 @@ company_type = "Prop Trading/Hedge Fund"
 token = "vercel"
 firm = "Vercel"
 company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "gsacapital"
+firm = "GSA Capital"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "reddit"
+firm = "Reddit"
+company_type = "Consumer Comms/Social"
+
+[[boards]]
+token = "pinterest"
+firm = "Pinterest"
+company_type = "Consumer Comms/Social"
+
+[[boards]]
+token = "okta"
+firm = "Okta"
+company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "scaleai"
+firm = "Scale AI"
+company_type = "Applied AI Products"
+
+[[boards]]
+token = "elastic"
+firm = "Elastic"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "fivetran"
+firm = "Fivetran"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "block"
+firm = "Block (Square)"
+company_type = "Fintech"

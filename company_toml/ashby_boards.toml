@@ -84,3 +84,33 @@ company_type = "Prop Trading/Hedge Fund"
 token = "openai-deployment-company"
 firm = "OpenAI Deployment Co"
 company_type = "Applied AI Products"
+
+[[boards]]
+token = "thinkingmachines"
+firm = "Thinking Machines Lab"
+company_type = "AI Lab"
+
+[[boards]]
+token = "decagon"
+firm = "Decagon"
+company_type = "Applied AI Products"
+
+[[boards]]
+token = "supabase"
+firm = "Supabase"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "modal"
+firm = "Modal"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "confluent"
+firm = "Confluent"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "pinecone"
+firm = "Pinecone"
+company_type = "Data/Cloud Infrastructure"
