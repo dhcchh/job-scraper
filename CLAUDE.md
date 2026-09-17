@@ -30,10 +30,16 @@ use a small fake `Worksheet`.
 
 ## Architecture and invariants
 
-- The daily GitHub Actions workflow runs `jobscraper.main`. Each run fetches
-  every configured Greenhouse, Lever, Ashby, SmartRecruiters, and Eightfold
-  board, classifies postings into ten tabs (five categories × `PAC`/`RoW`),
-  appends jobs first seen this run, then removes jobs confirmed closed.
+- Two GitHub Actions workflows write to the production sheet, sharing a
+  `sheet-write` concurrency group so they queue rather than overlap (see
+  `.github/workflows/`). "Daily Scrape (Append)"
+  (`daily-scrape.yml`, cron + manual `workflow_dispatch`) runs
+  `jobscraper.main`: fetches every configured Greenhouse, Lever, Ashby,
+  SmartRecruiters, and Eightfold board, classifies postings into ten tabs
+  (five categories × `PAC`/`RoW`), appends jobs first seen this run, then
+  removes jobs confirmed closed. "Full Refresh (Rebuild)"
+  (`full-refresh.yml`, manual `workflow_dispatch` only, no schedule) runs
+  `jobscraper.sheets.full_refresh` -- see its own bullet below.
 - `config.py` is the only module that reads environment variables,
   `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
   `company_toml/ashby_boards.toml`,
@@ -314,8 +320,11 @@ use a small fake `Worksheet`.
   since a JD can be legitimately edited, blanking it back to "" for every
   other firm) but deliberately does not move rows between tabs or rename
   board values, which could lose data if interrupted.
-- `sheets/full_refresh.py` is manual only, for the one thing `backfill.py`
-  deliberately punts on: it also re-routes a row to a different tab when
+- `sheets/full_refresh.py` is manual only -- by hand, or via the
+  "Full Refresh (Rebuild)" GitHub Actions workflow (`workflow_dispatch`
+  only, no schedule; see the GitHub Actions bullet above) -- for the one
+  thing `backfill.py` deliberately punts on: it also re-routes a row to a
+  different tab when
   `classify_roles.classify_job`'s category or `classify_region`'s PAC
   country list puts it somewhere else now (e.g. the Thailand/Vietnam PAC
   swap above). Every other column is recomputed the same way `backfill.py`
@@ -413,7 +422,10 @@ use a small fake `Worksheet`.
 - Recognize numeric and level-based seniority (for example, `Engineer II`,
   `SDE II`, and `L4/L5`) rather than classifying it as `Unspecified`.
 - If more than one person operates the production sheet, add a distributed
-  lock; GitHub Actions concurrency cannot prevent an overlapping local run.
+  lock; the `sheet-write` GitHub Actions concurrency group only queues the
+  two Actions-triggered workflows against each other -- it cannot prevent
+  an overlapping local run (`jobscraper.main`, `sheets/backfill.py`, or
+  `sheets/full_refresh.py` run by hand) from racing either of them.
 
 ## Scale
 

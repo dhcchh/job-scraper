@@ -5,12 +5,15 @@ Run this by hand --
 
     uv run python -m jobscraper.sheets.full_refresh
 
--- after a change to classify_roles.classify_job's category keywords or
-classify_region.classify_region's PAC country list (e.g. Thailand moving
-into PAC and Vietnam moving out -- see CLAUDE.md's classify_region bullet),
-so an existing row whose category or region no longer matches the tab it's
-sitting in actually gets moved there, rather than staying misclassified
-until that specific posting happens to close and reopen.
+-- or trigger the "Full Refresh (Rebuild)" GitHub Actions workflow
+(.github/workflows/full-refresh.yml, workflow_dispatch only -- it never runs
+on a schedule, unlike daily-scrape.yml) -- after a change to
+classify_roles.classify_job's category keywords or classify_region's PAC
+country list (e.g. Thailand moving into PAC and Vietnam moving out -- see
+CLAUDE.md's classify_region bullet), so an existing row whose category or
+region no longer matches the tab it's sitting in actually gets moved there,
+rather than staying misclassified until that specific posting happens to
+close and reopen.
 
 sheets.backfill.refresh_worksheet deliberately never does this -- see its
 module docstring's "Deliberately NOT done here" paragraph -- because moving

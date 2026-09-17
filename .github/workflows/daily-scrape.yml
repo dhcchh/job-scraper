@@ -1,4 +1,4 @@
-name: Daily Job Scrape
+name: Daily Scrape (Append)
 
 on:
   schedule:
@@ -9,11 +9,12 @@ on:
     - cron: "0 4 * * *"
   workflow_dispatch: {}
 
-# Only one scrape at a time. Concurrent runs could both read the same existing
-# keys before either appends, then create duplicate rows. Queue rather than
-# canceling: each run gets a complete read/append/prune cycle.
+# Shared with full-refresh.yml: both read-then-write every tab, so they must
+# never run at the same time -- concurrent runs could both read the same
+# existing keys before either writes, then create duplicate or clobbered
+# rows. Queue rather than cancel: each run gets a complete read/write cycle.
 concurrency:
-  group: daily-scrape
+  group: sheet-write
   cancel-in-progress: false
 
 jobs:

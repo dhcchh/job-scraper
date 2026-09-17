@@ -295,11 +295,24 @@ runs and CI, no other config changes needed.
 
 ## Cron / CI
 
-`.github/workflows/daily-scrape.yml` runs at `0 4 * * *` UTC (noon
-Singapore time), plus manual `workflow_dispatch`. Uses
-`concurrency: { group: daily-scrape, cancel-in-progress: false }` to queue
-rather than cancel overlapping runs. Needs two repo secrets:
-`GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON`. Optionally also
+Two GitHub Actions workflows, both sharing
+`concurrency: { group: sheet-write, cancel-in-progress: false }` so they
+queue rather than run at the same time (both read-then-write every tab):
+
+- **`.github/workflows/daily-scrape.yml`** ("Daily Scrape (Append)") runs
+  `jobscraper.main` at `0 4 * * *` UTC (noon Singapore time), plus manual
+  `workflow_dispatch`. Appends newly seen jobs and prunes closed ones —
+  the routine, incremental run.
+- **`.github/workflows/full-refresh.yml`** ("Full Refresh (Rebuild)") runs
+  `jobscraper.sheets.full_refresh` on manual `workflow_dispatch` only, no
+  schedule. Recomputes every column and re-routes rows across tabs — run
+  this by hand after a classification/metadata change has piled up enough
+  stale or misplaced rows to be worth a full rebuild (see
+  `sheets/full_refresh.py`'s module docstring).
+
+Both need the same two repo secrets: `GOOGLE_SHEET_ID`,
+`GOOGLE_SERVICE_ACCOUNT_JSON`. The daily scrape optionally also uses
 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_THREAD_ID` for the
 Telegram digest — omitted (left as unset repo secrets) keeps that feature
-disabled, same as leaving them unset in `.env` locally.
+disabled, same as leaving them unset in `.env` locally. The full refresh
+doesn't send a digest, so it doesn't use the Telegram secrets.
