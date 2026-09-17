@@ -1,4 +1,4 @@
-name: Daily Greenhouse scrape
+name: Daily Job Scrape
 
 on:
   schedule:
