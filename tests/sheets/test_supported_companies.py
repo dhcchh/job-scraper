@@ -24,7 +24,16 @@ def _board(token, firm, company_type):
     return {"token": token, "firm": firm, "company_type": company_type}
 
 
-def test_build_rows_dedupes_a_multi_token_firm(monkeypatch):
+def test_slugify_turns_mixed_case_and_punctuation_into_snake_case():
+    assert supported_companies._slugify("AI Lab") == "ai_lab"
+    assert supported_companies._slugify("Prop Trading/Hedge Fund") == "prop_trading_hedge_fund"
+    assert (
+        supported_companies._slugify("Consumer/Media & Entertainment")
+        == "consumer_media_entertainment"
+    )
+
+
+def test_build_columns_dedupes_a_multi_token_firm(monkeypatch):
     _set_boards(
         monkeypatch,
         greenhouse=[
@@ -33,12 +42,10 @@ def test_build_rows_dedupes_a_multi_token_firm(monkeypatch):
         ],
     )
 
-    rows = supported_companies.build_rows()
-
-    assert rows == [["Prop Trading/Hedge Fund", "Optiver"]]
+    assert supported_companies.build_columns() == {"prop_trading_hedge_fund": ["Optiver"]}
 
 
-def test_build_rows_sorts_by_category_then_company_across_board_types(monkeypatch):
+def test_build_columns_groups_and_sorts_within_and_across_categories(monkeypatch):
     _set_boards(
         monkeypatch,
         greenhouse=[_board("anthropic", "Anthropic", "AI Lab")],
@@ -48,21 +55,34 @@ def test_build_rows_sorts_by_category_then_company_across_board_types(monkeypatc
         eightfold=[_board("mlp", "Millennium", "Prop Trading/Hedge Fund")],
     )
 
-    rows = supported_companies.build_rows()
-
-    assert rows == [
-        ["AI Lab", "Anthropic"],
-        ["AI Lab", "Cohere"],
-        ["Consumer/Marketplace", "Grab"],
-        ["Consumer/Media & Entertainment", "Spotify"],
-        ["Prop Trading/Hedge Fund", "Millennium"],
-    ]
+    assert supported_companies.build_columns() == {
+        "ai_lab": ["Anthropic", "Cohere"],
+        "consumer_marketplace": ["Grab"],
+        "consumer_media_entertainment": ["Spotify"],
+        "prop_trading_hedge_fund": ["Millennium"],
+    }
 
 
-def test_build_rows_empty_config_yields_no_rows(monkeypatch):
+def test_build_columns_empty_config_yields_no_columns(monkeypatch):
     _set_boards(monkeypatch)
 
-    assert supported_companies.build_rows() == []
+    assert supported_companies.build_columns() == {}
+
+
+def test_grid_pads_shorter_columns_to_the_tallest():
+    columns = {
+        "ai_lab": ["Anthropic", "Cohere", "OpenAI"],
+        "gaming": ["Roblox"],
+    }
+
+    grid = supported_companies._grid(columns)
+
+    assert grid == [
+        ["ai_lab", "gaming"],
+        ["Anthropic", "Roblox"],
+        ["Cohere", ""],
+        ["OpenAI", ""],
+    ]
 
 
 class _FakeWorksheet:
@@ -98,19 +118,27 @@ class _FakeSpreadsheet:
         return new
 
 
-def test_sync_supported_companies_writes_header_and_rows_to_existing_tab(monkeypatch):
+def test_sync_supported_companies_writes_wide_grid_to_existing_tab(monkeypatch):
     _set_boards(
         monkeypatch,
-        greenhouse=[_board("anthropic", "Anthropic", "AI Lab")],
+        greenhouse=[
+            _board("anthropic", "Anthropic", "AI Lab"),
+            _board("cohere-gh", "Cohere", "AI Lab"),
+        ],
+        lever=[_board("spotify", "Spotify", "Consumer/Media & Entertainment")],
     )
     worksheet = _FakeWorksheet("Supported companies")
     spreadsheet = _FakeSpreadsheet([worksheet])
 
-    count = supported_companies.sync_supported_companies(spreadsheet)
+    total = supported_companies.sync_supported_companies(spreadsheet)
 
-    assert count == 1
+    assert total == 3
     assert worksheet.cleared is True
-    assert worksheet.updated_with == [["Category", "Company"], ["AI Lab", "Anthropic"]]
+    assert worksheet.updated_with == [
+        ["ai_lab", "consumer_media_entertainment"],
+        ["Anthropic", "Spotify"],
+        ["Cohere", ""],
+    ]
     assert worksheet.update_kwargs == {
         "range_name": "A1",
         "value_input_option": "USER_ENTERED",
@@ -119,7 +147,7 @@ def test_sync_supported_companies_writes_header_and_rows_to_existing_tab(monkeyp
 
 
 def test_sync_supported_companies_matches_tab_name_case_and_whitespace_insensitively(monkeypatch):
-    _set_boards(monkeypatch)
+    _set_boards(monkeypatch, greenhouse=[_board("anthropic", "Anthropic", "AI Lab")])
     worksheet = _FakeWorksheet(" supported companies ")
     spreadsheet = _FakeSpreadsheet([worksheet])
 
@@ -130,7 +158,7 @@ def test_sync_supported_companies_matches_tab_name_case_and_whitespace_insensiti
 
 
 def test_sync_supported_companies_creates_the_tab_when_missing(monkeypatch):
-    _set_boards(monkeypatch)
+    _set_boards(monkeypatch, greenhouse=[_board("anthropic", "Anthropic", "AI Lab")])
     spreadsheet = _FakeSpreadsheet([])
 
     supported_companies.sync_supported_companies(spreadsheet)
@@ -138,3 +166,15 @@ def test_sync_supported_companies_creates_the_tab_when_missing(monkeypatch):
     assert spreadsheet.added is not None
     assert spreadsheet.added.title == "Supported companies"
     assert spreadsheet.added.cleared is True
+
+
+def test_sync_supported_companies_handles_no_configured_firms(monkeypatch):
+    _set_boards(monkeypatch)
+    worksheet = _FakeWorksheet("Supported companies")
+    spreadsheet = _FakeSpreadsheet([worksheet])
+
+    total = supported_companies.sync_supported_companies(spreadsheet)
+
+    assert total == 0
+    assert worksheet.cleared is True
+    assert worksheet.updated_with is None  # nothing to write -- clear() alone is enough

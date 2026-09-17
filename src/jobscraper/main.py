@@ -84,6 +84,11 @@ GREENHOUSE_BOARDS/LEVER_BOARDS/ASHBY_BOARDS/SMARTRECRUITERS_BOARDS/
 EIGHTFOLD_BOARDS -- a firm added to any of the five *_boards.toml files
 shows up there on the very next scheduled run instead of needing a manual
 backfill, and a firm removed from all five disappears from it the same way.
+Laid out wide, one column per company_type (its slug, e.g.
+"prop_trading_hedge_fund", as the header) with that category's companies
+listed down the column -- see sheets/supported_companies.py for why (a
+self-explanatory column per category, not one row per company) and why it
+skips sheets.writer.set_basic_filter unlike every job tab above.
 
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add a client module with its own fetch_<board>_jobs() ->
