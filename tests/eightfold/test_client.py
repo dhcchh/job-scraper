@@ -209,6 +209,41 @@ def test_fetch_eightfold_jobs_skips_a_job_missing_id_instead_of_raising(monkeypa
     assert jobs[0].job_id == "real-id"
 
 
+def test_fetch_eightfold_jobs_skips_a_duplicate_id_across_pages(monkeypatch):
+    # Unconfirmed whether Eightfold's server ever pads a short final page
+    # with an already-seen id instead of returning fewer than _PAGE_SIZE --
+    # if it does, this must not append the same (board, job_id) twice.
+    page1 = _page(
+        [{"id": 1, "name": "Job 1", "t_create": 0, "t_update": 0}], count=2
+    )
+    page2 = _page(
+        [{"id": 1, "name": "Job 1", "t_create": 0, "t_update": 0}], count=2
+    )
+    calls = {"n": 0}
+
+    def fake_get(url, params=None, timeout=None):
+        calls["n"] += 1
+        return _FakeResponse(page1 if calls["n"] == 1 else page2)
+
+    monkeypatch.setattr(client.requests, "get", fake_get)
+
+    jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
+
+    assert len(jobs) == 1
+    assert jobs[0].job_id == "1"
+
+
+def test_epoch_date_tolerates_a_numeric_string(monkeypatch):
+    # Real-data shape is an int; a numeric string is tolerated the same way
+    # rather than raising and failing the whole board's fetch over one
+    # field's type.
+    assert client._epoch_date("1787875200") == client._epoch_date(1787875200)
+
+
+def test_epoch_date_degrades_to_empty_on_non_numeric_value():
+    assert client._epoch_date("not-a-timestamp") == ""
+
+
 def test_fetch_eightfold_jobs_raises_on_http_error(monkeypatch):
     # A persistent failure must propagate out of fetch_eightfold_jobs --
     # main.py is what decides that means "skip this board", not this

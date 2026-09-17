@@ -77,7 +77,7 @@ import logging
 # it's imported, so patching it here still reaches _http's call.
 import requests
 
-from jobscraper.job_boards._http import get_with_retries
+from jobscraper.job_boards._http import paginate_with_retries
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
@@ -115,18 +115,29 @@ def fetch_eightfold_jobs(
     raw_jobs = _fetch_all_pages(board_slug, url)
 
     # Same defensive posture as the other clients' fetch_*_jobs: one
-    # malformed record (no id at all) is skipped rather than costing this
-    # whole board's otherwise-good postings for the day.
+    # malformed record (no id, or an id already seen on an earlier page --
+    # e.g. if the server ever pads a short final page instead of returning
+    # fewer than _PAGE_SIZE items) is skipped rather than costing this whole
+    # board's otherwise-good postings for the day, or than sheets.writer
+    # appending the same (board, job_id) twice in one run.
     jobs = []
     skipped = 0
+    seen_ids: set[str] = set()
     for raw in raw_jobs:
         if "id" not in raw:
             skipped += 1
             continue
+        job_id = str(raw["id"])
+        if job_id in seen_ids:
+            skipped += 1
+            continue
+        seen_ids.add(job_id)
         jobs.append(_to_job(raw, firm, company_type, scraped_date))
     if skipped:
         logger.warning(
-            "eightfold[%s]: skipped %d job(s) missing an id", board_slug, skipped
+            "eightfold[%s]: skipped %d job(s) missing or duplicating an id",
+            board_slug,
+            skipped,
         )
     logger.info("eightfold[%s]: fetched %d jobs", board_slug, len(jobs))
 
@@ -139,24 +150,19 @@ def _fetch_all_pages(board_slug: str, url: str) -> list[dict]:
     Pages in fixed strides of _PAGE_SIZE (the server's own hard cap) using
     `start`, stopping once the response's own `count` has been collected or
     a page comes back empty (belt-and-braces against an off-by-one in
-    `count` looping forever) -- same shape as
-    smartrecruiters.client._fetch_all_pages.
+    `count` looping forever) -- via job_boards._http.paginate_with_retries,
+    shared with smartrecruiters/client.py's own _fetch_all_pages.
     """
-    positions: list[dict] = []
-    start = 0
-    total: int | None = None
-    while total is None or start < total:
-        response = get_with_retries(
-            "eightfold", board_slug, url, params={"start": start, "num": _PAGE_SIZE}
-        )
-        payload = response.json()
-        total = payload.get("count", 0)
-        page = payload.get("positions", [])
-        if not page:
-            break
-        positions.extend(page)
-        start += len(page)
-    return positions
+    return paginate_with_retries(
+        "eightfold",
+        board_slug,
+        url,
+        cursor_param="start",
+        page_size_param="num",
+        page_size=_PAGE_SIZE,
+        total_key="count",
+        items_key="positions",
+    )
 
 
 def _to_job(
@@ -204,10 +210,25 @@ def _location(raw: dict) -> str:
     return " | ".join(names)
 
 
-def _epoch_date(epoch_seconds: int | None) -> str:
+def _epoch_date(epoch_seconds: int | str | None) -> str:
     """A Unix epoch (seconds) as this project's YYYY-MM-DD date string, or ""
-    for a missing/zero value."""
+    for a missing/zero/non-numeric value.
+
+    `int()` tolerates a numeric string (unconfirmed whether Eightfold ever
+    actually sends one) the same way a real `int` is handled; anything else
+    degrades to "" rather than raising -- unlike the missing-id case in
+    fetch_eightfold_jobs's loop, there's no per-record try/except around
+    _to_job, so letting this raise would fail that firm's ENTIRE fetch over
+    one bad timestamp instead of just leaving this one field blank, the same
+    "don't fabricate a signal the data doesn't contain" fallback
+    first_published/updated_at already use when a board has no edited-at
+    signal at all (see Lever's/Ashby's/SmartRecruiters' clients).
+    """
     if not epoch_seconds:
+        return ""
+    try:
+        epoch_seconds = int(epoch_seconds)
+    except (TypeError, ValueError):
         return ""
     date = datetime.datetime.fromtimestamp(epoch_seconds, tz=datetime.timezone.utc).date()
     return normalize_date(date)

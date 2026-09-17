@@ -2,7 +2,14 @@
 
 import pytest
 
-from jobscraper.enrichment.classify_region import classify_region, is_excluded, tab_name
+from jobscraper.enrichment.classify_region import (
+    _EXCLUDED_COUNTRIES,
+    _PAC_COUNTRIES,
+    _check_disjoint,
+    classify_region,
+    is_excluded,
+    tab_name,
+)
 
 
 @pytest.mark.parametrize(
@@ -103,3 +110,17 @@ def test_is_excluded_true_when_every_office_is_excluded():
 
 def test_is_excluded_tolerates_missing_spaces_around_pipe():
     assert is_excluded("Hanoi, Vietnam|Jakarta, Indonesia") is True
+
+
+def test_pac_and_excluded_countries_are_disjoint():
+    # _check_disjoint already runs at import time (module-level, not an
+    # `assert` -- see classify_region.py), so this mainly guards against a
+    # future edit reintroducing an overlap without anyone noticing the
+    # import-time check fire; it's a real `pytest` assertion here, not a
+    # substitute for that raise-based check.
+    assert not (_PAC_COUNTRIES & _EXCLUDED_COUNTRIES)
+
+
+def test_check_disjoint_raises_on_overlap():
+    with pytest.raises(ValueError, match="Singapore"):
+        _check_disjoint({"Singapore"}, {"Singapore", "Vietnam"})

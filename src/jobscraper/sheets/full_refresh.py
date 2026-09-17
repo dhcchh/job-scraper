@@ -81,7 +81,7 @@ from jobscraper.sheets.backfill import (
     _config_lookup_tables,
     _fetch_overrides,
     _recompute_row_values,
-    _url_formula_cells,
+    _tab_rows_for_refresh,
 )
 from jobscraper.sheets.writer import (
     HEADER,
@@ -134,17 +134,10 @@ def _read_tab_rows(
     origin_category/origin_region are this row's CURRENT tab -- where a row
     stays if classify_job now returns None for it (see module docstring).
     """
-    all_values = worksheet.get_all_values()
-    if not all_values:
+    loaded = _tab_rows_for_refresh(worksheet)
+    if loaded is None:
         return [], 0
-    header, *data_rows = all_values
-    if not data_rows:
-        return [], 0
-
-    old_index = {
-        name: (header.index(name) if name in header else None) for name in FIELDS
-    }
-    url_formula_cells = _url_formula_cells(worksheet, header, len(data_rows))
+    data_rows, old_index, url_formula_cells = loaded
 
     origin_tab = tab_name(origin_category, origin_region)
     rows: list[tuple[str, dict[str, str]]] = []
@@ -187,22 +180,38 @@ def _write_tab(worksheet: gspread.Worksheet, rows: list[list[str]]) -> None:
     Unlike backfill.refresh_worksheet (which always rewrites the same
     number of rows a tab already has), a full refresh can shrink a tab to
     fewer rows than it currently holds -- every row having moved to another
-    tab, say -- so the grid is explicitly resized to `len(rows) + 1` first;
+    tab, say -- so the grid may need resizing down to `len(rows) + 1`;
     otherwise a plain update() would leave stale rows sitting below
     whatever it actually wrote (update() only overwrites the cells in the
-    range given, it never trims trailing ones). Resizing to the same row
-    count the tab already has is a no-op API-side but skipped here anyway
-    to avoid a pointless call on the common case where nothing moved.
-    """
-    target_row_count = len(rows) + 1  # +1 for the header
-    if worksheet.row_count != target_row_count:
-        worksheet.resize(rows=target_row_count)
+    range given, it never trims trailing ones, though it DOES grow the grid
+    for free if the range given is currently larger than the tab, so a
+    tab that's growing never needs an explicit resize at all).
 
+    The correct content is written FIRST, and the grid is only shrunk
+    AFTER that succeeds -- deliberately the opposite order of "resize then
+    write". `resize()` is a live, immediately-committed structural change:
+    resizing down first would delete whatever rows currently occupy the
+    positions beyond the new row count before this run's own recomputed
+    values for this tab are safely on the sheet. If the process is
+    interrupted between the two calls, resize-first would have already
+    destroyed data with nothing correct written in its place -- an
+    unrecoverable loss, since a row's correct destination only ever existed
+    in this run's in-memory `buckets[tab]`. Write-first only risks stale
+    trailing rows lingering below the correct data if interrupted before
+    the resize -- and even that is self-healing: the next full_refresh run
+    reads and reclassifies those leftover rows too, and its own
+    `seen_keys` duplicate guard (see refresh_all) keeps only the first tab
+    a (board, job_id) is found on.
+    """
+    values = [HEADER] + rows
     worksheet.update(
         range_name="A1",
-        values=[HEADER] + rows,
+        values=values,
         value_input_option="USER_ENTERED",
     )
+    target_row_count = len(values)
+    if worksheet.row_count != target_row_count:
+        worksheet.resize(rows=target_row_count)
     # Applied even when `rows` is empty (header only) -- a tab everything
     # just moved out of still gets its column formatting/filter kept ready
     # for whatever main.py's append_jobs writes into it next, the same way

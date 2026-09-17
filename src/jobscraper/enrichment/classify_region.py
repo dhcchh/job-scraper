@@ -79,9 +79,26 @@ _EXCLUDED_COUNTRIES = {
     "Uruguay",
 }
 
-assert not (_PAC_COUNTRIES & _EXCLUDED_COUNTRIES), (
-    "a country can't be both a PAC country and a deliberate exclusion"
-)
+def _check_disjoint(a: set[str], b: set[str]) -> None:
+    """Raise if `a` and `b` share any country.
+
+    A plain `if`/`raise` rather than an `assert` -- an `assert` is compiled
+    out entirely under `python -O`/`PYTHONOPTIMIZE=1`, which would silently
+    remove the only thing enforcing this invariant. `main.py` checks
+    `is_excluded` before `classify_region` ever runs, so a country that
+    slipped into both sets would have every one of its postings silently
+    dropped rather than raising loudly at import time as intended.
+    """
+    overlap = a & b
+    if overlap:
+        raise ValueError(
+            f"country/countries {sorted(overlap)} in both _PAC_COUNTRIES and "
+            "_EXCLUDED_COUNTRIES -- a country can't be both a PAC country "
+            "and a deliberate exclusion"
+        )
+
+
+_check_disjoint(_PAC_COUNTRIES, _EXCLUDED_COUNTRIES)
 
 
 def _offices(location: str) -> list[str]:

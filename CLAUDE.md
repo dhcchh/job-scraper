@@ -70,12 +70,18 @@ use a small fake `Worksheet`.
   (unlike every other column, which is never guess-blanked). Where it is
   populated: Greenhouse's client runs `models.strip_html` over its HTML
   `content` field, Lever's and Ashby's clients use each API's own
-  ready-made plain text instead. SmartRecruiters' and Eightfold's clients
-  never populate it regardless of `FIRMS_NEEDING_DESCRIPTION` -- see
-  `job_boards/smartrecruiters/client.py` and `job_boards/eightfold/
-  client.py` for why (the JD isn't in either's list response at all, and
-  it's unconfirmed whether Eightfold even has a separate per-posting detail
-  endpoint with real JD text). `FIELDS`' current order is
+  ready-made plain text instead. SmartRecruiters' client never populates it
+  regardless of `FIRMS_NEEDING_DESCRIPTION` at all -- see
+  `job_boards/smartrecruiters/client.py` for why (the full JD isn't in its
+  list response at all). Eightfold's client gates `description` on
+  `FIRMS_NEEDING_DESCRIPTION` the same way Greenhouse/Lever/Ashby do, but
+  it's moot today: no live Eightfold firm is in that set, and even if one
+  were, the list response's own `job_description` field is always "" on
+  every live posting checked, so the gate never actually has anything to
+  populate -- see `job_boards/eightfold/client.py` (it's also unconfirmed
+  whether Eightfold even has a separate per-posting detail endpoint with
+  real JD text, which is what a future Eightfold firm needing this would
+  have to add). `FIELDS`' current order is
   `first_published, updated_at, board, title, location, seniority,
   company_type, url, department, job_id, scraped_date, source,
   description` (columns A-M) -- see `models.py`'s `FIELDS` comment for why.
@@ -106,7 +112,11 @@ use a small fake `Worksheet`.
   retry/skip behavior. Paginated (the server caps `limit` at 100 regardless
   of what's requested), unlike the other three boards' single-response
   payloads, so the client pages through `offset` until `totalFound` is
-  reached. Same no-edited-at-timestamp shape as Lever/Ashby:
+  reached, via the shared `job_boards/_http.paginate_with_retries` --
+  Eightfold's client pages the same way, so this loop (advance the cursor
+  by however many items the page actually returned, stop at the response's
+  own total or an empty page) lives once rather than once per paginated
+  board. Same no-edited-at-timestamp shape as Lever/Ashby:
   `first_published` comes from `releasedDate`, `updated_at` stays `""`.
   `department` reads `function.label` (a standardized, always-populated
   SmartRecruiters taxonomy), not the generic `department` object every
@@ -136,13 +146,19 @@ use a small fake `Worksheet`.
   traffic, but confirmed identical responses with and without it (and a
   wrong domain 404s rather than 403s), so it's left off rather than
   carrying a second, redundant identifier per board in company_toml.
-  Paginated via `start`/`num`, but the server always returns exactly 10
-  positions per page regardless of what `num` asks for (confirmed
-  requesting up to 500), so the client pages in fixed strides of 10 using
-  the response's own `count` as the stopping point, not a
-  client-chosen/server-capped page size like SmartRecruiters', meaning a
-  firm with Millennium's ~230 open postings costs ~23 requests where a
-  similarly-sized Greenhouse/Ashby board costs 1-3. Most Eightfold tenants
+  Paginated via `start`/`num` and the same shared
+  `job_boards/_http.paginate_with_retries` SmartRecruiters' client uses,
+  but the server always returns exactly 10 positions per page regardless
+  of what `num` asks for (confirmed requesting up to 500), so the client
+  pages in fixed strides of 10 using the response's own `count` as the
+  stopping point, not a client-chosen/server-capped page size like
+  SmartRecruiters', meaning a firm with Millennium's ~230 open postings
+  costs ~23 requests where a similarly-sized Greenhouse/Ashby board costs
+  1-3. Each returned posting's `id` is also deduped within the run (not
+  just against the sheet's existing rows) in case a short final page ever
+  repeats an id instead of coming back shorter than the page size --
+  unconfirmed either way, since only varying `num` at a fixed `start` has
+  been tested. Most Eightfold tenants
   block this query pattern outright -- confirmed, not just suspected: of 7
   real, verified Eightfold-hosted firms tried (found via each one's own
   actual careers page, not a guessed subdomain), only Millennium and

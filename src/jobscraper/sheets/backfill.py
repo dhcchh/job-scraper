@@ -201,6 +201,35 @@ def _url_formula_cells(
     return [row[0] if row else "" for row in rows]
 
 
+def _tab_rows_for_refresh(
+    worksheet: gspread.Worksheet,
+) -> tuple[list[list[str]], dict[str, int | None], list[str]] | None:
+    """This tab's data rows (header excluded), a FIELDS name -> current
+    column index map, and each data row's url-column formula text -- or
+    None if there are no data rows to refresh (an empty tab, or header
+    only).
+
+    Shared by refresh_worksheet and sheets.full_refresh._read_tab_rows --
+    the same "read this tab and get it ready for a per-row
+    _recompute_row_values call" preamble both need. The index map lets a
+    field still be located regardless of the column order (or column set)
+    this particular tab's header currently has -- a name FIELDS has that
+    the header doesn't maps to None, not a KeyError; _read_row_values and
+    _recompute_row_values both treat that exactly like a too-short row.
+    """
+    all_values = worksheet.get_all_values()
+    if not all_values:
+        return None
+    header, *data_rows = all_values
+    if not data_rows:
+        return None
+    old_index = {
+        name: (header.index(name) if name in header else None) for name in FIELDS
+    }
+    url_formula_cells = _url_formula_cells(worksheet, header, len(data_rows))
+    return data_rows, old_index, url_formula_cells
+
+
 def _fetch_overrides() -> dict[tuple[str, str], Job]:
     """Every currently open posting, freshly re-fetched, keyed by (board,
     job_id) -- one re-fetch of every board in config.GREENHOUSE_BOARDS,
@@ -301,29 +330,43 @@ def _config_lookup_tables() -> tuple[dict[str, str], dict[str, str]]:
     sheets.full_refresh so both look a row's `board` up against identical,
     up-to-date config rather than each keeping its own copy.
     """
+    board_lists_with_source = (
+        (config.GREENHOUSE_BOARDS, "Greenhouse"),
+        (config.LEVER_BOARDS, "Lever"),
+        (config.ASHBY_BOARDS, "Ashby"),
+        (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
+        (config.EIGHTFOLD_BOARDS, "Eightfold"),
+    )
     company_type_by_firm = {
         board["firm"]: board["company_type"]
-        for board_list in (
-            config.GREENHOUSE_BOARDS,
-            config.LEVER_BOARDS,
-            config.ASHBY_BOARDS,
-            config.SMARTRECRUITERS_BOARDS,
-            config.EIGHTFOLD_BOARDS,
-        )
+        for board_list, _source in board_lists_with_source
         for board in board_list
     }
     source_by_firm = {
         board["firm"]: source
-        for board_list, source in (
-            (config.GREENHOUSE_BOARDS, "Greenhouse"),
-            (config.LEVER_BOARDS, "Lever"),
-            (config.ASHBY_BOARDS, "Ashby"),
-            (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
-            (config.EIGHTFOLD_BOARDS, "Eightfold"),
-        )
+        for board_list, source in board_lists_with_source
         for board in board_list
     }
     return company_type_by_firm, source_by_firm
+
+
+def _read_row_values(row: list[str], old_index: dict[str, int | None]) -> dict[str, str]:
+    """This row's current FIELDS values, as-is off the sheet -- a name FIELDS
+    has that the tab's header doesn't (old_index[name] is None), or a row
+    shorter than that index, reads as "" rather than raising.
+
+    Shared by _recompute_row_values (as its starting point before
+    recomputing any column) and refresh_worksheet (as the "before" snapshot
+    it diffs the recomputed result against for its changed-column counts) --
+    the same raw read, wanted for two different purposes.
+    """
+    def read(name: str) -> str:
+        i = old_index[name]
+        if i is None or i >= len(row):
+            return ""
+        return row[i]
+
+    return {name: read(name) for name in FIELDS}
 
 
 def _recompute_row_values(
@@ -345,13 +388,7 @@ def _recompute_row_values(
     docstring for what each field does and why.
     """
 
-    def read(name: str) -> str:
-        i = old_index[name]
-        if i is None or i >= len(row):
-            return ""
-        return row[i]
-
-    values = {name: read(name) for name in FIELDS}
+    values = _read_row_values(row, old_index)
 
     values["seniority"] = classify_seniority(values["title"], values["department"])
 
@@ -415,34 +452,12 @@ def refresh_worksheet(
     leaves the previous values intact and columns outside the managed range
     remain untouched.
     """
-    all_values = worksheet.get_all_values()
-    if not all_values:
-        logger.info("refresh: empty sheet, nothing to do")
+    loaded = _tab_rows_for_refresh(worksheet)
+    if loaded is None:
+        logger.info("refresh: no data rows, nothing to do")
         return
-
-    header, *data_rows = all_values
-    if not data_rows:
-        logger.info("refresh: header only, nothing to do")
-        return
-
-    # Index into the tab's CURRENT header -- which may predate a FIELDS
-    # reorder, or (like first_published) predate a column existing at all --
-    # so every field can still be located regardless of the column order (or
-    # column set) this particular tab happens to have right now. A name
-    # FIELDS has that this header doesn't is None, not a KeyError: read()
-    # below treats that exactly like a too-short row.
-    old_index = {
-        name: (header.index(name) if name in header else None) for name in FIELDS
-    }
+    data_rows, old_index, url_formula_cells = loaded
     company_type_by_firm, source_by_firm = _config_lookup_tables()
-
-    def read(row: list[str], name: str) -> str:
-        i = old_index[name]
-        if i is None or i >= len(row):
-            return ""
-        return row[i]
-
-    url_formula_cells = _url_formula_cells(worksheet, header, len(data_rows))
 
     new_rows = []
     seniority_changed = 0
@@ -452,7 +467,7 @@ def refresh_worksheet(
     first_published_changed = 0
     description_changed = 0
     for row, url_cell in zip(data_rows, url_formula_cells):
-        old_values = {name: read(row, name) for name in FIELDS}
+        old_values = _read_row_values(row, old_index)
         values = _recompute_row_values(
             row, url_cell, old_index, company_type_by_firm, source_by_firm, overrides
         )

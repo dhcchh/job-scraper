@@ -77,7 +77,7 @@ import logging
 # it's imported, so patching it here still reaches _http's call.
 import requests
 
-from jobscraper.job_boards._http import get_with_retries
+from jobscraper.job_boards._http import paginate_with_retries
 from jobscraper.models import Job, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
@@ -146,26 +146,19 @@ def _fetch_all_pages(company_identifier: str, url: str) -> list[dict]:
     Pages in strides of _PAGE_LIMIT (the server's own hard cap) using
     `offset`, stopping once `totalFound` postings have been collected or a
     page comes back empty (belt-and-braces against an off-by-one in
-    `totalFound` looping forever).
+    `totalFound` looping forever) -- via job_boards._http.paginate_with_
+    retries, shared with eightfold/client.py's own _fetch_all_pages.
     """
-    postings: list[dict] = []
-    offset = 0
-    total_found = None
-    while total_found is None or offset < total_found:
-        response = get_with_retries(
-            "smartrecruiters",
-            company_identifier,
-            url,
-            params={"offset": offset, "limit": _PAGE_LIMIT},
-        )
-        payload = response.json()
-        total_found = payload.get("totalFound", 0)
-        page = payload.get("content", [])
-        if not page:
-            break
-        postings.extend(page)
-        offset += len(page)
-    return postings
+    return paginate_with_retries(
+        "smartrecruiters",
+        company_identifier,
+        url,
+        cursor_param="offset",
+        page_size_param="limit",
+        page_size=_PAGE_LIMIT,
+        total_key="totalFound",
+        items_key="content",
+    )
 
 
 def _to_job(

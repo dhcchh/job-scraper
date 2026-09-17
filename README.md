@@ -141,11 +141,14 @@ src/jobscraper/
   employers' own apply pages already show the JD fine. Where it is
   populated: Greenhouse's `content` field is HTML and gets run through
   `models.strip_html`; Lever's and Ashby's APIs already hand back plain
-  text, so their clients use that directly. SmartRecruiters' and
-  Eightfold's clients never populate it — the full JD isn't in either's
-  list endpoint (unconfirmed whether Eightfold even has a separate
-  per-posting detail endpoint with real JD text), and no live board on
-  either needs it today.
+  text, so their clients use that directly. SmartRecruiters' client never
+  populates it at all — the full JD isn't in its list endpoint. Eightfold's
+  client gates it the same way Greenhouse/Lever/Ashby do, but its own list
+  endpoint's `job_description` field is always "" on every live posting
+  checked (unconfirmed whether Eightfold even has a separate per-posting
+  detail endpoint with real JD text), and no live Eightfold firm is in
+  `FIRMS_NEEDING_DESCRIPTION` today anyway, so in practice it's `""` there
+  too.
 - **Identity**: a posting is uniquely identified by `(board, job_id)`, not
   `job_id` alone — every board assigns ids per tenant, so two different
   firms' boards can (and do) reuse the same id. `board` is the firm's

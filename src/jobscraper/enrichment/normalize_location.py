@@ -107,9 +107,16 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "chicago": "Chicago, IL",
     "chicago qts": "Chicago, IL",
     "chicago, il": "Chicago, IL",
+    # Bare-city fallback for Eightfold's own "City, Region, Country" entries
+    # once _location() (job_boards/eightfold/client.py) truncates to just
+    # the leading city -- see the "City, Region, Country" comment further
+    # down for why the matching whole-string entries never actually get
+    # looked up and can't be relied on for this.
+    "dallas": "Dallas, TX",
     "edison": "Edison, NJ",
     "greenwich": "Greenwich, CT",
     "houston": "Houston, TX",
+    "miami": "Miami, FL",
     "new york": "New York, NY",
     "new york city": "New York, NY",
     "new york, ny": "New York, NY",
@@ -117,6 +124,7 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "nyc": "New York, NY",
     "san francisco, ca": "San Francisco, CA",
     "seattle": "Seattle, WA",
+    "secaucus": "Secaucus, NJ",
     "stamford, ct": "Stamford, CT",
     "west palm beach, fl": "West Palm Beach, FL",
     "westchester": "Westchester, NY",
@@ -320,13 +328,20 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     # above covers: a full "City, State/Region, Country" triple (e.g.
     # "Tokyo, Tokyo, Japan", where the region repeats the city name, same
     # idea as the "City, City" wrapper _DUPLICATE_NAME_RE handles for a
-    # 2-part string, just one comma over). Same "needs a dry-run tuning
-    # pass" story as every other board's first addition -- classify_region
-    # already reads these correctly off the raw, unmapped string (it only
-    # needs whatever's after the LAST comma), so leaving one of these
-    # unmapped is a display-only inconsistency, not a PAC/RoW
-    # misclassification -- these are just the ones seeded from Millennium's
-    # live data so far.
+    # 2-part string, just one comma over). These whole-string entries are
+    # NOT actually what fixes Eightfold's own normalization today --
+    # job_boards/eightfold/client.py's `_location` always truncates to the
+    # leading city segment before ever calling normalize_location(), so
+    # only the bare city (see the entries above, e.g. "dallas"/"miami"/
+    # "secaucus") is ever looked up on that path, and the correct
+    # bare-city entry is what actually needs to exist for each one. Kept
+    # here anyway as a record of the raw triples seen on Millennium's live
+    # board, and in case some future caller ever normalizes the untruncated
+    # string directly; classify_region reads the country correctly off
+    # either an unmapped bare city OR an unmapped full triple (it only ever
+    # needs whatever's after the LAST comma, or the whole string if there's
+    # no comma at all), so a missing entry on EITHER path is a display-only
+    # inconsistency, never a PAC/RoW misclassification.
     "new york, new york, united states of america": "New York, NY",
     "miami, florida, united states of america": "Miami, FL",
     "dallas, texas, united states of america": "Dallas, TX",

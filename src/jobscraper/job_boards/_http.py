@@ -1,14 +1,16 @@
 """GET-with-retries shared by every job_boards/*/client.py.
 
-Every board's client -- Greenhouse, Lever, Ashby, SmartRecruiters -- fetches
-a public, read-only API over a plain HTTP GET and needs the exact same retry
-policy: a transient failure (connection error, timeout, 5xx, 429) is worth
-retrying since the next attempt might just work; anything else (a 4xx like a
-bad/renamed board token) means the request itself is wrong, so retrying it
-changes nothing and should raise immediately. Before this module existed,
-each job_boards/*/client.py carried its own byte-for-byte copy of this loop
--- this is the one place it lives now, tested once (see
-tests/job_boards/test_http.py) instead of four times.
+Every board's client -- Greenhouse, Lever, Ashby, SmartRecruiters, and
+Eightfold -- fetches a public, read-only API over a plain HTTP GET and needs
+the exact same retry policy: a transient failure (connection error, timeout,
+5xx, 429) is worth retrying since the next attempt might just work; anything
+else (a 4xx like a bad/renamed board token) means the request itself is
+wrong, so retrying it changes nothing and should raise immediately. Before
+this module existed, each of the first four job_boards/*/client.py modules
+carried its own byte-for-byte copy of this loop (Eightfold's client came
+later and was written directly against this module) -- this is the one
+place it lives now, tested once (see tests/job_boards/test_http.py) instead
+of once per board client.
 
 3 attempts total (1 initial + 2 retries), 2s/4s backoff between them --
 enough to ride out a brief network blip or a board's hiccup without
@@ -74,6 +76,52 @@ def get_with_retries(
             )
             time.sleep(delay)
             attempt += 1
+
+
+def paginate_with_retries(
+    source: str,
+    identifier: str,
+    url: str,
+    *,
+    cursor_param: str,
+    page_size_param: str,
+    page_size: int,
+    total_key: str,
+    items_key: str,
+) -> list[dict]:
+    """Every item across every page of a paginated JSON GET endpoint.
+
+    Shared by smartrecruiters/client.py and eightfold/client.py -- the two
+    paginated board types -- instead of each keeping its own copy of this
+    loop; before this existed the two were near-identical, differing only in
+    field/param names.
+
+    Advances `cursor_param` (e.g. "offset"/"start") by however many items
+    the page actually returned -- not by `page_size`, since a server may cap
+    or otherwise not honor the requested `page_size_param` (SmartRecruiters
+    caps `limit` at 100; Eightfold ignores `num` entirely and always returns
+    10) -- and stops once the response's own `total_key` count has been
+    collected or a page comes back empty under `items_key` (belt-and-braces
+    against an off-by-one in that count looping forever).
+    """
+    items: list[dict] = []
+    cursor = 0
+    total: int | None = None
+    while total is None or cursor < total:
+        response = get_with_retries(
+            source,
+            identifier,
+            url,
+            params={cursor_param: cursor, page_size_param: page_size},
+        )
+        payload = response.json()
+        total = payload.get(total_key, 0)
+        page = payload.get(items_key, [])
+        if not page:
+            break
+        items.extend(page)
+        cursor += len(page)
+    return items
 
 
 def _is_retryable(exc: Exception) -> bool:
