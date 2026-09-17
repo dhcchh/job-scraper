@@ -78,6 +78,13 @@ a full per-job listing) linking back to the sheet rather than to each job
 directly, and why this is called even when failed_firms will fail the run
 below.
 
+Right after the per-tab loop, sheets.supported_companies.sync_supported_companies
+rewrites the (separate, user-created) "Supported companies" tab from
+GREENHOUSE_BOARDS/LEVER_BOARDS/ASHBY_BOARDS/SMARTRECRUITERS_BOARDS/
+EIGHTFOLD_BOARDS -- a firm added to any of the five *_boards.toml files
+shows up there on the very next scheduled run instead of needing a manual
+backfill, and a firm removed from all five disappears from it the same way.
+
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add a client module with its own fetch_<board>_jobs() ->
     list[Job], and extend the fetch loop below the same way Greenhouse,
@@ -106,6 +113,7 @@ from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs
 from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
 from jobscraper.models import Job
+from jobscraper.sheets.supported_companies import sync_supported_companies
 from jobscraper.sheets.writer import (
     append_jobs,
     get_spreadsheet,
@@ -223,6 +231,13 @@ def run() -> None:
             )
             tab_stats[tab] = (len(tab_jobs), len(appended), pruned)
             newly_appended_by_tab[tab] = appended
+
+    # Keeps the user-created "Supported companies" tab (see
+    # sheets/supported_companies.py) current with the *_boards.toml files on
+    # every run, so a firm added there shows up without a separate manual
+    # step. Unconditional, like the per-tab writes above -- it reasons only
+    # about config, not about which boards succeeded this run.
+    sync_supported_companies(spreadsheet)
 
     markdown = _build_summary_markdown(
         spreadsheet_title=spreadsheet.title,

@@ -294,6 +294,22 @@ use a small fake `Worksheet`.
   than one tab (shouldn't happen in normal operation) keeps its first
   occurrence and logs a warning for the rest, rather than writing the
   same posting into two tabs.
+- `sheets/supported_companies.py` keeps a separate, user-created "Supported
+  companies" tab -- one row per firm, `Category`/`Company` columns, grouped
+  by that firm's `company_type` -- in sync with the checked-in
+  `*_boards.toml` files. Unlike `backfill.py`/`full_refresh.py`, this is NOT
+  manual-only: `main.py`'s `run()` calls it unconditionally on every daily
+  scrape (`sync_supported_companies`), so a firm added to any of the five
+  TOML files shows up there on the very next scheduled run with no separate
+  step. Safe to run unattended because it reasons about nothing but current
+  config, not job/sheet state -- the whole tab is cleared and rewritten from
+  scratch each time (so a firm removed from every TOML file disappears too),
+  deduplicating a multi-token firm (e.g. Optiver) down to one row. The tab
+  is matched by name case/whitespace-insensitively and created if genuinely
+  missing, since it's user-created rather than one of the ten (category,
+  region) job tabs `main.py` otherwise assumes already exist. Also runnable
+  by hand (`uv run python -m jobscraper.sheets.supported_companies`) to
+  populate or refresh it immediately without waiting for the next scrape.
 - The scraper logs the spreadsheet title/URL and writes a GitHub Actions job
   summary. Workflow-level concurrency protects Action-triggered runs; it does
   not protect a local run pointed at the production sheet.
