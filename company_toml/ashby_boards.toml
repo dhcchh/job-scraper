@@ -79,3 +79,8 @@ company_type = "Applied AI Products"
 token = "voleon"
 firm = "The Voleon Group"
 company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "openai-deployment-company"
+firm = "OpenAI Deployment Co"
+company_type = "Applied AI Products"
