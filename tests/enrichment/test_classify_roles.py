@@ -52,12 +52,26 @@ def _job(title, department=""):
         # Exchange/Gaming/Fintech/big-tech board data): bare/reordered
         # "Engineer" phrases and engineering
         # management, deliberately excluding customer-facing "Solutions
-        # Engineer"/"Forward Deployed Engineer" (see the noise test below).
+        # Engineer"/"Support Engineer" (see the noise test below).
         ("Staff Engineer, Core Infrastructure", "SWE/DE"),
         ("Senior Security Engineer, Detection and Response", "SWE/DE"),
         ("Engineering Manager, Notifications", "SWE/DE"),
         ("Director of Engineering, Infrastructure", "SWE/DE"),
         ("Manager, Software Engineering - Billing", "SWE/DE"),
+        # "Forward Deployed Engineer" is a real hands-on engineering role
+        # (confirmed via OpenAI Deployment Co's live board, where every
+        # posting uses exactly this bare title with no other keyword-bearing
+        # qualifier) -- unlike "Solutions Engineer"/"Support Engineer" below,
+        # which stay noise as genuinely pre-sales/support titles.
+        ("Forward Deployed Engineer - US", "SWE/DE"),
+        ("Forward Deployed Engineer", "SWE/DE"),
+        # Palantir's own more specific "Forward Deployed <X> Engineer"
+        # titles already route correctly via their own compound keyword
+        # (confirmed against Palantir's live board) -- no keyword-list
+        # change needed for these, just confirming they still work.
+        ("Forward Deployed Software Engineer", "SWE/DE"),
+        ("Forward Deployed AI Engineer", "DS/ML/Algos"),
+        ("Forward Deployed Infrastructure Engineer - UK Government", "SRE/DevOps"),
     ],
 )
 def test_classify_job_routes_to_expected_category(title, expected):
@@ -87,9 +101,10 @@ def test_classify_job_ignores_department():
         "Executive Assistant",
         # Customer-facing "Engineer" titles stay noise deliberately -- these
         # are pre-sales/support roles, not the hands-on-code or
-        # engineering-management scope SWE/DE was expanded to cover.
+        # engineering-management scope SWE/DE was expanded to cover. Unlike
+        # "Forward Deployed Engineer" (see the routing test above), neither
+        # of these names a hands-on delivery/engineering role.
         "Solutions Engineer, Privy",
-        "Forward Deployed Engineer",
         "Senior Support Engineer (GovOps)",
     ],
 )

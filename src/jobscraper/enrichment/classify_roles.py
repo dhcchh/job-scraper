@@ -127,11 +127,22 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
             "network engineer",
             "firmware engineer",
             "performance engineer",
+            # A real hands-on engineering title, not the pre-sales/support
+            # family below -- Palantir's own "Forward Deployed Software
+            # Engineer"/"Forward Deployed AI Engineer"/"Forward Deployed
+            # Infrastructure Engineer" already matched via their own
+            # "software engineer"/"ai engineer"/"infrastructure engineer"
+            # keywords, but OpenAI Deployment Co's live board posts the same
+            # role with no such qualifier -- just "Forward Deployed Engineer
+            # - <region>" -- which fell through every keyword above and
+            # landed on noise instead of SWE/DE (confirmed: none of its 11
+            # live postings classified anywhere without this).
+            "forward deployed engineer",
             # Engineering *management* -- deliberately included (unlike
-            # customer-facing "Solutions Engineer"/"Forward Deployed
-            # Engineer"/"Support Engineer", deliberately left as noise): an
-            # Engineering Manager or Director of Engineering still manages an
-            # engineering org, not a sales or support one.
+            # customer-facing "Solutions Engineer"/"Support Engineer",
+            # deliberately left as noise): an Engineering Manager or Director
+            # of Engineering still manages an engineering org, not a sales or
+            # support one.
             "engineering manager",
             "director of engineering",
             "director, engineering",
@@ -197,8 +208,8 @@ _RECRUITER_RE = re.compile(r"\brecruiter\b", re.IGNORECASE)
 
 # Same idea as the recruiter veto above: a Solutions Architect/Architecture
 # title is pre-sales/customer-facing, the same family as "Solutions
-# Engineer"/"Forward Deployed Engineer" already left as noise by omission --
-# but unlike those, "Solutions Architect" titles were actually reaching
+# Engineer"/"Support Engineer" already left as noise by omission -- but
+# unlike those, "Solutions Architect" titles were actually reaching
 # SWE/DE, because several real postings name their own team in a trailing
 # parenthetical or suffix that happens to contain SWE/DE's bare "developer"
 # keyword: Cloudflare's "Principal Solutions Architect, APJC (Developer
