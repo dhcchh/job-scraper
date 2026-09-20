@@ -25,6 +25,7 @@ def test_job_to_row_matches_fields_order():
         scraped_date=datetime.date(2026, 9, 12),
     )
     row = job.to_row()
+    assert job.salary is None
     assert len(row) == len(FIELDS)
     assert row == [
         "",  # first_published defaults when not passed explicitly
@@ -40,7 +41,7 @@ def test_job_to_row_matches_fields_order():
         "2026-09-12",
         "",  # source defaults when not passed explicitly
         "",  # description defaults when not passed explicitly
-        "",  # salary defaults when not passed explicitly
+        "",  # null salary renders as an empty Google Sheets cell
     ]
 
 

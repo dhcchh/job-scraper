@@ -191,7 +191,7 @@ def _to_job(
         # No compensation field on any posting -- confirmed against
         # Millennium's live board (the only reachable one) -- see
         # models.Job.salary.
-        salary="",
+        salary=None,
     )
 
 

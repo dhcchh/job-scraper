@@ -129,7 +129,7 @@ def _to_job(
         # buried in `content` (e.g. Robinhood: "the salary range for this
         # role is ... aligned to one of 3 compensation zones"), in no
         # consistent shape worth regexing out -- see models.Job.salary.
-        salary="",
+        salary=None,
     )
 
 

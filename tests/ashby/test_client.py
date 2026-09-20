@@ -89,12 +89,12 @@ def test_fetch_ashby_jobs_parses_response(monkeypatch):
     assert first.updated_at == ""  # Ashby's API has no edited-at timestamp at all
     assert first.salary == "$150K - $200K"
 
-    # Missing department/location/publishedAt/compensation degrade to "", not a crash.
+    # Missing department/location/publishedAt degrade to "", compensation to None -- no crash.
     assert second.department == ""
     assert second.location == ""
     assert second.seniority == "Unspecified"
     assert second.first_published == ""
-    assert second.salary == ""
+    assert second.salary is None
 
 
 def test_fetch_ashby_jobs_populates_description_only_for_a_firm_needing_it(

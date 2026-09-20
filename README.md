@@ -50,7 +50,7 @@ integration later: add its vars here too.
    `classify_roles.py` and `REGIONS` in `classify_region.py` for the
    current full list (10 tabs today). Each needs a header row matching
    `jobscraper.models.FIELDS` exactly:
-   `first_published, updated_at, board, title, location, seniority, company_type, url, department, job_id, scraped_date, source, description`.
+   `first_published, updated_at, board, title, location, seniority, company_type, url, department, job_id, scraped_date, source, description, salary`.
    Tabs and header rows aren't auto-created.
 5. **Telegram digest (optional)** — set `TELEGRAM_BOT_TOKEN`,
    `TELEGRAM_CHAT_ID`, and (if the chat has topics) `TELEGRAM_THREAD_ID` in
@@ -231,7 +231,7 @@ raw minutes math alone would suggest:
   the other four here (see the Fetching section above for its confirmed
   per-tenant lockdown rate).
 - **Sheets' own hard cap**: a spreadsheet holds at most 10,000,000 cells
-  (~770,000 rows at `FIELDS`' 13 columns). Where this binds depends on
+  (~770,000 rows at `FIELDS`' 14 columns). Where this binds depends on
   postings-per-company; today's sample (large quant/trading firms, ~45
   classified postings/board average) would hit it well under 10,000
   companies, but a broader, smaller-company mix would likely push this

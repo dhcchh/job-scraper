@@ -92,9 +92,9 @@ use a small fake `Worksheet`.
   company_type, url, department, job_id, scraped_date, source,
   description, salary` (columns A-N) -- see `models.py`'s `FIELDS` comment
   for why.
-- `Job.salary` is a human-readable pay range, or "" -- unlike `description`,
+- `Job.salary` is a human-readable pay range, or `None` -- unlike `description`,
   NOT gated to a firm allowlist; it's populated whenever a posting itself
-  discloses one, "" otherwise, since disclosure varies posting to posting,
+  discloses one, `None` otherwise, since disclosure varies posting to posting,
   not firm to firm. Only two of the five board types expose anything
   structured to read this from. Lever's `salaryRange`
   (`{min, max, currency, interval}`) is present only when that employer
@@ -117,13 +117,13 @@ use a small fake `Worksheet`.
   disclosed, is only ever freeform text buried in `content` (e.g.
   Robinhood: "the salary range for this role is ... aligned to one of 3
   compensation zones"), in no consistent shape worth regexing out, so
-  `job_boards/greenhouse/client.py` always sets `salary=""`.
+  `job_boards/greenhouse/client.py` always sets `salary=None`.
   SmartRecruiters and Eightfold expose no compensation field anywhere in
   their public APIs either (confirmed against Grab's per-posting detail
   endpoint and Millennium's live board, respectively), so both clients
-  always set `salary=""` too. `sheets/backfill.py` treats `salary` the same
+  always set `salary=None` too. `sheets/backfill.py` treats `salary` the same
   as `location` -- a fresh re-fetch (when the posting is still open)
-  unconditionally overwrites whatever's in the cell, including with "" if
+  unconditionally overwrites whatever's in the cell, including an empty cell if
   disclosure was removed, rather than only filling in a blank the way
   `first_published` does; a closed posting's row, with no override
   available, is left exactly as it already is.

@@ -161,8 +161,8 @@ def _department(raw: dict) -> str:
     return raw.get("department") or raw.get("team") or ""
 
 
-def _salary(raw: dict) -> str:
-    """A human-readable pay range from `compensation`, or "" if absent.
+def _salary(raw: dict) -> str | None:
+    """A human-readable pay range from `compensation`, or None if absent.
 
     See the module docstring for why `fetch_ashby_jobs` requests
     `includeCompensation=true` in the first place, and why
@@ -170,7 +170,7 @@ def _salary(raw: dict) -> str:
     is the field read here.
     """
     compensation = raw.get("compensation") or {}
-    return (compensation.get("scrapeableCompensationSalarySummary") or "").strip()
+    return (compensation.get("scrapeableCompensationSalarySummary") or "").strip() or None
 
 
 def _location(raw: dict) -> str:

@@ -37,7 +37,7 @@ import re
 # rule (see CLAUDE.md) don't need to move.
 # `salary`, same reasoning again, is appended after `description`: it's only
 # ever populated for two of the five board types (see Job.salary), so most
-# rows will have it blank, which fits better trailing everything else than
+# rows have a null value (rendered as an empty sheet cell), which fits better trailing everything else than
 # sitting among the columns every row actually has a value in.
 FIELDS: tuple[str, ...] = (
     "first_published",
@@ -245,9 +245,9 @@ class Job:
       for those specific firms. Defaults to "" for the same reason as
       company_type's default -- test Job(...) calls that don't care about
       it.
-    salary: a human-readable pay range, or "" -- unlike `description`, NOT
+    salary: a human-readable pay range, or None -- unlike `description`, NOT
       gated to a firm allowlist; it's populated whenever a posting itself
-      actually discloses one, "" otherwise, since whether an employer
+      actually discloses one, None otherwise, since whether an employer
       discloses pay varies posting to posting, not firm to firm. Only two of
       the five board types expose anything structured to read this from:
       Lever's `salaryRange` (`{min, max, currency, interval}`, present only
@@ -268,8 +268,8 @@ class Job:
       APIs either (confirmed against Grab's per-posting detail endpoint and
       Millennium's live board, respectively). See each
       job_boards/*/client.py's `_salary` for the exact per-board shape.
-      Defaults to "" for the same reason as company_type's default -- test
-      Job(...) calls that don't care about it.
+      Defaults to None. `to_row` renders None as an empty cell because
+      Google Sheets has no distinct null cell value.
     """
 
     board: str
@@ -285,7 +285,7 @@ class Job:
     first_published: str = ""
     source: str = ""
     description: str = ""
-    salary: str = ""
+    salary: str | None = None
 
     def to_row(self) -> list[str]:
         """Render as a flat list of strings, in FIELDS order, for a sheet row.
@@ -311,5 +311,5 @@ class Job:
             normalize_date(self.scraped_date),
             self.source,
             self.description,
-            self.salary,
+            self.salary or "",
         ]

@@ -34,7 +34,7 @@ shape as job_boards/greenhouse/client.py, adapted to Lever's response shape:
   on every other Lever board this project fetches. `_salary` formats it as
   e.g. "USD 55,000-65,000/year"; unlike `description`, this is NOT gated to
   a firm allowlist -- it's populated whenever a posting itself discloses a
-  range, "" otherwise, same as models.Job.salary's own docstring explains.
+  range, None otherwise, same as models.Job.salary's own docstring explains.
 
 `firm` (not the slug) is what ends up in Job.board, for the same readability
 and dedup-key reasons documented in job_boards/greenhouse/client.py. Every
@@ -189,8 +189,8 @@ def _description(raw: dict) -> str:
     return "\n\n".join(section for section in sections if section)
 
 
-def _salary(raw: dict) -> str:
-    """A human-readable pay range from `salaryRange`, or "" if absent.
+def _salary(raw: dict) -> str | None:
+    """A human-readable pay range from `salaryRange`, or None if absent.
 
     `min`/`max` are plain numbers (not cents), `currency` is an ISO code
     (e.g. "USD") -- see the module docstring for the one confirmed real
@@ -203,11 +203,11 @@ def _salary(raw: dict) -> str:
     """
     salary_range = raw.get("salaryRange")
     if not salary_range:
-        return ""
+        return None
     minimum = salary_range.get("min")
     maximum = salary_range.get("max")
     if minimum is None or maximum is None:
-        return ""
+        return None
     amount = f"{minimum:,}" if minimum == maximum else f"{minimum:,}-{maximum:,}"
     text = " ".join(part for part in (salary_range.get("currency", ""), amount) if part)
     interval = _interval_label(salary_range.get("interval", ""))

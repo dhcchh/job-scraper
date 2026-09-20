@@ -47,7 +47,7 @@ Nine things happen to every row, for every (category, region) tab:
     predates the column) rather than guessed at.
   - `salary` is recomputed unconditionally from that same fresh re-fetch,
     for a row still open -- like `first_published`, there's no legacy cell
-    to re-derive it from, but like `location`, a fresh value (including "",
+    to re-derive it from, but like `location`, a fresh value (including null
     if compensation disclosure was removed) always overwrites whatever's
     there rather than only filling in a blank; see models.Job.salary and
     job_boards/lever/client.py's and job_boards/ashby/client.py's own
@@ -267,7 +267,7 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
     - `salary` (models.Job.salary) -- same "no cell to re-derive from"
       reasoning again, and like `description` (but unlike
       `first_published`), this override replaces a stale-but-present value
-      too, including with "" if compensation is no longer disclosed. Unlike
+      too, including with null if compensation is no longer disclosed. Unlike
       `description`, there's no firm allowlist gating this one at all --
       see models.Job.salary's own docstring for why.
 
@@ -405,7 +405,7 @@ def _recompute_row_values(
     to re-derive from an existing cell" reasoning as `first_published` and
     `description`'s overrides -- but unlike `description`, it isn't gated to
     FIRMS_NEEDING_DESCRIPTION (see models.Job.salary), so a fresh value
-    (including "", if a posting's compensation disclosure was removed, or
+    (including null, if a posting's compensation disclosure was removed, or
     the board doesn't support it) always wins when available, the same
     unconditional-trust-the-fresh-fetch treatment `location` gets. A row
     with no override at all (posting closed, or its board's fetch failed)
@@ -441,7 +441,9 @@ def _recompute_row_values(
         values["description"] = fresh.description
 
     if fresh is not None:
-        values["salary"] = fresh.salary
+        # Sheets has no null cell value. Retain null in Job itself, but write
+        # an empty cell so a prior salary is explicitly cleared on refresh.
+        values["salary"] = fresh.salary or ""
 
     values["first_published"] = normalize_date(values["first_published"])
     values["updated_at"] = normalize_date(values["updated_at"])

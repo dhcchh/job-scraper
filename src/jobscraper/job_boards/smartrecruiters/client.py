@@ -183,7 +183,7 @@ def _to_job(
         # No compensation field anywhere in this API -- confirmed against
         # both the list response and a real per-posting detail response
         # (Grab) -- see models.Job.salary.
-        salary="",
+        salary=None,
     )
 
 

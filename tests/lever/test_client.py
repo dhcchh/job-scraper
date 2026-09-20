@@ -82,12 +82,12 @@ def test_fetch_lever_jobs_parses_response(monkeypatch):
     assert first.updated_at == ""  # Lever's API has no edited-at timestamp at all
     assert first.salary == "USD 55,000-65,000/year"
 
-    # Missing department/location/createdAt/salaryRange degrade to "", not a crash.
+    # Missing department/location/createdAt degrade to "", salary to None -- no crash.
     assert second.department == ""
     assert second.location == ""
     assert second.seniority == "Unspecified"
     assert second.first_published == ""
-    assert second.salary == ""
+    assert second.salary is None
 
 
 def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
@@ -226,5 +226,5 @@ def test_salary_keeps_an_interval_shaped_unlike_per_x_salary_as_is():
     assert client._salary(raw) == "USD 20-30/hourly"
 
 
-def test_salary_missing_salary_range_is_empty_string():
-    assert client._salary({}) == ""
+def test_salary_missing_salary_range_is_none():
+    assert client._salary({}) is None

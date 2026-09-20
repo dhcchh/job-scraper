@@ -615,7 +615,7 @@ def test_refresh_leaves_description_empty_for_a_firm_not_needing_it():
     assert row[header.index("description")] == ""
 
 
-def _job_stub(board, job_id, location, first_published="", description="", salary=""):
+def _job_stub(board, job_id, location, first_published="", description="", salary=None):
     from datetime import date
 
     from jobscraper.models import Job
@@ -687,14 +687,14 @@ def test_refresh_overwrites_stale_salary_when_fresh_differs():
 
 def test_refresh_blanks_salary_when_fresh_override_no_longer_has_one():
     # Unlike description (gated to a firm allowlist), a fresh override with
-    # salary == "" -- e.g. the board stopped disclosing it -- blanks a
+    # salary is None -- e.g. the board stopped disclosing it -- blanks a
     # stale, previously-populated cell rather than leaving it stuck.
     header_with_salary = _OLD_HEADER + ["salary"]
     row_with_salary = _old_row(board="Acme", job_id="1") + ["USD 50,000-60,000/year"]
     worksheet = _FakeWorksheet([header_with_salary, row_with_salary])
 
     backfill.refresh_worksheet(
-        worksheet, overrides={("Acme", "1"): _job_stub("Acme", "1", "Remote", salary="")}
+        worksheet, overrides={("Acme", "1"): _job_stub("Acme", "1", "Remote", salary=None)}
     )
 
     header, row = worksheet.updated_with
