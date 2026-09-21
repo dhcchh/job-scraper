@@ -472,7 +472,7 @@ def refresh_worksheet(
     regardless, since that decision only depends on FIRMS_NEEDING_DESCRIPTION,
     not `overrides`.
 
-    Always rewrites the managed A:M range as long as there's at least one
+    Always rewrites the managed A:N range as long as there's at least one
     data row -- unlike prune_closed_postings, this never skips based on
     whether a value *looks* unchanged, since e.g. a plain-text date and a
     real Sheets date read back identically from get_all_values()'s string

@@ -89,9 +89,14 @@ use a small fake `Worksheet`.
   real JD text, which is what a future Eightfold firm needing this would
   have to add). `FIELDS`' current order is
   `first_published, updated_at, board, title, location, seniority,
-  company_type, url, department, job_id, scraped_date, source,
-  description, salary` (columns A-N) -- see `models.py`'s `FIELDS` comment
-  for why.
+  company_type, url, salary, department, job_id, scraped_date, source,
+  description` (columns A-N) -- see `models.py`'s `FIELDS` comment
+  for why. **After every code or configuration change that affects
+  `description`** (its extraction, allowlist, formatting, or column
+  placement), the production spreadsheet must be edited by running
+  `uv run python -m jobscraper.sheets.full_refresh` or the manual
+  "Full Refresh (Rebuild)" workflow. Daily scraping only appends unseen
+  postings, so it cannot update the existing description cells.
 - `Job.salary` is a human-readable pay range, or `None` -- unlike `description`,
   NOT gated to a firm allowlist; it's populated whenever a posting itself
   discloses one, `None` otherwise, since disclosure varies posting to posting,

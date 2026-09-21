@@ -256,7 +256,7 @@ def test_format_date_columns_calls_format_when_available():
         {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}},
     )
     assert formatted_ranges[1] == (
-        "K2:K",
+        "L2:L",
         {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}},
     )
 
@@ -278,7 +278,7 @@ def test_format_description_column_clips_instead_of_wrapping():
 
     ws = _WorksheetWithFormat()
     writer.format_description_column(ws)
-    assert formatted_ranges == [("M2:M", {"wrapStrategy": "CLIP"})]
+    assert formatted_ranges == [("N2:N", {"wrapStrategy": "CLIP"})]
 
 
 def test_format_description_column_tolerates_worksheet_without_format():
@@ -293,11 +293,11 @@ def test_set_basic_filter_calls_set_basic_filter_when_available():
     calls = []
 
     class _WorksheetWithFilter:
-        def set_basic_filter(self):
-            calls.append(True)
+        def set_basic_filter(self, range_name):
+            calls.append(range_name)
 
     writer.set_basic_filter(_WorksheetWithFilter())
-    assert calls == [True]
+    assert calls == ["A1:N"]
 
 
 def test_set_basic_filter_tolerates_worksheet_without_it():
@@ -326,5 +326,3 @@ def test_check_expected_title_raises_on_mismatch(monkeypatch):
     monkeypatch.setattr(writer.config, "GOOGLE_SHEET_TITLE", "Job Board Tracker")
     with pytest.raises(RuntimeError, match="Some Other Sheet"):
         writer._check_expected_title(_FakeSpreadsheet("Some Other Sheet"))
-
-

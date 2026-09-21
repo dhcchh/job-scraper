@@ -36,12 +36,12 @@ def test_job_to_row_matches_fields_order():
         "Unspecified",  # seniority defaults when not passed explicitly
         "",  # company_type defaults when not passed explicitly
         '=HYPERLINK("https://example.com/1", "Apply")',
+        "",  # null salary renders as an empty Google Sheets cell
         "Eng",
         "1",
         "2026-09-12",
         "",  # source defaults when not passed explicitly
         "",  # description defaults when not passed explicitly
-        "",  # null salary renders as an empty Google Sheets cell
     ]
 
 

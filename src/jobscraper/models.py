@@ -21,8 +21,9 @@ import re
 # company_type -- the columns someone actually filters/sorts by, and what
 # sheets.writer.set_basic_filter's dropdown arrows target -- follow; url
 # still earns a spot ahead of the rest since it's the one column whose whole
-# purpose is to be clicked; department, job_id, scraped_date, and source are
-# comparatively bookkeeping and trail. Changing this order is a live-sheet
+# purpose is to be clicked; salary follows it so disclosed pay is immediately
+# visible; department, job_id, scraped_date, and source are comparatively
+# bookkeeping and trail. Changing this order is a live-sheet
 # migration, not just a code change -- see sheets/backfill.py, which
 # rewrites every existing row (and the header) into whatever order FIELDS
 # currently is, including re-pointing format_date_columns and each tab's
@@ -35,10 +36,6 @@ import re
 # inserting means every column before it keeps its current letter, so
 # format_date_columns/set_basic_filter and each tab's conditional-formatting
 # rule (see CLAUDE.md) don't need to move.
-# `salary`, same reasoning again, is appended after `description`: it's only
-# ever populated for two of the five board types (see Job.salary), so most
-# rows have a null value (rendered as an empty sheet cell), which fits better trailing everything else than
-# sitting among the columns every row actually has a value in.
 FIELDS: tuple[str, ...] = (
     "first_published",
     "updated_at",
@@ -48,12 +45,12 @@ FIELDS: tuple[str, ...] = (
     "seniority",
     "company_type",
     "url",
+    "salary",
     "department",
     "job_id",
     "scraped_date",
     "source",
     "description",
-    "salary",
 )
 
 DATE_FIELDS: tuple[str, ...] = (
@@ -306,10 +303,10 @@ class Job:
             self.seniority,
             self.company_type,
             hyperlink_formula(self.url),
+            self.salary or "",
             self.department,
             self.job_id,
             normalize_date(self.scraped_date),
             self.source,
             self.description,
-            self.salary or "",
         ]

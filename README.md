@@ -10,6 +10,7 @@ cp .env.example .env                       # fill in, see Setup below
 
 uv run python -m jobscraper.main           # run the scraper once
 uv run python -m jobscraper.sheets.backfill  # re-apply current classification/formatting to existing rows
+uv run python -m jobscraper.sheets.full_refresh  # rebuild and re-route every sheet row
 uv run python -m jobscraper.telegram --check # send a one-off test message, to verify Telegram setup
 uv run pytest                              # tests -- safe to run even with a real .env, see below
 ```
@@ -50,7 +51,7 @@ integration later: add its vars here too.
    `classify_roles.py` and `REGIONS` in `classify_region.py` for the
    current full list (10 tabs today). Each needs a header row matching
    `jobscraper.models.FIELDS` exactly:
-   `first_published, updated_at, board, title, location, seniority, company_type, url, department, job_id, scraped_date, source, description, salary`.
+   `first_published, updated_at, board, title, location, seniority, company_type, url, salary, department, job_id, scraped_date, source, description`.
    Tabs and header rows aren't auto-created.
 5. **Telegram digest (optional)** — set `TELEGRAM_BOT_TOKEN`,
    `TELEGRAM_CHAT_ID`, and (if the chat has topics) `TELEGRAM_THREAD_ID` in
@@ -85,7 +86,8 @@ src/jobscraper/
 │   └── eightfold/client.py            # Eightfold Apply API fetch + retry
 └── sheets/
     ├── writer.py                      # append new rows, prune closed postings
-    └── backfill.py                    # re-apply current classifiers to existing rows
+    ├── backfill.py                    # re-apply current classifiers to existing rows
+    └── full_refresh.py                # rebuild and re-route every existing row
 ```
 
 - **Role category**: `classify_roles.py` keyword-matches each job's title
@@ -148,7 +150,14 @@ src/jobscraper/
   checked (unconfirmed whether Eightfold even has a separate per-posting
   detail endpoint with real JD text), and no live Eightfold firm is in
   `FIRMS_NEEDING_DESCRIPTION` today anyway, so in practice it's `""` there
-  too.
+  too. After any change to description extraction, its firm allowlist,
+  formatting, or column position, run `sheets.full_refresh` (or its manual
+  GitHub Actions workflow) to update existing rows; the daily scrape only
+  adds new postings.
+- **Salary**: the `salary` column follows the Apply link and precedes
+  `department`. Lever and Ashby supply a human-readable range when their
+  API response discloses one; otherwise every portal returns `None`, which
+  is written to Google Sheets as a blank cell.
 - **Identity**: a posting is uniquely identified by `(board, job_id)`, not
   `job_id` alone — every board assigns ids per tenant, so two different
   firms' boards can (and do) reuse the same id. `board` is the firm's
@@ -169,7 +178,7 @@ src/jobscraper/
   location normalization, and column order to every existing row — run it
   after changing `FIELDS`, keyword lists, the location lookup table, or
   `models.FIRMS_NEEDING_DESCRIPTION`. It also re-fetches every board to
-  refresh `location`/`first_published` for still-open postings, and
+  refresh `location`/`first_published`/`salary` for still-open postings, and
   recomputes `description` from `FIRMS_NEEDING_DESCRIPTION` — filling it
   in (and overwriting even a non-empty stale value, since a JD can be
   legitimately edited) for a firm in that set, blanking it back to `""`

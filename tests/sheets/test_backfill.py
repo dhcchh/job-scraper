@@ -102,12 +102,12 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
         "seniority",
         "company_type",
         "url",
+        "salary",
         "department",
         "job_id",
         "scraped_date",
         "source",
         "description",
-        "salary",
     ]
     assert row == [
         "",  # first_published: no such column in _OLD_HEADER, no override given
@@ -118,12 +118,12 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
         "Junior",  # recomputed from "Junior Engineer", was stale "Unspecified"
         "Big Tech",
         '=HYPERLINK("https://x/101", "Apply")',
+        "",  # salary: no such column in _OLD_HEADER, no override given
         "Eng",
         "101",
         "2026-09-01",
         "",  # source: "Acme" isn't a real configured firm, no override given
         "",  # description: no such column in _OLD_HEADER, no override given
-        "",  # salary: no such column in _OLD_HEADER, no override given
     ]
 
 

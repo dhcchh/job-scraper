@@ -28,6 +28,7 @@ import logging
 
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.utils import rowcol_to_a1
 
 from jobscraper import config
 from jobscraper.models import FIELDS, Job
@@ -84,17 +85,17 @@ def get_worksheet(spreadsheet: gspread.Spreadsheet, name: str) -> gspread.Worksh
 def format_date_columns(worksheet: gspread.Worksheet) -> None:
     """Explicitly format date columns as DATE ('yyyy-mm-dd') in Google Sheets.
 
-    Applies to first_published (A), updated_at (B), and scraped_date (K)
+    Applies to first_published (A), updated_at (B), and scraped_date (L)
     data cells so Google Sheets displays them uniformly. These letters follow
     FIELDS' current order (see models.py) -- they move if FIELDS is reordered.
     """
     if hasattr(worksheet, "format"):
         worksheet.format("A2:B", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
-        worksheet.format("K2:K", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
+        worksheet.format("L2:L", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
 
 
 def format_description_column(worksheet: gspread.Worksheet) -> None:
-    """Clip (don't wrap) the description column (M) so a long JD can't blow
+    """Clip (don't wrap) the description column (N) so a long JD can't blow
     up that row's height.
 
     models.strip_html/lever's _description embed real newlines in the text
@@ -109,7 +110,7 @@ def format_description_column(worksheet: gspread.Worksheet) -> None:
     reordered.
     """
     if hasattr(worksheet, "format"):
-        worksheet.format("M2:M", {"wrapStrategy": "CLIP"})
+        worksheet.format("N2:N", {"wrapStrategy": "CLIP"})
 
 
 def set_basic_filter(worksheet: gspread.Worksheet) -> None:
@@ -121,10 +122,70 @@ def set_basic_filter(worksheet: gspread.Worksheet) -> None:
     a basic filter is all-or-nothing over its range, so every other column
     gets the same arrow for free. Re-running this replaces any existing
     basic filter on the sheet rather than erroring, so it's safe to call
-    every backfill the same way format_date_columns is.
+    every backfill the same way format_date_columns is. The range is limited
+    to FIELDS' columns. Google Sheets resolves its open-ended row range to
+    the current last populated row, so the saved filter views are resized
+    below every time this runs as well.
     """
     if hasattr(worksheet, "set_basic_filter"):
-        worksheet.set_basic_filter()
+        last_column = rowcol_to_a1(1, len(FIELDS))[:-1]
+        worksheet.set_basic_filter(f"A1:{last_column}")
+        _resize_saved_filter_views(worksheet)
+
+
+def _resize_saved_filter_views(worksheet: gspread.Worksheet) -> None:
+    """Match each saved filter view to the current managed column range.
+
+    Filter views retain the fixed row range they had when they were first
+    saved. Without this maintenance, new rows appended by the daily scraper
+    silently fall outside those views. Only the `range` is updated: each
+    view's title and any user-configured criteria are preserved.
+
+    Lightweight worksheet fakes used by unit tests do not expose gspread's
+    HTTP client, so this is intentionally a no-op for them.
+    """
+    if not hasattr(worksheet, "client") or not hasattr(worksheet, "spreadsheet_id"):
+        return
+
+    try:
+        metadata = worksheet.client.fetch_sheet_metadata(
+            worksheet.spreadsheet_id, params={"includeGridData": "false"}
+        )
+        sheet = next(
+            item
+            for item in metadata["sheets"]
+            if item["properties"]["sheetId"] == worksheet.id
+        )
+        views = sheet.get("filterViews", [])
+        if not views:
+            return
+
+        grid_range = {
+            "sheetId": worksheet.id,
+            "startRowIndex": 0,
+            "startColumnIndex": 0,
+            "endColumnIndex": len(FIELDS),
+        }
+        requests = [
+            {
+                "updateFilterView": {
+                    "filter": {
+                        "filterViewId": view["filterViewId"],
+                        "range": grid_range,
+                    },
+                    "fields": "range",
+                }
+            }
+            for view in views
+        ]
+        worksheet.client.batch_update(worksheet.spreadsheet_id, {"requests": requests})
+    except Exception:
+        # Filter views are a convenience; a metadata read failure must not
+        # turn an otherwise-successful scrape/refresh into a failed run.
+        logger.warning(
+            "couldn't resize saved filter views for sheet id %s", worksheet.id,
+            exc_info=True,
+        )
 
 
 def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> list[Job]:
@@ -154,6 +215,7 @@ def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> list[Job]:
 
     rows = [job.to_row() for job in new_jobs]
     worksheet.append_rows(rows, value_input_option="USER_ENTERED")
+    set_basic_filter(worksheet)
     logger.info(
         "appended %d new row(s), skipped %d already-tracked", len(rows), skipped
     )
@@ -248,6 +310,7 @@ def prune_closed_postings(
         for row_index in reversed(closed_row_indexes)
     ]
     worksheet.client.batch_update(worksheet.spreadsheet_id, {"requests": requests})
+    set_basic_filter(worksheet)
     logger.info("prune: removed %d closed posting(s)", pruned_count)
     return pruned_count
 
