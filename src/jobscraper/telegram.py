@@ -9,16 +9,29 @@ main.py is what does that filtering (from append_jobs' now-returned newly
 appended Job lists, keyed by tab_name(category, "PAC")) -- this module only
 formats and sends whatever dict it's handed.
 
-Deliberately a *count* digest, not a listing: one line per distinct
-(category, firm, location) combination ("3 new SWE/DE roles from Grab
-available in Singapore"), not one line per job with its own title and apply
-link. Earlier versions of this digest put every new job's title and a direct
-apply link straight in the message -- that gave everything away up front and
-gave a reader no reason to ever open the tracker sheet itself. Grouping by
-firm+location also collapses a firm posting several near-identical reqs into
-one line instead of a wall of near-duplicate bullets. The message ends with
-one link to the spreadsheet itself (not a per-job/per-category deep link) so
-the reader goes there for titles, exact locations, and the real apply link.
+Deliberately a *count* digest, not a listing: a bold category header
+followed by one terse "Firm xN (Location)" line per (firm, location) group
+under it, e.g.
+
+    <b>SWE/DE</b>
+    Grab x3 (Singapore)
+    OpenAI x2 (Singapore)
+
+not one line per job with its own title and apply link, and not the earlier
+per-group full sentence this replaced ("3 new SWE/DE roles from Grab
+available in Singapore" for every group) -- that read fine at a handful of
+groups but turned into a long, hard-to-scan wall of near-identical sentences
+on a day with many firms, repeating the category name and "new .../roles
+from/available in" boilerplate on every single line. The terser token still
+gets its own line per group (rather than being comma-joined onto the
+category header's line) so `_chunk` can keep splitting a category with many
+groups line-by-line instead of being handed one unsplittable run-on line. An
+even earlier version put every new job's title and a direct apply link
+straight in the message -- that gave everything away up front and gave a
+reader no reason to ever open the tracker sheet itself. The message ends
+with one link to the spreadsheet itself (not a per-job/per-category deep
+link) so the reader goes there for titles, exact locations, and the real
+apply link.
 
 Config-gated and best-effort: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID unset (the
 default -- see config.py) makes send_digest a silent no-op, and any failure
@@ -79,48 +92,52 @@ def build_digest_text(
     category/region today. A category that's absent or empty is left out of
     the message rather than shown as "0 new roles" noise.
 
-    Within a category, jobs are grouped by (firm, location) -- see the
-    module docstring for why a count line, not a per-job listing.
-    `spreadsheet_url` is appended as one link at the end, only when there's
-    actually something new to point at.
+    Within a category, jobs are grouped by (firm, location) into one terse
+    "Firm xN (Location)" line each, under a bold category header -- see the
+    module docstring for why (a count digest, and a compact one). Each group
+    stays its own line, not folded onto the category header's line, so
+    `_chunk` can still split a category with many groups line-by-line
+    instead of being handed one unsplittable run-on line. `spreadsheet_url`
+    is appended as one link at the end, only when there's actually something
+    new to point at.
     """
-    lines = []
+    category_blocks = []
     total = 0
     for category in DIGEST_CATEGORIES:
         jobs = new_jobs_by_category.get(category) or []
         if not jobs:
             continue
         total += len(jobs)
-        lines.extend(_group_lines(category, jobs))
+        entries = _group_entries(jobs)
+        category_blocks.append(f"<b>{_escape(category)}</b>\n" + "\n".join(entries))
 
-    if not lines:
+    if not category_blocks:
         return None
 
     header = f"\U0001f4e6 {total} new PAC role(s)"
     link = f'<a href="{_escape(spreadsheet_url, quote=True)}">See them in the sheet</a>'
-    return "\n\n".join([header, "\n".join(lines), link])
+    return "\n\n".join([header, *category_blocks, link])
 
 
-def _group_lines(category: str, jobs: list[Job]) -> list[str]:
-    """One count line per distinct (firm, location) combo in `jobs`, in
-    first-seen order."""
+def _group_entries(jobs: list[Job]) -> list[str]:
+    """One "Firm xN (Location)" token per distinct (firm, location) combo in
+    `jobs`, in first-seen order."""
     counts: dict[tuple[str, str], int] = {}
     for job in jobs:
         key = (job.board, job.location)
         counts[key] = counts.get(key, 0) + 1
     return [
-        _format_group_line(category, count, firm, location)
+        _format_group_entry(count, firm, location)
         for (firm, location), count in counts.items()
     ]
 
 
-def _format_group_line(category: str, count: int, firm: str, location: str) -> str:
-    """"3 new SWE/DE roles from Grab available in Singapore" -- location can
-    legitimately be "" (see models.Job), in which case the "available in"
-    clause is dropped rather than rendered empty."""
-    role_word = "role" if count == 1 else "roles"
-    where = f" available in {_escape(location)}" if location else ""
-    return f"{count} new {_escape(category)} {role_word} from {_escape(firm)}{where}"
+def _format_group_entry(count: int, firm: str, location: str) -> str:
+    """"Grab x3 (Singapore)" -- location can legitimately be "" (see
+    models.Job), in which case the parenthesized clause is dropped rather
+    than rendered empty."""
+    where = f" ({_escape(location)})" if location else ""
+    return f"{_escape(firm)} x{count}{where}"
 
 
 def _escape(text: str, *, quote: bool = False) -> str:

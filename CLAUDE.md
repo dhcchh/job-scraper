@@ -407,14 +407,19 @@ use a small fake `Worksheet`.
   each category's newly appended PAC-tab jobs plus this run's already-opened
   `spreadsheet.url` -- `sheets.writer.append_jobs` returns the `list[Job]`
   it actually appended (not a count) so the digest can group them. The
-  message is deliberately a *count* digest, not a listing: one line per
-  distinct (category, firm, location), e.g. "3 new SWE/DE roles from Grab
-  available in Singapore", not one line per job with its own title and
-  apply link -- an earlier version gave every job's title and a direct
-  apply link away up front, which gave a reader no reason to open the
-  tracker sheet. The message ends with one link to the spreadsheet itself
-  (not a per-job/per-category deep link) so the reader goes there for
-  titles, exact locations, and the real apply link. Disabled by default:
+  message is deliberately a *count* digest, not a listing: a bold category
+  header followed by one terse "Firm xN (Location)" line per distinct
+  (firm, location) group under it, e.g. "**SWE/DE**" then "Grab x3
+  (Singapore)" -- not one line per job with its own title and apply link,
+  and not the earlier one-full-sentence-per-group format ("3 new SWE/DE
+  roles from Grab available in Singapore" for every group), which repeated
+  the category name and "new .../roles from/available in" boilerplate on
+  every line and turned into a hard-to-scan wall of text on a day with many
+  firms. An even earlier version gave every job's title and a direct apply
+  link away up front, which gave a reader no reason to open the tracker
+  sheet. The message ends with one link to the spreadsheet itself (not a
+  per-job/per-category deep link) so the reader goes there for titles,
+  exact locations, and the real apply link. Disabled by default:
   `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` unset (see `config.py`)
   makes `send_digest` a silent no-op, same convention as
   data-career-hustler-bot's own optional `*_CHAT_ID` destinations. Sent via

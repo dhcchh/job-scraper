@@ -56,28 +56,21 @@ def test_build_digest_text_groups_by_category_firm_and_location():
         },
         _SHEET_URL,
     )
-    assert "2 new SWE/DE roles from Grab available in Singapore" in text
-    assert "1 new SWE/DE role from Grab available in Jakarta, Indonesia" in text
-    assert "1 new SWE/DE role from Wise available in Singapore" in text
+    assert "Grab x2 (Singapore)" in text
+    assert "Grab x1 (Jakarta, Indonesia)" in text
+    assert "Wise x1 (Singapore)" in text
+    # One shared "SWE/DE" header for all three groups, not repeated per line.
+    assert text.count("SWE/DE") == 1
     # Individual job titles are never shown -- see module docstring.
     assert "Backend Engineer" not in text
     assert "Frontend Engineer" not in text
 
 
-def test_build_digest_text_uses_singular_role_for_a_count_of_one():
-    text = telegram.build_digest_text(
-        {"DA/BI": [_job("Data Analyst", board="Acme", location="Singapore")]},
-        _SHEET_URL,
-    )
-    assert "1 new DA/BI role from Acme available in Singapore" in text
-    assert "1 new DA/BI roles" not in text
-
-
 def test_build_digest_text_omits_location_clause_when_absent():
     job = Job("Acme", "1", "Data Analyst", "Eng", "", "", "", datetime.date(2026, 9, 12))
     text = telegram.build_digest_text({"DA/BI": [job]}, _SHEET_URL)
-    assert "1 new DA/BI role from Acme" in text
-    assert "available in" not in text.split("\n\n")[0]  # the header+lines block
+    assert "Acme x1" in text
+    assert "(" not in text.split("\n\n")[1]  # the DA/BI category block
 
 
 def test_build_digest_text_escapes_html_special_characters():
