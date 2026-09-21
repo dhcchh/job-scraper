@@ -14,6 +14,27 @@ uv run pytest
 uv run pytest tests/sheets/test_writer.py
 ```
 
+**Before running `jobscraper.main`, `sheets.backfill`, `sheets.full_refresh`,
+or `sheets.supported_companies` against the real production sheet** (a real
+`.env`, not the test-forced dummy values) **from a local checkout: confirm
+that checkout is committed AND pushed to `origin/main` first** (`git status`
+clean, `git log origin/main..HEAD` empty). GitHub Actions always runs
+`origin/main`, never whatever's on disk locally -- if a local run migrates
+live sheet state (schema, column order, row shape) using code that hasn't
+been pushed yet, the scheduled workflow keeps running the old code against
+the now-already-migrated sheet, and the two silently diverge. This isn't
+hypothetical: it happened on 2026-09-21 -- `models.FIELDS`'s column order was
+changed locally and applied to the production sheet's header via a local
+`sheets.backfill` run before that same reorder was committed and pushed. The
+daily scheduled workflow, still running the old (unpushed) column order,
+kept appending rows shifted relative to the sheet's new header, which
+corrupted `job_id` in every newly appended row; `prune_closed_postings` then
+read that corrupted `job_id`, concluded the posting had closed, and silently
+deleted nearly every row appended that same run -- every day, for two days,
+with the workflow still reporting success each time. Running these commands
+only from a clean, pushed checkout is what keeps local and CI-scheduled
+behavior identical.
+
 There is no formatter or linter. Tests never use the network or live Google
 or Telegram credentials: `tests/conftest.py` forces `GOOGLE_SHEET_ID`/
 `GOOGLE_SERVICE_ACCOUNT_JSON` to dummy values and `TELEGRAM_BOT_TOKEN`/
