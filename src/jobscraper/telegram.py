@@ -154,12 +154,20 @@ def _chunk(text: str, limit: int | None = None) -> list[str]:
     """Split `text` into <=`limit`-char pieces, never mid-line.
 
     Splitting on a blank line (the boundary between build_digest_text's
-    header, grouped-count lines, and trailing sheet link) first, falling
+    header, per-category blocks, and trailing sheet link) first, falling
     back to individual lines only for a single block that's still too long
     on its own -- unlikely at this project's scale (see CLAUDE.md's Scale
     section) but a silent truncation mid-`<a href=...>` would send Telegram
     malformed HTML, which it either rejects outright or renders broken,
     either way worse than one extra message.
+
+    A section's own first line (e.g. build_digest_text's "<b>SWE/DE</b>"
+    category header) is carried forward into every continuation chunk that
+    fallback produces for the rest of that section -- otherwise a category
+    with enough (firm, location) groups to force a line-by-line split would
+    hand out messages whose only mention of which category they belong to
+    got flushed into an earlier chunk, exactly on the "busy day with many
+    firms" this compact format is meant for.
 
     `limit` defaults to None (resolved to _MAX_MESSAGE_LEN inside the body)
     rather than defaulting the parameter directly to _MAX_MESSAGE_LEN --
@@ -185,14 +193,20 @@ def _chunk(text: str, limit: int | None = None) -> list[str]:
         if len(section) <= limit:
             current = section
             continue
-        for line in section.split("\n"):
+        lines = section.split("\n")
+        header_line = lines[0]
+        for index, line in enumerate(lines):
             candidate = f"{current}\n{line}" if current else line
             if len(candidate) <= limit:
                 current = candidate
-            else:
-                if current:
-                    chunks.append(current)
+                continue
+            if current:
+                chunks.append(current)
+            if index == 0:
                 current = line
+                continue
+            carried = f"{header_line}\n{line}"
+            current = carried if len(carried) <= limit else line
     if current:
         chunks.append(current)
     return chunks

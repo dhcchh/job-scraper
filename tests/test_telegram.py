@@ -115,6 +115,62 @@ def test_chunk_splits_a_single_oversized_section_line_by_line():
     assert chunks == ["aaaaa", "bbbbb", "ccccc"]
 
 
+def test_chunk_carries_a_section_header_into_every_continuation_chunk():
+    """A section's first line (e.g. build_digest_text's "<b>Category</b>"
+    header) must survive into every chunk the rest of that section gets
+    split into -- otherwise a continuation chunk carries none of the
+    context explaining what its lines are about."""
+    lines = "\n".join(f"item {i}" for i in range(10))
+    text = f"<b>Header</b>\n{lines}"
+    chunks = telegram._chunk(text, limit=30)
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert "<b>Header</b>" in chunk
+        assert len(chunk) <= 30
+
+
+def test_build_digest_text_and_chunk_keep_every_message_self_describing():
+    """End-to-end reproduction of a busy category: enough distinct (firm,
+    location) groups that _chunk must split the category block line by
+    line. Every resulting chunk of that block must still name the category,
+    matching test_chunk_carries_a_section_header_into_every_continuation_chunk
+    but through the real build_digest_text output."""
+    jobs = [
+        _job(f"Role {i}", board=f"Firm {i}", location=f"City {i}") for i in range(50)
+    ]
+    text = telegram.build_digest_text({"DA/BI": jobs}, _SHEET_URL)
+    chunks = telegram._chunk(text, limit=200)
+    assert len(chunks) > 1
+    body_chunks = [c for c in chunks if "Firm" in c]
+    assert len(body_chunks) > 1  # actually exercises the split, not a fluke
+    for chunk in body_chunks:
+        assert "DA/BI" in chunk
+
+
+def test_chunk_splits_cleanly_at_section_boundaries_across_categories():
+    """Several categories that are each individually small but together
+    exceed the limit should split at the "\\n\\n" section boundaries between
+    them, never falling into the line-by-line fallback -- each category's
+    header and its lines should always land in the same chunk."""
+    text = telegram.build_digest_text(
+        {
+            "DA/BI": [_job("Data Analyst", board="Acme", location="Singapore")],
+            "DS/ML/Algos": [_job("Data Scientist", board="Beta", location="Tokyo")],
+            "SWE/DE": [_job("Engineer", board="Gamma", location="Hong Kong")],
+        },
+        _SHEET_URL,
+    )
+    chunks = telegram._chunk(text, limit=80)
+    assert len(chunks) > 1
+    for category, firm in [
+        ("DA/BI", "Acme"),
+        ("DS/ML/Algos", "Beta"),
+        ("SWE/DE", "Gamma"),
+    ]:
+        matches = [c for c in chunks if category in c and firm in c]
+        assert len(matches) == 1, f"{category}/{firm} should share exactly one chunk"
+
+
 def test_send_digest_noop_when_not_configured(monkeypatch):
     monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", None)
     monkeypatch.setattr(telegram.config, "TELEGRAM_CHAT_ID", 123)
