@@ -2,11 +2,13 @@ name: Daily Scrape (Append)
 
 on:
   schedule:
-    # 04:00 UTC = 12:00 Singapore time (UTC+8, no DST).
+    # 23:00 UTC = 07:00 Singapore time the NEXT day (UTC+8, no DST) -- so
+    # this fires on the previous UTC date to land on a Singapore morning.
     # NOTE: GitHub Actions cron is best-effort and can be delayed under
-    # platform load -- a known caveat, not something this workflow works
-    # around.
-    - cron: "0 4 * * *"
+    # platform load (often by tens of minutes at the top of an hour) -- a
+    # known caveat, not something this workflow works around, so treat
+    # 07:00 SGT as the earliest it starts rather than a guaranteed time.
+    - cron: "0 23 * * *"
   workflow_dispatch: {}
 
 # Shared with full-refresh.yml: both read-then-write every tab, so they must

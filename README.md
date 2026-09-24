@@ -309,7 +309,7 @@ Two GitHub Actions workflows, both sharing
 queue rather than run at the same time (both read-then-write every tab):
 
 - **`.github/workflows/daily-scrape.yml`** ("Daily Scrape (Append)") runs
-  `jobscraper.main` at `0 4 * * *` UTC (noon Singapore time), plus manual
+  `jobscraper.main` at `0 23 * * *` UTC (7am Singapore time, next day), plus manual
   `workflow_dispatch`. Appends newly seen jobs and prunes closed ones —
   the routine, incremental run.
 - **`.github/workflows/full-refresh.yml`** ("Full Refresh (Rebuild)") runs
