@@ -29,6 +29,15 @@ only after interviewing, so a title with no marker genuinely carries no
 signal. Guessing "Mid" for all of those would fabricate a signal that isn't
 there; leaving them clearly labeled "Unspecified" doesn't.
 
+A board's own structured employment-type field is consulted as a FALLBACK,
+and only when the title (+ department) carries no level wording at all --
+see classify_seniority's `employment_type` argument. Some employers never
+put "Intern" in an internship's title: Jane Street posts its 46 summer
+internships under the same plain titles as its full-time reqs ("Data
+Engineer", "Software Engineer", ...) and puts "Summer Internship" in
+Greenhouse's per-posting "Employment Type" metadata field instead, so
+title-only matching read every one of them as "Unspecified".
+
 To extend: add a keyword to an existing tuple, or a new (name, keywords)
 tuple to LEVELS -- same one-line change as classify.py.
 """
@@ -58,18 +67,45 @@ LEVELS: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
-def classify_seniority(title: str, department: str = "") -> str:
+def classify_seniority(
+    title: str, department: str = "", employment_type: str = ""
+) -> str:
     """The seniority level implied by title (+ department), or "Unspecified".
 
     Takes raw strings rather than a Job -- this runs at Job-construction
     time (see greenhouse.client._to_job) to populate Job.seniority, before
     a Job object exists yet.
+
+    `employment_type` is a board's own structured employment-type value
+    (today only Greenhouse's "Employment Type" posting metadata -- see
+    job_boards/greenhouse/client.py's _employment_type; the other four
+    boards' equivalent fields were measured to add nothing, see that
+    function's comment). It is matched against the same LEVELS table, but
+    ONLY as a fallback once title + department have matched nothing:
+      - it can only ever say Intern/Graduate in practice ("Summer
+        Internship", "Winter Co-Op", "Full-Time: New Grad", "Intern"), so
+        it has nothing to contribute to a title that already resolved, and
+      - the title stays the primary signal, which is what keeps this from
+        regressing a level a title states outright. Confirmed against all
+        54 Greenhouse boards' live postings: every one of the 71 it
+        changes is a title that classified as "Unspecified" -- it does not
+        move a single already-classified posting to a different level.
     """
-    text = f"{title} {department}"
+    level = _match(f"{title} {department}")
+    if level is None and employment_type:
+        level = _match(employment_type)
+    return level or "Unspecified"
+
+
+def _match(text: str) -> str | None:
+    """First LEVELS entry text matches, or None -- "Unspecified" is
+    classify_seniority's decision to make, not this helper's, so the
+    employment-type fallback above can tell "matched nothing" apart from a
+    real level."""
     for level, keywords in LEVELS:
         if any(_contains_keyword(text, keyword) for keyword in keywords):
             return level
-    return "Unspecified"
+    return None
 
 
 def _contains_keyword(text: str, keyword: str) -> bool:

@@ -15,11 +15,17 @@ an already-written row can sit on stale classification/formatting/column
 order indefinitely without this.
 
 Nine things happen to every row, for every (category, region) tab:
-  - `seniority`, `company_type`, and `source` are recomputed from columns
-    already in the row -- `seniority` from the row's own
-    `title`/`department` via the *current* classify_seniority.
-    classify_seniority; `company_type` and `source` by looking the row's
-    `board` up in the *current* config.GREENHOUSE_BOARDS,
+  - `seniority` is taken from the fresh re-fetch (see _fetch_overrides)
+    while the posting is still open, and only recomputed from the row's own
+    `title`/`department` via the *current* classify_seniority once it has
+    closed. A Greenhouse posting can state its level only in its
+    "Employment Type" metadata and not anywhere in its title (see
+    job_boards/greenhouse/client.py's _employment_type), and no column in
+    the sheet carries that -- so re-deriving from the row alone would reset
+    those rows to "Unspecified" every run.
+  - `company_type` and `source` are recomputed from columns already in the
+    row, by looking the row's `board` up in the *current*
+    config.GREENHOUSE_BOARDS,
     config.LEVER_BOARDS, config.ASHBY_BOARDS,
     config.SMARTRECRUITERS_BOARDS, and config.EIGHTFOLD_BOARDS (whichever
     one the firm is actually configured in -- `source` is just which of the
@@ -243,9 +249,13 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
     job_id) -- one re-fetch of every board in config.GREENHOUSE_BOARDS,
     config.LEVER_BOARDS, config.ASHBY_BOARDS,
     config.SMARTRECRUITERS_BOARDS, and config.EIGHTFOLD_BOARDS (the same
-    five loops main.py's daily run makes) serves four different
+    five loops main.py's daily run makes) serves five different
     retroactive fixes without doubling the network cost:
 
+    - `seniority`: the only place a Greenhouse posting's "Employment Type"
+      metadata can be read back from -- it never became a column in the
+      sheet, so a row whose level lives only there (an internship titled
+      like an ordinary req) can't be re-derived from its own text at all.
     - `location`: the only way to correctly fix a legacy multi-location cell
       that was never split (written before a board's client read its
       per-office data at all) -- there's no way to safely re-split e.g.
@@ -273,7 +283,8 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
 
     A posting that's since closed has no entry here for any of the above --
     refresh_worksheet falls back to best-effort re-normalization for
-    location, and leaves first_published/salary exactly as they already are
+    location and to title/department-only matching for seniority, and
+    leaves first_published/salary exactly as they already are
     (empty, for a row written before those columns existed, since there's
     nothing to recover them from once a posting is gone).
 
@@ -414,7 +425,25 @@ def _recompute_row_values(
 
     values = _read_row_values(row, old_index)
 
-    values["seniority"] = classify_seniority(values["title"], values["department"])
+    fresh = overrides.get((values["board"], values["job_id"])) if overrides else None
+
+    # `seniority` comes from the fresh re-fetch whenever there is one. It is
+    # NOT derivable from the row alone for every posting: a Greenhouse
+    # posting's level can live in its "Employment Type" metadata rather
+    # than anywhere in its title (see job_boards/greenhouse/client.py's
+    # _employment_type -- Jane Street's internships are all titled like
+    # ordinary reqs), and that metadata is not a column in the sheet. So
+    # recomputing from the row's own title/department alone would reset a
+    # correct "Intern"/"Graduate" back to "Unspecified" on every refresh,
+    # undoing what the daily scrape just wrote. A closed posting has no
+    # override left to ask, so it falls back to the row's own text -- the
+    # same "a row's own text is the only surviving source of truth for
+    # itself" rule `location` follows one line below.
+    values["seniority"] = (
+        fresh.seniority
+        if fresh is not None
+        else classify_seniority(values["title"], values["department"])
+    )
 
     new_company_type = company_type_by_firm.get(values["board"])
     if new_company_type is not None:
@@ -423,8 +452,6 @@ def _recompute_row_values(
     new_source = source_by_firm.get(values["board"])
     if new_source is not None:
         values["source"] = new_source
-
-    fresh = overrides.get((values["board"], values["job_id"])) if overrides else None
 
     values["location"] = (
         fresh.location if fresh is not None else _renormalize_location(values["location"])

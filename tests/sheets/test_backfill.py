@@ -699,3 +699,56 @@ def test_refresh_blanks_salary_when_fresh_override_no_longer_has_one():
 
     header, row = worksheet.updated_with
     assert row[header.index("salary")] == ""
+
+
+def _job_stub_with_seniority(board, job_id, seniority):
+    from datetime import date
+
+    from jobscraper.models import Job
+
+    return Job(
+        board,
+        job_id,
+        "Data Engineer",
+        "Software Engineering",
+        "New York, NY",
+        "https://x",
+        "",
+        date(2026, 9, 12),
+        seniority=seniority,
+    )
+
+
+def test_refresh_takes_seniority_from_the_override_for_a_still_open_posting():
+    # The row's own title/department say nothing about level -- the fresh
+    # re-fetch does, because the board stated it in metadata the sheet has
+    # no column for (see greenhouse.client._employment_type). Without this,
+    # every backfill would reset the row to "Unspecified".
+    worksheet = _FakeWorksheet(
+        [_OLD_HEADER, _old_row(board="Acme", job_id="1", title="Data Engineer")]
+    )
+
+    backfill.refresh_worksheet(
+        worksheet, overrides={("Acme", "1"): _job_stub_with_seniority("Acme", "1", "Intern")}
+    )
+
+    seniority_index = backfill.HEADER.index("seniority")
+    _, row = worksheet.updated_with
+    assert row[seniority_index] == "Intern"
+
+
+def test_refresh_recomputes_seniority_from_the_row_when_the_posting_has_closed():
+    # No override for this (board, job_id) -- a closed posting is gone from
+    # its board's API, so the row's own text is all that's left.
+    worksheet = _FakeWorksheet(
+        [_OLD_HEADER, _old_row(board="Acme", job_id="1", title="Senior Data Engineer")]
+    )
+
+    backfill.refresh_worksheet(
+        worksheet,
+        overrides={("OtherCo", "9"): _job_stub_with_seniority("OtherCo", "9", "Intern")},
+    )
+
+    seniority_index = backfill.HEADER.index("seniority")
+    _, row = worksheet.updated_with
+    assert row[seniority_index] == "Senior"

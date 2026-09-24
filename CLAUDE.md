@@ -288,6 +288,39 @@ use a small fake `Worksheet`.
   added, to keep today's scope rather than widen it.
   `classify_roles.classify_job` returns `None` for recruiter titles before
   applying category keywords; keyword precedence is intentional.
+- `classify_seniority.classify_seniority` matches the title (+ department)
+  first and falls back to a board's own structured employment-type value
+  only when those carry no level wording at all. Today that value comes
+  from Greenhouse's per-posting `metadata` field literally named
+  "Employment Type" (`job_boards/greenhouse/client.py`'s
+  `_employment_type`, matched by name case/whitespace-insensitively since
+  `metadata` is a board-defined custom field list, not a fixed schema).
+  It exists because some employers never put "Intern" in an internship's
+  title: all 46 of Jane Street's summer internships are posted as plain
+  "Data Engineer"/"Software Engineer"/... (e.g. job 8631973002, a NYC data
+  engineering internship) with "Summer Internship" only in that metadata
+  field, so title-only matching read every one of them as "Unspecified".
+  Fallback-only is deliberate -- that field can only ever say
+  Intern/Graduate in practice, so it has nothing to add to a title that
+  already resolved, and the title stays the primary signal. Confirmed
+  against all 54 Greenhouse boards' live postings: it changes 71 rows, all
+  of them previously "Unspecified" (69 Jane Street, plus one each at Akuna
+  and QRT), and moves no already-classified posting to a different level.
+  Deliberately this one metadata name only: the other plausible-looking
+  ones are either redundant (Jane Street's "Workday Job Profile") or
+  actively wrong to feed a seniority classifier (Elastic's "Seniority" is
+  "Mid-Senior Level" on 300 postings, which would relabel 142 real
+  Principal/Manager/Lead/Director titles as plain "Senior"; MongoDB's "Job
+  Level" says "People Manager" on reqs titled Director). Greenhouse-only
+  for the same evidence-based reason: dry-running the same comparison over
+  Lever's `categories.commitment`, Ashby's `employmentType`, and
+  SmartRecruiters' `typeOfEmployment.label` changed nothing at all on any
+  configured board of those three types -- every intern posting there
+  already says so in its own title -- and Eightfold has no such field
+  (its `type` is the string "ATS" on every posting). **After a change
+  affecting seniority, existing rows need
+  `uv run python -m jobscraper.sheets.backfill`**; daily scraping only
+  appends unseen postings, so it cannot relabel rows already in a tab.
 - `classify_region.is_excluded` is a separate, stricter gate than PAC/RoW:
   Vietnam, Malaysia, Indonesia, India, Armenia, and Uruguay are excluded
   entirely -- not posted at all, PAC or RoW -- because pay isn't
@@ -339,8 +372,13 @@ use a small fake `Worksheet`.
   `models.FIRMS_NEEDING_DESCRIPTION`. It refreshes cells in place
   (including recomputing `company_type` and `source` by looking a row's
   `board` up in the current `*_boards.toml` files, refreshing
-  `location`/`first_published` from a fresh re-fetch of every board for
-  still-open postings, and recomputing `description` from
+  `location`/`first_published`/`seniority` from a fresh re-fetch of every
+  board for still-open postings -- `seniority` comes from that re-fetch
+  rather than the row's own title/department because a Greenhouse
+  posting's level can live in "Employment Type" metadata the sheet has no
+  column for, so re-deriving from the row alone would reset those rows to
+  "Unspecified" every run; a closed posting, with no re-fetch to ask,
+  falls back to title/department -- and recomputing `description` from
   `FIRMS_NEEDING_DESCRIPTION` -- filling it in from that same fresh
   re-fetch and overwriting even a non-empty value for a firm in the set
   since a JD can be legitimately edited, blanking it back to "" for every

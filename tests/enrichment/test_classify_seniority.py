@@ -45,3 +45,31 @@ def test_classify_seniority_does_not_match_substring_inside_a_longer_word():
 
 def test_classify_seniority_checks_department_too():
     assert classify_seniority("Generalist", department="Internship Program") == "Intern"
+
+
+def test_classify_seniority_falls_back_to_employment_type_when_title_says_nothing():
+    # The real shape this exists for: Jane Street posts its summer
+    # internships under the same plain titles as its full-time reqs and
+    # says "Summer Internship" only in Greenhouse's "Employment Type"
+    # posting metadata (see greenhouse.client._employment_type).
+    assert (
+        classify_seniority("Data Engineer", "Software Engineering", "Summer Internship")
+        == "Intern"
+    )
+    assert classify_seniority("Quantitative Trader", "", "Winter Co-Op") == "Intern"
+    assert (
+        classify_seniority("Software Engineer", "", "Full-Time: New Grad") == "Graduate"
+    )
+
+
+def test_classify_seniority_ignores_an_employment_type_with_no_level_wording():
+    assert classify_seniority("Data Engineer", "", "Full-Time: Experienced") == "Unspecified"
+    assert classify_seniority("Data Engineer", "", "Contractor") == "Unspecified"
+
+
+def test_classify_seniority_prefers_the_title_over_the_employment_type():
+    # Fallback only: a title that already carries a level keeps it, so a
+    # board's employment-type field can never demote a stated level.
+    assert (
+        classify_seniority("Senior Data Engineer", "", "Summer Internship") == "Senior"
+    )

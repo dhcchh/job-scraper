@@ -202,3 +202,57 @@ def test_fetch_greenhouse_jobs_raises_on_http_error(monkeypatch):
 
     with pytest.raises(client.requests.HTTPError):
         client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
+
+
+_METADATA_RESPONSE = {
+    "jobs": [
+        {
+            # Jane Street's real shape: an internship whose title says
+            # nothing about it at all -- only the "Employment Type"
+            # metadata field does.
+            "id": 1,
+            "title": "Data Engineer",
+            "departments": [{"name": "Software Engineering"}],
+            "metadata": [
+                {"name": "Event Date", "value": None, "value_type": "date"},
+                {"name": "Employment Type", "value": "Summer Internship"},
+                # A field whose value would match a LEVELS keyword but
+                # isn't an employment type -- must be ignored entirely.
+                {"name": "Workday Job Profile", "value": "Technical Program Manager"},
+            ],
+        },
+        {
+            # Same board, a full-time req: "Full-Time: Experienced" carries
+            # no level wording, so this stays Unspecified.
+            "id": 2,
+            "title": "Data Engineer",
+            "metadata": [{"name": "employment type ", "value": "Full-Time: Experienced"}],
+        },
+        {
+            # Unset/multi-select metadata values (null, list) and a board
+            # with no metadata at all must all degrade to "", not raise.
+            "id": 3,
+            "title": "Data Engineer",
+            "metadata": [{"name": "Employment Type", "value": None}],
+        },
+        {"id": 4, "title": "Data Engineer"},
+    ]
+}
+
+
+def test_fetch_greenhouse_jobs_reads_seniority_from_employment_type_metadata(monkeypatch):
+    monkeypatch.setattr(
+        client.requests,
+        "get",
+        lambda url, params=None, timeout=None: _FakeResponse(_METADATA_RESPONSE),
+    )
+
+    intern, experienced, null_value, no_metadata = client.fetch_greenhouse_jobs(
+        "acme", "Acme Corp", "Prop Trading/Hedge Fund"
+    )
+
+    assert intern.seniority == "Intern"
+    # Matched case/whitespace-insensitively, and not read as any level.
+    assert experienced.seniority == "Unspecified"
+    assert null_value.seniority == "Unspecified"
+    assert no_metadata.seniority == "Unspecified"

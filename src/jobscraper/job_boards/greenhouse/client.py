@@ -115,7 +115,7 @@ def _to_job(
         updated_at=normalize_date(raw.get("updated_at", "")),
         first_published=normalize_date(raw.get("first_published", "")),
         scraped_date=scraped_date,
-        seniority=classify_seniority(title, department),
+        seniority=classify_seniority(title, department, _employment_type(raw)),
         company_type=company_type,
         source="Greenhouse",
         description=(
@@ -131,6 +131,58 @@ def _to_job(
         # consistent shape worth regexing out -- see models.Job.salary.
         salary=None,
     )
+
+
+# The metadata field name to read an employment type out of, lowercased for
+# a case/whitespace-insensitive match. `metadata` is a board-defined custom
+# field list, not a fixed schema, so this matches on the field's NAME rather
+# than a position, and a board without that field simply yields "".
+#
+# Deliberately this one name only. Surveyed across all 54 configured
+# Greenhouse boards' live postings, it's both the most widely used
+# ("Employment Type" appears on 13 boards) and the only candidate whose
+# values are purely employment-type vocabulary ("Full-time", "Summer
+# Internship", "Winter Co-Op", "Full-Time: New Grad", "Intern",
+# "Contractor", ...). The other plausible-looking names are either
+# redundant (Jane Street's "Workday Job Profile" -- "Technology Intern" and
+# friends, all on postings this already catches) or actively wrong to feed
+# a seniority classifier: Elastic's "Seniority" is "Mid-Senior Level" on
+# 300 postings (it would relabel 142 real Principal/Manager/Lead/Director
+# titles as plain "Senior"), and MongoDB's "Job Level" is "People Manager"
+# on reqs whose titles say Director. classify_seniority only consults this
+# as a fallback anyway (see its docstring), which contains the damage of a
+# single miscategorized value but is not a reason to widen the field list.
+_EMPLOYMENT_TYPE_FIELD = "employment type"
+
+
+def _employment_type(raw: dict) -> str:
+    """This posting's "Employment Type" metadata value, or "".
+
+    Passed to classify_seniority as its fallback signal, for the many real
+    internships whose title never says so -- Jane Street's 46 summer
+    internships are all posted as plain "Data Engineer"/"Software
+    Engineer"/... with "Summer Internship" only in this field (see that
+    module's docstring).
+
+    A metadata entry's `value` is null for an unset field (a date/text
+    field nobody filled in) and a list for a multi-select one, so anything
+    that isn't a string degrades to "" -- the same defensive posture every
+    other field in _to_job takes.
+
+    Greenhouse-only on purpose: Lever's `categories.commitment`, Ashby's
+    `employmentType`, and SmartRecruiters' `typeOfEmployment.label` are the
+    same kind of field, but dry-running this exact comparison across every
+    configured board of those three types changed nothing at all -- every
+    intern posting on them already says "Intern"/"Internship" in its own
+    title. (Eightfold has no such field; its `type` is the string "ATS" on
+    every posting.) Wiring it through those clients is a one-liner each if
+    a future board needs it.
+    """
+    for item in raw.get("metadata") or []:
+        if str(item.get("name") or "").strip().lower() == _EMPLOYMENT_TYPE_FIELD:
+            value = item.get("value")
+            return value if isinstance(value, str) else ""
+    return ""
 
 
 def _first_name(items: list[dict] | None) -> str:
