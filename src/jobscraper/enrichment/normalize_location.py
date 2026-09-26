@@ -40,6 +40,13 @@ _OFFICE_SUFFIX_RE = re.compile(r"\s+office$", re.IGNORECASE)
 _REMOTE_PREFIX_RE = re.compile(r"^remote\s*-\s*", re.IGNORECASE)
 _REMOTE_SUFFIX_RE = re.compile(r"\s*\(remote\)$", re.IGNORECASE)
 
+# Dataiku's Greenhouse board writes a remote office as "<Country>, Remote"
+# ("France, Remote", "United States, Remote"). classify_region reads the
+# country off whatever's after the LAST comma, i.e. "Remote" -- so a
+# "Singapore, Remote" would silently land in RoW. Stripped like the other
+# remote annotations above, leaving the bare country.
+_REMOTE_COMMA_SUFFIX_RE = re.compile(r",\s*remote$", re.IGNORECASE)
+
 # MongoDB and Cloudflare use a dashless variant of the same annotation --
 # "Remote Singapore", "Remote Australia" -- which _REMOTE_PREFIX_RE's
 # required "-" doesn't match, so a real PAC posting was silently landing in
@@ -413,6 +420,15 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "salt lake city, utah": "Salt Lake City, UT",
     "boston, massachusetts": "Boston, MA",
     "austin, texas": "Austin, TX",
+    # Dataiku's Greenhouse board writes "Country, City" -- the reverse of
+    # every other board. classify_region reads the part after the LAST
+    # comma as the country, so unmapped, "Japan, Tokyo"/"South Korea,
+    # Seoul" postings would silently land in RoW instead of PAC.
+    "japan, tokyo": "Tokyo, Japan",
+    "south korea, seoul": "Seoul, South Korea",
+    "france, paris": "Paris, France",
+    "united kingdom, london": "London, United Kingdom",
+    "united states, new york": "New York, NY",
 }
 
 
@@ -435,6 +451,7 @@ def normalize_location(raw: str) -> str:
     cleaned = _REMOTE_PREFIX_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_PREFIX_NO_DASH_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = _REMOTE_COMMA_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _COUNTRY_CODE_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _WORK_MODE_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _BUILDING_SUFFIX_RE.sub(r"\1", cleaned).strip()

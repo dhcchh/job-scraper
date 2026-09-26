@@ -294,3 +294,23 @@ def test_normalize_location_leaves_a_paren_with_no_comma_before_it():
 )
 def test_normalize_location_maps_visa_and_mastercard_office_names(raw, expected):
     assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("Japan, Tokyo", "Tokyo, Japan"),
+        ("South Korea, Seoul", "Seoul, South Korea"),
+        ("France, Paris", "Paris, France"),
+        ("United Kingdom, London", "London, United Kingdom"),
+        ("United States, New York", "New York, NY"),
+        ("France, Remote", "France"),
+        ("United States, Remote", "United States"),
+        ("Singapore, Remote", "Singapore"),
+    ],
+)
+def test_normalize_location_maps_dataiku_country_first_offices(raw, expected):
+    # Dataiku's live Greenhouse board writes "Country, City" / "Country,
+    # Remote" -- unmapped, classify_region reads "Tokyo"/"Remote" as the
+    # country and a real PAC posting lands in RoW.
+    assert normalize_location(raw) == expected

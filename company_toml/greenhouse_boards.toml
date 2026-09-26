@@ -269,3 +269,8 @@ company_type = "Data/Cloud Infrastructure"
 token = "block"
 firm = "Block (Square)"
 company_type = "Fintech"
+
+[[boards]]
+token = "dataiku"
+firm = "Dataiku"
+company_type = "Data/Cloud Infrastructure"
