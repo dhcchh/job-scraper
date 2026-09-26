@@ -189,6 +189,47 @@ def test_fetch_greenhouse_jobs_falls_back_to_location_name_when_offices_missing(
     assert job.location == "Bangalore, India"  # still normalized via the fallback
 
 
+def _team_offices_response():
+    return {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Software Engineer",
+                "updated_at": "",
+                "absolute_url": "https://x/1",
+                "location": {"name": "Singapore"},
+                "departments": [],
+                "offices": [{"name": "MOE HQ"}, {"name": "SingPass"}],
+            }
+        ]
+    }
+
+
+def test_fetch_greenhouse_jobs_reads_location_name_for_a_board_whose_offices_are_teams(monkeypatch):
+    # GovTech's offices[] holds teams/client agencies, not cities; the real
+    # city is only in location.name. Without this its postings' location was
+    # "MOE HQ | SingPass" and they all landed in RoW.
+    monkeypatch.setattr(
+        client.requests, "get", lambda *a, **k: _FakeResponse(_team_offices_response())
+    )
+
+    (job,) = client.fetch_greenhouse_jobs("govtech", "GovTech", "Government/Defense Tech")
+
+    assert job.location == "Singapore"
+
+
+def test_fetch_greenhouse_jobs_still_uses_offices_for_every_other_board(monkeypatch):
+    # Opt-in per board only: location.name is free text that often
+    # disagrees with offices on other boards, so they keep using offices.
+    monkeypatch.setattr(
+        client.requests, "get", lambda *a, **k: _FakeResponse(_team_offices_response())
+    )
+
+    (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
+
+    assert job.location == "MOE HQ | SingPass"
+
+
 def test_fetch_greenhouse_jobs_raises_on_http_error(monkeypatch):
     # A persistent failure must propagate out of fetch_greenhouse_jobs --
     # main.py is what decides that means "skip this board", not this client.

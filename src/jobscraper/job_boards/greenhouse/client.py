@@ -44,6 +44,17 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
 
+# Board tokens whose `offices[]` holds teams rather than places, so _location
+# reads `location.name` instead. GovTech lists its teams and client agencies
+# there ("MOE HQ", "SingPass", "BCA") with the city ("Singapore") only in
+# `location.name`, which sent every GovTech posting to RoW. Opt-in per
+# board, not a general "offices look unrecognized" fallback: dry-run over
+# every configured board, that fallback also moved 656 other postings, many
+# wrongly (Block "US-CA - Bay Area - Remote" -> Melbourne, Elastic
+# "Indonesia" -> Singapore), since `location.name` is free text that often
+# disagrees with the office list.
+_OFFICES_ARE_TEAMS: frozenset[str] = frozenset({"govtech"})
+
 
 def fetch_greenhouse_jobs(
     board_token: str,
@@ -90,7 +101,15 @@ def fetch_greenhouse_jobs(
         if "id" not in raw:
             skipped += 1
             continue
-        jobs.append(_to_job(raw, firm, company_type, scraped_date))
+        jobs.append(
+            _to_job(
+                raw,
+                firm,
+                company_type,
+                scraped_date,
+                use_location_name=board_token in _OFFICES_ARE_TEAMS,
+            )
+        )
     if skipped:
         logger.warning(
             "greenhouse[%s]: skipped %d job(s) missing an id", board_token, skipped
@@ -101,7 +120,12 @@ def fetch_greenhouse_jobs(
 
 
 def _to_job(
-    raw: dict, firm: str, company_type: str, scraped_date: datetime.date
+    raw: dict,
+    firm: str,
+    company_type: str,
+    scraped_date: datetime.date,
+    *,
+    use_location_name: bool = False,
 ) -> Job:
     title = raw.get("title", "")
     department = _first_name(raw.get("departments"))
@@ -110,7 +134,7 @@ def _to_job(
         job_id=str(raw["id"]),
         title=title,
         department=department,
-        location=_location(raw),
+        location=_location(raw, use_location_name=use_location_name),
         url=raw.get("absolute_url", ""),
         updated_at=normalize_date(raw.get("updated_at", "")),
         first_published=normalize_date(raw.get("first_published", "")),
@@ -197,7 +221,7 @@ def _first_name(items: list[dict] | None) -> str:
     return items[0].get("name", "")
 
 
-def _location(raw: dict) -> str:
+def _location(raw: dict, *, use_location_name: bool = False) -> str:
     """Every office this posting is open in, normalized and " | "-joined.
 
     `raw["offices"]` (present because fetch_greenhouse_jobs always requests
@@ -207,7 +231,8 @@ def _location(raw: dict) -> str:
     free-text string a recruiter typed, e.g. "London, United Kingdom; New
     York, NY, United States" -- not safely splittable by this code, only
     by Greenhouse's own admin UI). Falls back to `location.name`
-    (stripped) only if `offices` is ever missing/empty.
+    (stripped) only if `offices` is ever missing/empty, or for a board in
+    `_OFFICES_ARE_TEAMS` (`use_location_name`), whose offices aren't places.
 
     " | " (not ",") is the join delimiter deliberately: a comma can appear
     inside a single normalized name (none do today, but nothing guarantees
@@ -215,6 +240,8 @@ def _location(raw: dict) -> str:
     separator without reintroducing the exact ambiguity this function
     exists to avoid.
     """
+    if use_location_name:
+        return normalize_location((raw.get("location") or {}).get("name", ""))
     offices = raw.get("offices") or []
     names: list[str] = []
     for office in offices:

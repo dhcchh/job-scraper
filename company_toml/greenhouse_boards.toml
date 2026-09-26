@@ -274,3 +274,8 @@ company_type = "Fintech"
 token = "dataiku"
 firm = "Dataiku"
 company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "govtech"
+firm = "GovTech"
+company_type = "Government/Defense Tech"

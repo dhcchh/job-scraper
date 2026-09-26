@@ -329,6 +329,13 @@ use a small fake `Worksheet`.
   `location` + `additionalLocations` (multi-office -- see above),
   normalize each office, remove duplicates, then join with `" | "`. Do not
   split `location.name`/`categories.location` by commas: it is free text.
+  One exception: a Greenhouse board token in `greenhouse/client.py`'s
+  `_OFFICES_ARE_TEAMS` (just `govtech`) reads `location.name` whole
+  instead, because GovTech fills `offices[]` with teams/client agencies
+  ("MOE HQ", "SingPass"), which sent all its postings to RoW. Keep it an
+  explicit per-board opt-in: a general "fall back when no office is a
+  recognized place" rule, dry-run over every board, moved 656 other
+  postings, many wrongly (Block "US-CA - Bay Area - Remote" -> Melbourne).
   `normalize_location.py` intentionally falls back to a cleaned unknown
   value rather than guessing. Add a canonical mapping before treating a new
   city as PAC. It also removes `Remote -`, `(Remote)`, `Office`,
