@@ -47,6 +47,7 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     # doesn't also fetch the real, committed company_toml/lever_boards.toml
     # / company_toml/ashby_boards.toml / company_toml/smartrecruiters_boards.toml
     # / company_toml/eightfold_boards.toml / company_toml/workday_boards.toml
+    # / company_toml/recruitee_boards.toml
     # over the network -- a test exercising one of those loops overrides it
     # itself.
     monkeypatch.setattr(main.config, "LEVER_BOARDS", [])
@@ -54,6 +55,7 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main.config, "SMARTRECRUITERS_BOARDS", [])
     monkeypatch.setattr(main.config, "EIGHTFOLD_BOARDS", [])
     monkeypatch.setattr(main.config, "WORKDAY_BOARDS", [])
+    monkeypatch.setattr(main.config, "RECRUITEE_BOARDS", [])
     # No-op by default -- see module docstring. A test that wants to inspect
     # what main.run() passed send_digest overrides this itself, after
     # calling _patch_sheet_functions.

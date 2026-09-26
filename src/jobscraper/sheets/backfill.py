@@ -27,18 +27,20 @@ Nine things happen to every row, for every (category, region) tab:
     row, by looking the row's `board` up in the *current*
     config.GREENHOUSE_BOARDS,
     config.LEVER_BOARDS, config.ASHBY_BOARDS,
-    config.SMARTRECRUITERS_BOARDS, config.EIGHTFOLD_BOARDS, and
-    config.WORKDAY_BOARDS (whichever one the firm is actually configured in
-    -- `source` is just which of the six that is,
-    "Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters"/"Eightfold"/"Workday").
+    config.SMARTRECRUITERS_BOARDS, config.EIGHTFOLD_BOARDS,
+    config.WORKDAY_BOARDS, and config.RECRUITEE_BOARDS (whichever one the
+    firm is actually configured in -- `source` is just which of the seven
+    that is, "Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters"/"Eightfold"/
+    "Workday"/"Recruitee").
     Fixing classify_seniority.py's "misses numeric/leveling titles" gap,
-    re-categorizing a firm in any of the six `*_boards.toml` files, or
+    re-categorizing a firm in any of the seven `*_boards.toml` files, or
     moving a firm from one board system to another, and then running this
     backfill applies the change to every existing row, not just new ones.
   - `location` is corrected using a *fresh* re-fetch of every board in
     config.GREENHOUSE_BOARDS, config.LEVER_BOARDS, config.ASHBY_BOARDS,
-    config.SMARTRECRUITERS_BOARDS, config.EIGHTFOLD_BOARDS, and
-    config.WORKDAY_BOARDS (see _fetch_overrides) when the row's posting is still open -- that
+    config.SMARTRECRUITERS_BOARDS, config.EIGHTFOLD_BOARDS,
+    config.WORKDAY_BOARDS, and config.RECRUITEE_BOARDS (see
+    _fetch_overrides) when the row's posting is still open -- that
     re-fetch has real per-office data, so it's what actually fixes a
     legacy, never-split cell like "Chicago, New York City" (written before
     this project read per-office data at all -- see
@@ -120,7 +122,7 @@ department, url, ...) is the only surviving source of truth for itself --
 everything except `location`/`first_published`/`description` only ever
 recomputes from columns already in the row.
 
-A firm dropped from all six `*_boards.toml` files entirely has no entry
+A firm dropped from all seven `*_boards.toml` files entirely has no entry
 to look company_type or source up against -- its existing rows are left
 with whatever company_type/source they already have rather than being
 blanked out.
@@ -144,6 +146,7 @@ from jobscraper.job_boards.eightfold.client import fetch_eightfold_jobs
 from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs
 from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
+from jobscraper.job_boards.recruitee.client import fetch_recruitee_jobs
 from jobscraper.job_boards.workday.client import fetch_workday_jobs
 from jobscraper.models import (
     FIELDS,
@@ -249,8 +252,9 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
     """Every currently open posting, freshly re-fetched, keyed by (board,
     job_id) -- one re-fetch of every board in config.GREENHOUSE_BOARDS,
     config.LEVER_BOARDS, config.ASHBY_BOARDS,
-    config.SMARTRECRUITERS_BOARDS, config.EIGHTFOLD_BOARDS, and
-    config.WORKDAY_BOARDS (the same six loops main.py's daily run makes)
+    config.SMARTRECRUITERS_BOARDS, config.EIGHTFOLD_BOARDS,
+    config.WORKDAY_BOARDS, and config.RECRUITEE_BOARDS (the same seven
+    loops main.py's daily run makes)
     serves five different
     retroactive fixes without doubling the network cost:
 
@@ -292,9 +296,9 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
 
     A board that fails to fetch (network error, bad token, ...) is logged
     and skipped -- its rows just get no override for any of these columns
-    this run. Merging all six board types into one dict is safe because
+    this run. Merging all seven board types into one dict is safe because
     the dedup key is (board, job_id) where `board` is the firm's name, not
-    the board type -- a firm is only ever configured in one of the six
+    the board type -- a firm is only ever configured in one of the seven
     files.
     """
     overrides: dict[tuple[str, str], Job] = {}
@@ -305,6 +309,7 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
         (config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
         (config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
         (config.WORKDAY_BOARDS, fetch_workday_jobs),
+        (config.RECRUITEE_BOARDS, fetch_recruitee_jobs),
     ):
         for board in board_list:
             firm = board["firm"]
@@ -365,6 +370,7 @@ def _config_lookup_tables() -> tuple[dict[str, str], dict[str, str]]:
         (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
         (config.EIGHTFOLD_BOARDS, "Eightfold"),
         (config.WORKDAY_BOARDS, "Workday"),
+        (config.RECRUITEE_BOARDS, "Recruitee"),
     )
     company_type_by_firm = {
         board["firm"]: board["company_type"]

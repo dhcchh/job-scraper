@@ -57,7 +57,7 @@ use a small fake `Worksheet`.
   `.github/workflows/`). "Daily Scrape (Append)"
   (`daily-scrape.yml`, cron + manual `workflow_dispatch`) runs
   `jobscraper.main`: fetches every configured Greenhouse, Lever, Ashby,
-  SmartRecruiters, Eightfold, and Workday board, classifies postings into ten tabs
+  SmartRecruiters, Eightfold, Workday, and Recruitee board, classifies postings into ten tabs
   (five categories × `PAC`/`RoW`), appends jobs first seen this run, then
   removes jobs confirmed closed. "Full Refresh (Rebuild)"
   (`full-refresh.yml`, manual `workflow_dispatch` only, no schedule) runs
@@ -72,26 +72,29 @@ use a small fake `Worksheet`.
   `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
   `company_toml/ashby_boards.toml`,
   `company_toml/smartrecruiters_boards.toml`,
-  `company_toml/eightfold_boards.toml`, and
-  `company_toml/workday_boards.toml`; import `jobscraper.config`
+  `company_toml/eightfold_boards.toml`,
+  `company_toml/workday_boards.toml`, and
+  `company_toml/recruitee_boards.toml`; import `jobscraper.config`
   rather than copying its settings at import time. Board tokens are checked
   in and are not secrets.
   `_load_boards` validates every `[[boards]]` entry has `token`, `firm`, and
   `company_type` at import time, raising `ValueError` naming the offending
   entry and field(s) rather than letting a typo surface as a `KeyError` deep
-  in `main.py`'s fetch loop. All six board types need only that same
+  in `main.py`'s fetch loop. All seven board types need only that same
   `token`/`firm`/`company_type` shape -- Eightfold's `token` is its own
   subdomain (`<token>.eightfold.ai`), same idea as Lever's/Ashby's slug; see
   `job_boards/eightfold/client.py`. Workday's packs the three per-company
   pieces of its careers-site URL into one `"<tenant>.<wdN>/<site>"` string
   (e.g. `"visa.wd5/Visa"`); see `job_boards/workday/client.py`.
+  Recruitee's is the company's `<token>.recruitee.com` subdomain, like
+  Eightfold's.
 - `Job` in `models.py` is the shared data shape. Keep `FIELDS`,
   `Job.to_row()`, and the sheet header aligned. The row identity is
   `(board, job_id)`, not `job_id` alone, because Greenhouse IDs are tenant
   scoped. `first_published` is the best available Greenhouse "went live"
   signal; `updated_at` can change after edits and `scraped_date` is only when
   this project first saw the job. `source` records which board system
-  ("Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters"/"Eightfold"/"Workday") a posting came from -- distinct from
+  ("Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters"/"Eightfold"/"Workday"/"Recruitee") a posting came from -- distinct from
   `board`, which is the firm's name -- and is stamped as a fixed literal by
   each `job_boards/*/client.py`, not read from any API response.
   `description` is the full JD text, but ONLY for a firm in
@@ -134,7 +137,7 @@ use a small fake `Worksheet`.
 - `Job.salary` is a human-readable pay range, or `None` -- unlike `description`,
   NOT gated to a firm allowlist; it's populated whenever a posting itself
   discloses one, `None` otherwise, since disclosure varies posting to posting,
-  not firm to firm. Only two of the six board types expose anything
+  not firm to firm. Only two of the seven board types expose anything
   structured to read this from. Lever's `salaryRange`
   (`{min, max, currency, interval}`) is present only when that employer
   opted in to Lever's own pay-transparency feature -- confirmed present on
@@ -161,13 +164,17 @@ use a small fake `Worksheet`.
   anywhere in their public APIs either (confirmed against Grab's
   per-posting detail endpoint, Millennium's live board, and Visa's/
   Mastercard's list and detail endpoints, respectively), so all three
-  clients always set `salary=None` too. `sheets/backfill.py` treats `salary` the same
+  clients always set `salary=None` too. Recruitee carries a `salary`
+  object on every posting, but it was all-null on all 94 live postings
+  checked (OGP, Mathrix, Aikido Security), so its populated shape is
+  unconfirmed and `job_boards/recruitee/client.py` sets `salary=None` as
+  well rather than formatting a shape never seen. `sheets/backfill.py` treats `salary` the same
   as `location` -- a fresh re-fetch (when the posting is still open)
   unconditionally overwrites whatever's in the cell, including an empty cell if
   disclosure was removed, rather than only filling in a blank the way
   `first_published` does; a closed posting's row, with no override
   available, is left exactly as it already is.
-- All six board clients share one retry policy,
+- All seven board clients share one retry policy,
   `job_boards/_http.get_with_retries` (and `post_with_retries`, for
   Workday's POST search endpoint) (3 attempts, exponential 2s/4s
   backoff, retrying only a connection error/timeout or a 5xx/429
@@ -321,12 +328,29 @@ use a small fake `Worksheet`.
   requisition id plus any "-N" repost counter (e.g. "R-287924-1",
   "REF088713W") -- not `bulletFields[0]`, which is tenant-configured and
   missing on at least one live Visa posting.
+- `recruitee/client.py` fetches a company's Recruitee Careers Site API
+  (`https://<subdomain>.recruitee.com/api/offers/`), same retry/skip
+  behavior -- confirmed against OGP's live board (`opengovernmentproducts`;
+  OGP serves it from its own careers.open.gov.sg domain, which answers on
+  the recruitee.com subdomain too). Public and unauthenticated, one
+  response with every published posting (no pagination). Unlike
+  Lever/Ashby/SmartRecruiters, both timestamps are real: `published_at`
+  -> `first_published`, `updated_at` -> `updated_at` (differs from
+  `published_at` on 85 of 94 live postings). `department` is a plain
+  string, `careers_url` is the posting page (not `careers_apply_url`).
+  `description` + `requirements` are HTML, run through
+  `models.strip_html` only for a `FIRMS_NEEDING_DESCRIPTION` firm (none
+  today). Other live Recruitee boards in this project's space, if wanted
+  later: Mathrix (`mathrix`, a quant/HFT firm with Singapore roles) and
+  Aikido Security (`aikidosecurity`). BlockTech's Recruitee board is
+  empty -- it's on Ashby, where it's already configured.
 - Build locations from Greenhouse's `offices[]`, Lever's
   `categories.allLocations`, Ashby's `location` +
   `secondaryLocations[].location`, SmartRecruiters' single `location.city`,
   Eightfold's `locations[]` (leading city segment only -- see above), or
   Workday's `locationsText` (one office, normalized whole) / detail
-  `location` + `additionalLocations` (multi-office -- see above),
+  `location` + `additionalLocations` (multi-office -- see above), or
+  Recruitee's `locations[].city` (falling back to top-level `city`),
   normalize each office, remove duplicates, then join with `" | "`. Do not
   split `location.name`/`categories.location` by commas: it is free text.
   One exception: a Greenhouse board token in `greenhouse/client.py`'s
@@ -498,7 +522,7 @@ use a small fake `Worksheet`.
   unrelated categories' columns since a row here isn't a record the way a
   job posting's row is. Unlike `backfill.py`/`full_refresh.py`, this is NOT
   manual-only: the "Announce New Companies" workflow runs it every day at
-  22:00 SGT, so a firm added to any of the six TOML files shows up there --
+  22:00 SGT, so a firm added to any of the seven TOML files shows up there --
   and is announced on Telegram -- at the next 22:00 with no separate step.
   `main.py`'s `run()` deliberately does NOT sync this tab: a firm is only
   new to whichever sync lists it first, so a 07:00 scrape syncing it would

@@ -9,7 +9,7 @@ Run standalone --
 
 -- which is also exactly what the "Announce New Companies" GitHub Actions
 workflow (.github/workflows/announce-companies.yml) runs every day at 22:00
-SGT, so a firm added to any of the six *_boards.toml files shows up here,
+SGT, so a firm added to any of the seven *_boards.toml files shows up here,
 and is announced on Telegram, automatically at the next 22:00 with no
 separate manual step (unlike sheets/backfill.py and sheets/full_refresh.py,
 which are manual-only). main.run()'s daily scrape deliberately doesn't sync
@@ -73,11 +73,11 @@ def _slugify(label: str) -> str:
 
 
 def _category_by_firm() -> dict[str, str]:
-    """firm -> company_type across all six *_boards.toml files.
+    """firm -> company_type across all seven *_boards.toml files.
 
     A firm with more than one board token (e.g. Optiver has two Greenhouse
     tokens) is one entry here, not one per token -- this tab answers "which
-    firms are supported", not "which board tokens exist". The six
+    firms are supported", not "which board tokens exist". The seven
     *_boards.toml files are walked in the same order main.py's
     board_sources fetch loop uses; a firm's first occurrence wins in the
     unexpected case it were ever listed with two different company_type
@@ -91,6 +91,7 @@ def _category_by_firm() -> dict[str, str]:
         + config.SMARTRECRUITERS_BOARDS
         + config.EIGHTFOLD_BOARDS
         + config.WORKDAY_BOARDS
+        + config.RECRUITEE_BOARDS
     )
     category_by_firm: dict[str, str] = {}
     for board in all_boards:

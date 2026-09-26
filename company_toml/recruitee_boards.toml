@@ -1,0 +1,6 @@
+# Recruitee job boards to scrape.
+
+[[boards]]
+token = "opengovernmentproducts"
+firm = "OGP"
+company_type = "Government/Defense Tech"

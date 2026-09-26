@@ -1,6 +1,6 @@
 # latest-job-scraper
 
-Fetches job postings from Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, and Workday boards daily, classifies them, and writes them into a Google Sheet.
+Fetches job postings from Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, and Recruitee boards daily, classifies them, and writes them into a Google Sheet.
 
 ## Run it
 
@@ -34,8 +34,9 @@ integration later: add its vars here too.
    `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
    `company_toml/ashby_boards.toml`,
    `company_toml/smartrecruiters_boards.toml`,
-   `company_toml/eightfold_boards.toml`, or
-   `company_toml/workday_boards.toml` (checked in — see "Adding a board").
+   `company_toml/eightfold_boards.toml`,
+   `company_toml/workday_boards.toml`, or
+   `company_toml/recruitee_boards.toml` (checked in — see "Adding a board").
 2. **Google Sheets access** — in Google Cloud Console: enable the Sheets
    API, create a service account + JSON key, then **Share** your target
    sheet with that key's `client_email` as **Editor**. Collapse the key to
@@ -95,7 +96,8 @@ src/jobscraper/
 │   ├── ashby/client.py                # Ashby Posting API fetch + retry
 │   ├── smartrecruiters/client.py      # SmartRecruiters Posting API fetch + retry
 │   ├── eightfold/client.py            # Eightfold Apply API fetch + retry
-│   └── workday/client.py              # Workday candidate-site API fetch + retry
+│   ├── workday/client.py              # Workday candidate-site API fetch + retry
+│   └── recruitee/client.py            # Recruitee Careers Site API fetch + retry
 └── sheets/
     ├── writer.py                      # append new rows, prune closed postings
     ├── backfill.py                    # re-apply current classifiers to existing rows
@@ -131,8 +133,10 @@ src/jobscraper/
   (`<slug>.eightfold.ai`, paginated in fixed strides of 10 — the server's
   own hard page size, not a client-chosen one); `workday/client.py` POSTs
   to each company's own Workday careers-site search API
-  (`<tenant>.<wdN>.myworkdayjobs.com`, 20 per page, the server's max). All
-  six retry connection
+  (`<tenant>.<wdN>.myworkdayjobs.com`, 20 per page, the server's max);
+  `recruitee/client.py` hits each company's public Recruitee Careers Site
+  API (`<subdomain>.recruitee.com/api/offers/`, one response). All
+  seven retry connection
   errors/timeouts/5xx/429 up to 3 times total (2s/4s backoff); other 4xx
   raise immediately. `main.py` logs and skips a board that still fails,
   rather than letting it trigger false pruning elsewhere. Neither Lever's,
@@ -189,11 +193,12 @@ src/jobscraper/
   readable name from `company_toml/greenhouse_boards.toml`/
   `company_toml/lever_boards.toml`/`company_toml/ashby_boards.toml`/
   `company_toml/smartrecruiters_boards.toml`/
-  `company_toml/eightfold_boards.toml`/`company_toml/workday_boards.toml`
-  (not the board token/slug), and `job_id` is that board's own id for the
+  `company_toml/eightfold_boards.toml`/`company_toml/workday_boards.toml`/
+  `company_toml/recruitee_boards.toml` (not the board token/slug), and `job_id` is that board's own id for the
   posting, kept as a string (Greenhouse's, SmartRecruiters', and
   Eightfold's are numeric, Lever's and Ashby's are UUIDs, Workday's is the
-  requisition id from the posting's URL, e.g. `R-287924-1`).
+  requisition id from the posting's URL, e.g. `R-287924-1`, Recruitee's is
+  its numeric offer id).
 - **Dedup/pruning**: keyed on that same `(board, job_id)` pair — a run
   appends a row the first time it sees one, never re-appends it while
   still open, and deletes it once it's gone from that board's feed, via one
@@ -232,16 +237,17 @@ See `CLAUDE.md` for design rationale and edge-case invariants.
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~90 boards (54
-Greenhouse, 6 Lever, 24 Ashby, 3 SmartRecruiters, 1 Eightfold, 2 Workday). Realistic
+Google Sheet as the datastore — works fine at today's ~93 boards (56
+Greenhouse, 6 Lever, 24 Ashby, 3 SmartRecruiters, 1 Eightfold, 2 Workday,
+1 Recruitee). Realistic
 ceiling: **somewhere around 2,000-5,000 companies**, not the 10,000+ the
 raw minutes math alone would suggest:
 
 - **GitHub Actions minutes, idealized**: fetching is sequential (see
   `job_boards/greenhouse/client.py`, `job_boards/lever/client.py`,
   `job_boards/ashby/client.py`, `job_boards/smartrecruiters/client.py`,
-  `job_boards/eightfold/client.py`, and `job_boards/workday/client.py`),
-  ~0.25s/board observed (72 boards ≈ 18s
+  `job_boards/eightfold/client.py`, `job_boards/workday/client.py`, and
+  `job_boards/recruitee/client.py`), ~0.25s/board observed (72 boards ≈ 18s
   total). This repo is a private GitHub repo, so its free tier is 2,000
   Actions minutes/month, shared
   across every private repo on the account. At 0.25s/board with negligible
@@ -264,7 +270,7 @@ raw minutes math alone would suggest:
   incomplete. Each further ~1,000-posting Workday firm adds roughly 15-20s.
 - **The real unknown: the board platforms themselves.** This design hits
   thousands of different Greenhouse-, Lever-, Ashby-, SmartRecruiters-,
-  Eightfold-, and Workday-hosted board subdomains sequentially from one CI runner IP.
+  Eightfold-, Workday-, and Recruitee-hosted board subdomains sequentially from one CI runner IP.
   Each board is a different tenant, but each platform's own infrastructure
   is likely shared at the network/WAF layer — untested whether/when that
   starts looking like abusive traffic and gets throttled, independent of
@@ -342,7 +348,18 @@ Workday's API isn't documented either, and the `wdN` data-center number
 varies per company (Visa is `wd5`, Mastercard `wd1`), so take the token
 from the company's real careers-site URL rather than guessing it.
 
-Commit and push — all six files are checked in and read directly by local
+```toml
+# company_toml/recruitee_boards.toml
+[[boards]]
+token = "opengovernmentproducts"          # subdomain from <token>.recruitee.com
+firm = "OGP"                              # readable name, shown in the board column
+company_type = "Government/Defense Tech"  # free-form label, no fixed list
+```
+
+A company can serve its Recruitee site from its own domain (OGP's is
+careers.open.gov.sg); the token is still its recruitee.com subdomain.
+
+Commit and push — all seven files are checked in and read directly by local
 runs and CI, no other config changes needed.
 
 ## Cron / CI
