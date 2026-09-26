@@ -510,8 +510,10 @@ use a small fake `Worksheet`.
   lists and returns the configured firms it didn't (firm -> company_type)
   -- the tab's own previous contents are the only "already announced"
   record, no separate state. A tab that listed no firms at all returns `{}`
-  so first-time setup doesn't announce every firm. The module's `__main__`
-  (what the workflow runs) passes that to `telegram.send_new_companies`. A
+  so first-time setup doesn't announce every firm. `sync_and_announce`
+  (what the module's `__main__`, and so the workflow, runs) passes that to
+  `telegram.send_new_companies` along with the firm count, recounted from
+  config on every call rather than stored, so it never needs bumping. A
   renamed firm reads as new under its new name. A firm pushed between the
   07:00 scrape and 22:00 is announced before its roles are in the sheet
   (they land at the next 07:00) unless a scrape is run in between.
@@ -572,10 +574,11 @@ use a small fake `Worksheet`.
   the point of a manual check is to surface what's wrong, not hide it.
   `telegram.send_new_companies` is a second, separate message: "N new
   companies added to the job tracker", firms grouped under bold
-  `company_type` headers, then `_TRACKER_PITCH` (the tracker is a reward
-  for community members who reach 30,000 points, a big edge for
-  high-paying roles -- most readers can't open the sheet yet), then the
-  sheet link for those who already have access -- sent by the same
+  `company_type` headers, then `_TRACKER_EXPLAINER` (what the tracker is,
+  with the live firm count) and `_TRACKER_PITCH` (it's a reward for
+  community members who reach 30,000 points, a big edge for high-paying
+  roles -- most readers can't open the sheet yet), then the sheet link for
+  those who already have access -- sent by the same
   bot to its own `TELEGRAM_COMPANIES_CHAT_ID`/`TELEGRAM_COMPANIES_THREAD_ID`
   topic (unset chat id disables just this). Same no-op/never-raises
   contract as `send_digest`; sent from `sheets/supported_companies.py`'s

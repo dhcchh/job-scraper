@@ -394,37 +394,40 @@ def test_check_connection_also_tests_the_new_companies_destination_when_set(
 
 
 def test_build_new_companies_text_is_none_when_no_firm_was_added():
-    assert telegram.build_new_companies_text({}, _SHEET_URL) is None
+    assert telegram.build_new_companies_text({}, _SHEET_URL, 90) is None
 
 
 def test_build_new_companies_text_groups_firms_under_sorted_company_type_headers():
     text = telegram.build_new_companies_text(
-        {"Visa": "Fintech", "Cohere": "AI Lab", "Adyen": "Fintech"}, _SHEET_URL
+        {"Visa": "Fintech", "Cohere": "AI Lab", "Adyen": "Fintech"}, _SHEET_URL, 90
     )
 
     assert text == (
         "\U0001f195 3 new companies added to the job tracker\n\n"
         "<b>AI Lab</b>\nCohere\n\n"
         "<b>Fintech</b>\nAdyen\nVisa\n\n"
+        f"{telegram._TRACKER_EXPLAINER.format(total_firms=90)}\n\n"
         f"{telegram._TRACKER_PITCH}\n\n"
-        f'Already unlocked it? <a href="{_SHEET_URL}">See their open roles</a>'
+        f'Already unlocked? <a href="{_SHEET_URL}">See their open roles</a>'
     )
 
 
-def test_build_new_companies_text_tells_readers_how_to_get_access():
-    text = telegram.build_new_companies_text({"Visa": "Fintech"}, _SHEET_URL)
+def test_build_new_companies_text_explains_the_tracker_and_how_to_get_access():
+    text = telegram.build_new_companies_text({"Visa": "Fintech"}, _SHEET_URL, 91)
+    assert "What's the job tracker?" in text
+    assert "at 91 top-paying quant firms" in text
     assert "30,000 points" in text
-    assert "granted access" in text
+    assert "unlock" in text
 
 
 def test_build_new_companies_text_uses_the_singular_for_one_firm():
-    text = telegram.build_new_companies_text({"Visa": "Fintech"}, _SHEET_URL)
+    text = telegram.build_new_companies_text({"Visa": "Fintech"}, _SHEET_URL, 90)
     assert text.startswith("\U0001f195 1 new company added to the job tracker\n")
 
 
 def test_build_new_companies_text_escapes_html_special_characters():
     text = telegram.build_new_companies_text(
-        {"A&B <Co>": "Consumer/Media & Entertainment"}, 'https://example.com/?x="y"'
+        {"A&B <Co>": "Consumer/Media & Entertainment"}, 'https://example.com/?x="y"', 90
     )
     assert "A&amp;B &lt;Co&gt;" in text
     assert "<b>Consumer/Media &amp; Entertainment</b>" in text
@@ -440,7 +443,7 @@ def test_send_new_companies_noop_without_its_own_chat_even_if_the_digest_is_set(
         raise AssertionError("must not call requests.post when unconfigured")
 
     monkeypatch.setattr(telegram.requests, "post", fail)
-    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL)
+    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL, total_firms=90)
 
 
 def test_send_new_companies_noop_when_no_firm_was_added(monkeypatch):
@@ -451,7 +454,7 @@ def test_send_new_companies_noop_when_no_firm_was_added(monkeypatch):
         raise AssertionError("must not call requests.post with nothing new")
 
     monkeypatch.setattr(telegram.requests, "post", fail)
-    telegram.send_new_companies({}, spreadsheet_url=_SHEET_URL)
+    telegram.send_new_companies({}, spreadsheet_url=_SHEET_URL, total_firms=90)
 
 
 def test_send_new_companies_posts_to_its_own_chat_and_thread(monkeypatch):
@@ -473,7 +476,7 @@ def test_send_new_companies_posts_to_its_own_chat_and_thread(monkeypatch):
 
     monkeypatch.setattr(telegram.requests, "post", fake_post)
 
-    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL)
+    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL, total_firms=90)
 
     ((url, payload),) = calls
     assert url == "https://api.telegram.org/botsecret-token/sendMessage"
@@ -492,4 +495,4 @@ def test_send_new_companies_swallows_a_send_failure(monkeypatch):
 
     monkeypatch.setattr(telegram.requests, "post", fake_post)
 
-    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL)  # must not raise
+    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL, total_firms=90)  # must not raise

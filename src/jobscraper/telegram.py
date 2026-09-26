@@ -251,20 +251,28 @@ def send_digest(new_jobs_by_category: dict[str, list[Job]], spreadsheet_url: str
 
 # The new-company announcement goes to the whole community, not just members
 # who can open the sheet: access to the tracker is a reward for reaching
-# 30,000 points, so the message says so rather than only linking a sheet
-# most readers can't open yet.
+# 30,000 points, so the message explains what the tracker is and how to
+# unlock it rather than only linking a sheet most readers can't open yet.
+# `{total_firms}` is filled in live, so the count never goes stale.
+_TRACKER_EXPLAINER = (
+    "<b>What's the job tracker?</b>\n"
+    "Open roles at {total_firms} top-paying quant firms, big tech and leading "
+    "startups, in one sheet, refreshed daily."
+)
 _TRACKER_PITCH = (
-    "\U0001f3c6 The job tracker is a reward for members who reach "
-    "<b>30,000 points</b>: hit it and you'll be granted access. It's a huge "
-    "edge for landing high-paying roles."
+    "\U0001f3c6 Reach <b>30,000 points</b> to unlock it: a huge edge for "
+    "high-paying roles."
 )
 
 
-def build_new_companies_text(new_firms: dict[str, str], spreadsheet_url: str) -> str | None:
+def build_new_companies_text(
+    new_firms: dict[str, str], spreadsheet_url: str, total_firms: int
+) -> str | None:
     """The new-company announcement, or None if no firm was added.
 
     `new_firms` maps each newly added firm to its company_type (see
-    sheets.supported_companies.sync_supported_companies). Laid out like
+    sheets.supported_companies.sync_supported_companies); `total_firms` is
+    how many firms the tracker covers now, new ones included. Laid out like
     build_digest_text -- a bold company_type header per group, one firm per
     line under it, both sorted -- so _chunk's header carry-forward applies
     the same way on the (unlikely) day enough firms are added to need it.
@@ -285,13 +293,16 @@ def build_new_companies_text(new_firms: dict[str, str], spreadsheet_url: str) ->
     noun = "company" if count == 1 else "companies"
     header = f"\U0001f195 {count} new {noun} added to the job tracker"
     link = (
-        "Already unlocked it? "
+        "Already unlocked? "
         f'<a href="{_escape(spreadsheet_url, quote=True)}">See their open roles</a>'
     )
-    return "\n\n".join([header, *type_blocks, _TRACKER_PITCH, link])
+    explainer = _TRACKER_EXPLAINER.format(total_firms=total_firms)
+    return "\n\n".join([header, *type_blocks, explainer, _TRACKER_PITCH, link])
 
 
-def send_new_companies(new_firms: dict[str, str], spreadsheet_url: str) -> None:
+def send_new_companies(
+    new_firms: dict[str, str], spreadsheet_url: str, total_firms: int
+) -> None:
     """Announce newly added firms to the TELEGRAM_COMPANIES_* topic, or do
     nothing at all.
 
@@ -303,7 +314,7 @@ def send_new_companies(new_firms: dict[str, str], spreadsheet_url: str) -> None:
         logger.debug("telegram new companies: not configured, skipping")
         return
 
-    text = build_new_companies_text(new_firms, spreadsheet_url)
+    text = build_new_companies_text(new_firms, spreadsheet_url, total_firms)
     if text is None:
         logger.info("telegram new companies: no new firms, skipping")
         return

@@ -189,13 +189,24 @@ def sync_supported_companies(spreadsheet: gspread.Spreadsheet) -> dict[str, str]
     return new_firms
 
 
+def sync_and_announce(spreadsheet: gspread.Spreadsheet) -> None:
+    """sync_supported_companies, then announce whatever it newly added.
+
+    The announcement's firm count is recounted from config on every call
+    rather than stored anywhere, so adding a firm to a *_boards.toml file
+    is all it takes for the next announcement to say so.
+    """
+    send_new_companies(
+        sync_supported_companies(spreadsheet),
+        spreadsheet_url=spreadsheet.url,
+        total_firms=len(_category_by_firm()),
+    )
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
     # Announced by any run of this, the scheduled workflow's or a manual
     # one: once this rewrites the tab, no later sync sees these firms as new.
-    spreadsheet = get_spreadsheet()
-    send_new_companies(
-        sync_supported_companies(spreadsheet), spreadsheet_url=spreadsheet.url
-    )
+    sync_and_announce(get_spreadsheet())

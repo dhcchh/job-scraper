@@ -122,6 +122,8 @@ class _FakeWorksheet:
 
 
 class _FakeSpreadsheet:
+    url = "https://docs.google.com/spreadsheets/d/test-sheet-id"
+
     def __init__(self, worksheets=()):
         self._worksheets = list(worksheets)
         self.added = None
@@ -256,3 +258,37 @@ def test_sync_supported_companies_announces_nothing_for_a_newly_created_tab(monk
     _set_boards(monkeypatch, greenhouse=[_board("anthropic", "Anthropic", "AI Lab")])
 
     assert supported_companies.sync_supported_companies(_FakeSpreadsheet([])) == {}
+
+
+def test_sync_and_announce_counts_every_configured_firm_at_send_time(monkeypatch):
+    # The "N top-paying ..." count in the announcement must follow the
+    # *_boards.toml files, not a stored number someone has to bump by hand.
+    _set_boards(
+        monkeypatch,
+        greenhouse=[
+            _board("anthropic", "Anthropic", "AI Lab"),
+            _board("optiverneurips", "Optiver", "Prop Trading/Hedge Fund"),
+            _board("optiverprivate", "Optiver", "Prop Trading/Hedge Fund"),
+        ],
+        workday=[_board("visa.wd5/Visa", "Visa", "Fintech")],
+    )
+    worksheet = _FakeWorksheet("Supported companies", [["ai_lab"], ["Anthropic"]])
+    spreadsheet = _FakeSpreadsheet([worksheet])
+    calls = []
+    monkeypatch.setattr(
+        supported_companies,
+        "send_new_companies",
+        lambda new_firms, spreadsheet_url, total_firms: calls.append(
+            (new_firms, spreadsheet_url, total_firms)
+        ),
+    )
+
+    supported_companies.sync_and_announce(spreadsheet)
+
+    assert calls == [
+        (
+            {"Optiver": "Prop Trading/Hedge Fund", "Visa": "Fintech"},
+            _FakeSpreadsheet.url,
+            3,  # Anthropic, Optiver (two tokens, one firm), Visa
+        )
+    ]
