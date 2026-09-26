@@ -18,7 +18,8 @@ uv run pytest                              # tests -- safe to run even with a re
 Tests never hit the network or a real Google/Telegram account, even when
 `.env` has real credentials in it: `tests/conftest.py` forces
 `GOOGLE_SHEET_ID`/`GOOGLE_SERVICE_ACCOUNT_JSON`/`TELEGRAM_BOT_TOKEN`/
-`TELEGRAM_CHAT_ID`/`TELEGRAM_THREAD_ID` to dummy/empty values before
+`TELEGRAM_CHAT_ID`/`TELEGRAM_THREAD_ID`/`TELEGRAM_COMPANIES_CHAT_ID`/
+`TELEGRAM_COMPANIES_THREAD_ID` to dummy/empty values before
 `jobscraper.config` ever loads `.env` (its `load_dotenv()` never overrides
 an already-set variable), and sheet/Telegram-sending code itself is mocked
 at the call site too. Skipping the Telegram half of this once let a real
@@ -63,6 +64,15 @@ integration later: add its vars here too.
    `uv run python -m jobscraper.telegram --check` after setting these to
    confirm the bot can actually reach the chat, without waiting for a real
    run to have new PAC postings to report.
+6. **New-company announcement (optional)** — set
+   `TELEGRAM_COMPANIES_CHAT_ID` and (if the chat has topics)
+   `TELEGRAM_COMPANIES_THREAD_ID` too, and the same bot posts a one-off
+   "N new companies added to the job tracker" message, grouped by
+   `company_type`, whenever a firm is added to a `company_toml/*_boards.toml`
+   file. A firm counts as new when the "Supported companies" tab didn't list
+   it yet, so it's announced on the first scrape (or manual
+   `sheets.supported_companies` run) after it's added. `--check` also tests
+   this destination when it's set.
 
 ## Architecture
 
@@ -72,7 +82,7 @@ src/jobscraper/
 ├── config.py                          # only module reading env vars / company_toml/*_boards.toml
 ├── main.py                            # entrypoint: fetch → classify → append/prune, per board
 ├── models.py                          # Job dataclass, FIELDS column order, to_row/date helpers
-├── telegram.py                        # optional per-run Telegram digest (DA/BI, DS/ML/Algos, SWE/DE, PAC only)
+├── telegram.py                        # optional per-run Telegram digest (DA/BI, DS/ML/Algos, SWE/DE, PAC only) + new-company announcement
 ├── enrichment/
 │   ├── classify_roles.py              # title → role category (or dropped as noise)
 │   ├── classify_region.py             # location → PAC/RoW
@@ -354,6 +364,7 @@ queue rather than run at the same time (both read-then-write every tab):
 Both need the same two repo secrets: `GOOGLE_SHEET_ID`,
 `GOOGLE_SERVICE_ACCOUNT_JSON`. The daily scrape optionally also uses
 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_THREAD_ID` for the
-Telegram digest — omitted (left as unset repo secrets) keeps that feature
+Telegram digest, and `TELEGRAM_COMPANIES_CHAT_ID`,
+`TELEGRAM_COMPANIES_THREAD_ID` for the new-company announcement — omitted (left as unset repo secrets) keeps that feature
 disabled, same as leaving them unset in `.env` locally. The full refresh
 doesn't send a digest, so it doesn't use the Telegram secrets.

@@ -361,3 +361,128 @@ def test_check_connection_reports_a_send_failure_without_raising(monkeypatch, ca
 
     assert telegram.check_connection() is False  # not swallowed like send_digest
     assert "Failed to send" in capsys.readouterr().out
+
+
+def test_check_connection_also_tests_the_new_companies_destination_when_set(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(telegram.config, "TELEGRAM_CHAT_ID", -100123)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_THREAD_ID", 2)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_COMPANIES_CHAT_ID", -100123)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_COMPANIES_THREAD_ID", 10985)
+
+    calls = []
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+    def fake_post(url, json, timeout):
+        calls.append(json)
+        if json["message_thread_id"] == 10985:
+            raise ConnectionError("topic closed")
+        return _FakeResponse()
+
+    monkeypatch.setattr(telegram.requests, "post", fake_post)
+
+    assert telegram.check_connection() is False  # either destination failing fails it
+    assert [c["message_thread_id"] for c in calls] == [2, 10985]
+    out = capsys.readouterr().out
+    assert "Sent OK (digest)" in out
+    assert "Failed to send (new companies, chat -100123, thread 10985)" in out
+
+
+def test_build_new_companies_text_is_none_when_no_firm_was_added():
+    assert telegram.build_new_companies_text({}, _SHEET_URL) is None
+
+
+def test_build_new_companies_text_groups_firms_under_sorted_company_type_headers():
+    text = telegram.build_new_companies_text(
+        {"Visa": "Fintech", "Cohere": "AI Lab", "Adyen": "Fintech"}, _SHEET_URL
+    )
+
+    assert text == (
+        "\U0001f195 3 new companies added to the job tracker\n\n"
+        "<b>AI Lab</b>\nCohere\n\n"
+        "<b>Fintech</b>\nAdyen\nVisa\n\n"
+        f'<a href="{_SHEET_URL}">See their open roles in the sheet</a>'
+    )
+
+
+def test_build_new_companies_text_uses_the_singular_for_one_firm():
+    text = telegram.build_new_companies_text({"Visa": "Fintech"}, _SHEET_URL)
+    assert text.startswith("\U0001f195 1 new company added to the job tracker\n")
+
+
+def test_build_new_companies_text_escapes_html_special_characters():
+    text = telegram.build_new_companies_text(
+        {"A&B <Co>": "Consumer/Media & Entertainment"}, 'https://example.com/?x="y"'
+    )
+    assert "A&amp;B &lt;Co&gt;" in text
+    assert "<b>Consumer/Media &amp; Entertainment</b>" in text
+    assert 'href="https://example.com/?x=&quot;y&quot;"' in text
+
+
+def test_send_new_companies_noop_without_its_own_chat_even_if_the_digest_is_set(monkeypatch):
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(telegram.config, "TELEGRAM_CHAT_ID", 123)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_COMPANIES_CHAT_ID", None)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("must not call requests.post when unconfigured")
+
+    monkeypatch.setattr(telegram.requests, "post", fail)
+    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL)
+
+
+def test_send_new_companies_noop_when_no_firm_was_added(monkeypatch):
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(telegram.config, "TELEGRAM_COMPANIES_CHAT_ID", 123)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("must not call requests.post with nothing new")
+
+    monkeypatch.setattr(telegram.requests, "post", fail)
+    telegram.send_new_companies({}, spreadsheet_url=_SHEET_URL)
+
+
+def test_send_new_companies_posts_to_its_own_chat_and_thread(monkeypatch):
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "secret-token")
+    monkeypatch.setattr(telegram.config, "TELEGRAM_CHAT_ID", -100999)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_THREAD_ID", 2)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_COMPANIES_CHAT_ID", -100123)
+    monkeypatch.setattr(telegram.config, "TELEGRAM_COMPANIES_THREAD_ID", 10985)
+
+    calls = []
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+    def fake_post(url, json, timeout):
+        calls.append((url, json))
+        return _FakeResponse()
+
+    monkeypatch.setattr(telegram.requests, "post", fake_post)
+
+    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL)
+
+    ((url, payload),) = calls
+    assert url == "https://api.telegram.org/botsecret-token/sendMessage"
+    assert payload["chat_id"] == -100123
+    assert payload["message_thread_id"] == 10985
+    assert payload["parse_mode"] == "HTML"
+    assert "Visa" in payload["text"]
+
+
+def test_send_new_companies_swallows_a_send_failure(monkeypatch):
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(telegram.config, "TELEGRAM_COMPANIES_CHAT_ID", 123)
+
+    def fake_post(url, json, timeout):
+        raise ConnectionError("network down")
+
+    monkeypatch.setattr(telegram.requests, "post", fake_post)
+
+    telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL)  # must not raise

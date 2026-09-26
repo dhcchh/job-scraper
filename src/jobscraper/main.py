@@ -94,7 +94,9 @@ Laid out wide, one column per company_type (its slug, e.g.
 "prop_trading_hedge_fund", as the header) with that category's companies
 listed down the column -- see sheets/supported_companies.py for why (a
 self-explanatory column per category, not one row per company) and why it
-skips sheets.writer.set_basic_filter unlike every job tab above.
+skips sheets.writer.set_basic_filter unlike every job tab above. It returns
+the firms that tab didn't list yet, which telegram.send_new_companies
+announces (to its own topic) right after send_digest.
 
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add a client module with its own fetch_<board>_jobs() ->
@@ -132,7 +134,7 @@ from jobscraper.sheets.writer import (
     get_worksheet,
     prune_closed_postings,
 )
-from jobscraper.telegram import DIGEST_CATEGORIES, send_digest
+from jobscraper.telegram import DIGEST_CATEGORIES, send_digest, send_new_companies
 
 logger = logging.getLogger(__name__)
 
@@ -250,8 +252,9 @@ def run() -> None:
     # sheets/supported_companies.py) current with the *_boards.toml files on
     # every run, so a firm added there shows up without a separate manual
     # step. Unconditional, like the per-tab writes above -- it reasons only
-    # about config, not about which boards succeeded this run.
-    sync_supported_companies(spreadsheet)
+    # about config, not about which boards succeeded this run. Returns the
+    # firms it just added to the tab, announced via send_new_companies below.
+    new_firms = sync_supported_companies(spreadsheet)
 
     markdown = _build_summary_markdown(
         spreadsheet_title=spreadsheet.title,
@@ -279,6 +282,9 @@ def run() -> None:
         },
         spreadsheet_url=spreadsheet.url,
     )
+    # Same reasoning: the tab already records these firms as listed, so a
+    # later run would never announce them.
+    send_new_companies(new_firms, spreadsheet_url=spreadsheet.url)
 
     # Keep successful boards current and avoid pruning a failed board, but do
     # not let the workflow look healthy when its result is incomplete. The

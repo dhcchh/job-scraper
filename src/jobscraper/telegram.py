@@ -51,6 +51,14 @@ sends a one-off test message via check_connection() to verify
 TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID actually work, without waiting for a
 real run to have new PAC postings to report -- see check_connection's own
 docstring for how its error handling deliberately differs from send_digest's.
+
+send_new_companies is a second, separate message: a one-off announcement
+that a firm was added to the tracker (a new *_boards.toml entry), sent to
+its own TELEGRAM_COMPANIES_CHAT_ID/TELEGRAM_COMPANIES_THREAD_ID topic by the
+same bot. Which firms count as new is decided by
+sheets.supported_companies.sync_supported_companies (a firm in config that
+the "Supported companies" tab didn't list yet) -- this module only formats
+and sends. Same config-gated, never-raises contract as send_digest.
 """
 
 from __future__ import annotations
@@ -236,30 +244,93 @@ def send_digest(new_jobs_by_category: dict[str, list[Job]], spreadsheet_url: str
         logger.info("telegram digest: nothing new to report, skipping")
         return
 
+    _send_chunks(
+        text, config.TELEGRAM_CHAT_ID, config.TELEGRAM_THREAD_ID, label="telegram digest"
+    )
+
+
+def build_new_companies_text(new_firms: dict[str, str], spreadsheet_url: str) -> str | None:
+    """The new-company announcement, or None if no firm was added.
+
+    `new_firms` maps each newly added firm to its company_type (see
+    sheets.supported_companies.sync_supported_companies). Laid out like
+    build_digest_text -- a bold company_type header per group, one firm per
+    line under it, both sorted -- so _chunk's header carry-forward applies
+    the same way on the (unlikely) day enough firms are added to need it.
+    """
+    if not new_firms:
+        return None
+
+    firms_by_type: dict[str, list[str]] = {}
+    for firm, company_type in new_firms.items():
+        firms_by_type.setdefault(company_type, []).append(firm)
+    type_blocks = [
+        f"<b>{_escape(company_type)}</b>\n"
+        + "\n".join(_escape(firm) for firm in sorted(firms_by_type[company_type]))
+        for company_type in sorted(firms_by_type)
+    ]
+
+    count = len(new_firms)
+    noun = "company" if count == 1 else "companies"
+    header = f"\U0001f195 {count} new {noun} added to the job tracker"
+    link = f'<a href="{_escape(spreadsheet_url, quote=True)}">See their open roles in the sheet</a>'
+    return "\n\n".join([header, *type_blocks, link])
+
+
+def send_new_companies(new_firms: dict[str, str], spreadsheet_url: str) -> None:
+    """Announce newly added firms to the TELEGRAM_COMPANIES_* topic, or do
+    nothing at all.
+
+    Same contract as send_digest: a no-op when TELEGRAM_BOT_TOKEN/
+    TELEGRAM_COMPANIES_CHAT_ID aren't configured or `new_firms` is empty,
+    and a send failure is logged, never raised.
+    """
+    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_COMPANIES_CHAT_ID:
+        logger.debug("telegram new companies: not configured, skipping")
+        return
+
+    text = build_new_companies_text(new_firms, spreadsheet_url)
+    if text is None:
+        logger.info("telegram new companies: no new firms, skipping")
+        return
+
+    _send_chunks(
+        text,
+        config.TELEGRAM_COMPANIES_CHAT_ID,
+        config.TELEGRAM_COMPANIES_THREAD_ID,
+        label="telegram new companies",
+    )
+
+
+def _send_chunks(text: str, chat_id: int, thread_id: int | None, *, label: str) -> None:
+    """Send `text` as one message or a few (see _chunk), logging rather
+    than raising on failure -- if one chunk fails, the rest are skipped
+    rather than sent out of order after a gap."""
     chunks = _chunk(text)
     for index, chunk in enumerate(chunks, start=1):
         try:
-            _send_message(chunk)
+            _send_message(chunk, chat_id, thread_id)
         except Exception:
             logger.exception(
-                "telegram digest: failed to send message %d/%d, skipping the rest",
+                "%s: failed to send message %d/%d, skipping the rest",
+                label,
                 index,
                 len(chunks),
             )
             return
-    logger.info("telegram digest: sent in %d message(s)", len(chunks))
+    logger.info("%s: sent in %d message(s)", label, len(chunks))
 
 
-def _send_message(text: str) -> None:
+def _send_message(text: str, chat_id: int, thread_id: int | None) -> None:
     url = _SEND_MESSAGE_URL.format(token=config.TELEGRAM_BOT_TOKEN)
     payload = {
-        "chat_id": config.TELEGRAM_CHAT_ID,
+        "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
-    if config.TELEGRAM_THREAD_ID is not None:
-        payload["message_thread_id"] = config.TELEGRAM_THREAD_ID
+    if thread_id is not None:
+        payload["message_thread_id"] = thread_id
     response = requests.post(url, json=payload, timeout=15)
     response.raise_for_status()
 
@@ -267,7 +338,9 @@ def _send_message(text: str) -> None:
 def check_connection() -> bool:
     """Send a one-off test message, print the result, and return whether it
     worked -- a manual diagnostic for `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`,
-    run via `uv run python -m jobscraper.telegram --check`.
+    run via `uv run python -m jobscraper.telegram --check`. When
+    `TELEGRAM_COMPANIES_CHAT_ID` is also set, that destination gets its own
+    test message too, and both must succeed for this to return True.
 
     Deliberately the opposite of send_digest's behavior in both respects
     this differs from it: "not configured" and a send failure are both
@@ -282,20 +355,34 @@ def check_connection() -> bool:
         )
         return False
 
-    try:
-        _send_message(
-            "✅ latest-job-scraper: test message from `--check` -- "
-            "if you can see this, the bot can reach this chat."
+    destinations = [("digest", config.TELEGRAM_CHAT_ID, config.TELEGRAM_THREAD_ID)]
+    if config.TELEGRAM_COMPANIES_CHAT_ID:
+        destinations.append(
+            (
+                "new companies",
+                config.TELEGRAM_COMPANIES_CHAT_ID,
+                config.TELEGRAM_COMPANIES_THREAD_ID,
+            )
         )
-    except Exception as exc:
-        print(f"Failed to send: {exc}")
-        return False
 
-    where = f"chat {config.TELEGRAM_CHAT_ID}"
-    if config.TELEGRAM_THREAD_ID is not None:
-        where += f", thread {config.TELEGRAM_THREAD_ID}"
-    print(f"Sent OK to {where}.")
-    return True
+    ok = True
+    for name, chat_id, thread_id in destinations:
+        where = f"chat {chat_id}"
+        if thread_id is not None:
+            where += f", thread {thread_id}"
+        try:
+            _send_message(
+                f"✅ latest-job-scraper: test message from `--check` ({name}) -- "
+                "if you can see this, the bot can reach this chat.",
+                chat_id,
+                thread_id,
+            )
+        except Exception as exc:
+            print(f"Failed to send ({name}, {where}): {exc}")
+            ok = False
+            continue
+        print(f"Sent OK ({name}) to {where}.")
+    return ok
 
 
 if __name__ == "__main__":

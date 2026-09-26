@@ -122,3 +122,13 @@ def _optional_int(name: str) -> int | None:
 TELEGRAM_BOT_TOKEN: str | None = os.environ.get("TELEGRAM_BOT_TOKEN") or None
 TELEGRAM_CHAT_ID: int | None = _optional_int("TELEGRAM_CHAT_ID")
 TELEGRAM_THREAD_ID: int | None = _optional_int("TELEGRAM_THREAD_ID")
+
+# Optional second destination, for telegram.send_new_companies' one-off
+# "new company added to the tracker" announcement -- see telegram.py. Same
+# bot (TELEGRAM_BOT_TOKEN), its own chat/topic: an announcement that the
+# tracker itself grew is a different kind of message from the per-run role
+# digest above, so it gets its own topic rather than being interleaved into
+# that one. Unset TELEGRAM_COMPANIES_CHAT_ID disables just this; the digest
+# is unaffected either way.
+TELEGRAM_COMPANIES_CHAT_ID: int | None = _optional_int("TELEGRAM_COMPANIES_CHAT_ID")
+TELEGRAM_COMPANIES_THREAD_ID: int | None = _optional_int("TELEGRAM_COMPANIES_THREAD_ID")

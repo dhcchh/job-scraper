@@ -32,6 +32,12 @@ _get_or_create_worksheet matches TAB_NAME case/whitespace-insensitively
 against the spreadsheet's existing tabs before falling back to creating one
 -- a brand new spreadsheet (or a renamed tab) still gets a usable tab
 instead of sheets.writer.get_worksheet's usual WorksheetNotFound.
+
+Before clearing, sync_supported_companies reads which firms the tab already
+listed, and returns the configured firms it didn't -- the firms added since
+the last sync -- for telegram.send_new_companies to announce. Both callers
+(main.run() and this module's own __main__) send that announcement, since
+whichever one syncs first is the only one that will ever see a firm as new.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ import gspread
 
 from jobscraper import config
 from jobscraper.sheets.writer import get_spreadsheet
+from jobscraper.telegram import send_new_companies
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +67,8 @@ def _slugify(label: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
 
 
-def build_columns() -> dict[str, list[str]]:
-    """slug -> sorted company names in that company_type, ordered by slug.
+def _category_by_firm() -> dict[str, str]:
+    """firm -> company_type across all six *_boards.toml files.
 
     A firm with more than one board token (e.g. Optiver has two Greenhouse
     tokens) is one entry here, not one per token -- this tab answers "which
@@ -83,9 +90,14 @@ def build_columns() -> dict[str, list[str]]:
     category_by_firm: dict[str, str] = {}
     for board in all_boards:
         category_by_firm.setdefault(board["firm"], board["company_type"])
+    return category_by_firm
 
+
+def build_columns() -> dict[str, list[str]]:
+    """slug -> sorted company names in that company_type, ordered by slug,
+    one entry per firm (see _category_by_firm)."""
     firms_by_slug: dict[str, list[str]] = defaultdict(list)
-    for firm, category in category_by_firm.items():
+    for firm, category in _category_by_firm().items():
         firms_by_slug[_slugify(category)].append(firm)
 
     return {slug: sorted(firms) for slug, firms in sorted(firms_by_slug.items())}
@@ -112,7 +124,14 @@ def _get_or_create_worksheet(spreadsheet: gspread.Spreadsheet, cols: int) -> gsp
     return spreadsheet.add_worksheet(title=TAB_NAME, rows=100, cols=max(cols, 1))
 
 
-def sync_supported_companies(spreadsheet: gspread.Spreadsheet) -> int:
+def _listed_firms(worksheet: gspread.Worksheet) -> set[str]:
+    """Every firm the tab lists right now: each non-blank cell below the
+    header row, whichever column it's in."""
+    rows = worksheet.get_all_values()
+    return {cell.strip() for row in rows[1:] for cell in row if cell.strip()}
+
+
+def sync_supported_companies(spreadsheet: gspread.Spreadsheet) -> dict[str, str]:
     """Rewrite the supported-companies tab from current config, from scratch.
 
     Cleared first, unlike sheets/writer.append_jobs' incremental append or
@@ -122,10 +141,19 @@ def sync_supported_companies(spreadsheet: gspread.Spreadsheet) -> int:
     disappear from the tab too, which an in-place update() over a shrinking
     range wouldn't do on its own.
 
-    Returns the total number of companies written across every column.
+    Returns the firms newly added since the tab was last written -- in
+    config, not yet listed in the tab -- as firm -> company_type, for
+    telegram.send_new_companies. The tab's own previous contents are the
+    only record of "already announced" this needs, so there's no separate
+    state to keep in sync. A tab that listed no firms at all (just created,
+    or never populated) returns {} rather than every configured firm, so
+    first-time setup doesn't announce the whole list as new. A renamed firm
+    (see CLAUDE.md) does read as new under its new name.
     """
+    category_by_firm = _category_by_firm()
     columns = build_columns()
     worksheet = _get_or_create_worksheet(spreadsheet, cols=len(columns))
+    previously_listed = _listed_firms(worksheet)
     worksheet.clear()
     if columns:
         worksheet.update(
@@ -137,11 +165,32 @@ def sync_supported_companies(spreadsheet: gspread.Spreadsheet) -> int:
         total,
         len(columns),
     )
-    return total
+
+    if not previously_listed:
+        logger.info(
+            "supported companies: tab listed no firms before this run, "
+            "not treating any as newly added"
+        )
+        return {}
+    new_firms = {
+        firm: category
+        for firm, category in category_by_firm.items()
+        if firm not in previously_listed
+    }
+    if new_firms:
+        logger.info(
+            "supported companies: newly added: %s", ", ".join(sorted(new_firms))
+        )
+    return new_firms
 
 
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    sync_supported_companies(get_spreadsheet())
+    # Announced here too, not only from main.run(): once this rewrites the
+    # tab, a later scrape no longer sees these firms as new.
+    spreadsheet = get_spreadsheet()
+    send_new_companies(
+        sync_supported_companies(spreadsheet), spreadsheet_url=spreadsheet.url
+    )

@@ -98,16 +98,22 @@ def test_grid_pads_shorter_columns_to_the_tallest():
 
 
 class _FakeWorksheet:
-    def __init__(self, title):
+    def __init__(self, title, values=()):
         self.title = title
+        self.values = [list(row) for row in values]
         self.cleared = False
         self.updated_with = None
         self.update_kwargs = None
 
+    def get_all_values(self):
+        return [list(row) for row in self.values]
+
     def clear(self):
         self.cleared = True
+        self.values = []
 
     def update(self, range_name=None, values=None, value_input_option=None):
+        self.values = [list(row) for row in values]
         self.updated_with = values
         self.update_kwargs = {
             "range_name": range_name,
@@ -142,9 +148,9 @@ def test_sync_supported_companies_writes_wide_grid_to_existing_tab(monkeypatch):
     worksheet = _FakeWorksheet("Supported companies")
     spreadsheet = _FakeSpreadsheet([worksheet])
 
-    total = supported_companies.sync_supported_companies(spreadsheet)
+    new_firms = supported_companies.sync_supported_companies(spreadsheet)
 
-    assert total == 3
+    assert new_firms == {}  # the tab listed nothing before -- see the bootstrap test below
     assert worksheet.cleared is True
     assert worksheet.updated_with == [
         ["ai_lab", "consumer_media_entertainment"],
@@ -185,8 +191,68 @@ def test_sync_supported_companies_handles_no_configured_firms(monkeypatch):
     worksheet = _FakeWorksheet("Supported companies")
     spreadsheet = _FakeSpreadsheet([worksheet])
 
-    total = supported_companies.sync_supported_companies(spreadsheet)
+    new_firms = supported_companies.sync_supported_companies(spreadsheet)
 
-    assert total == 0
+    assert new_firms == {}
     assert worksheet.cleared is True
     assert worksheet.updated_with is None  # nothing to write -- clear() alone is enough
+
+
+def test_sync_supported_companies_returns_firms_the_tab_did_not_list_yet(monkeypatch):
+    _set_boards(
+        monkeypatch,
+        greenhouse=[
+            _board("anthropic", "Anthropic", "AI Lab"),
+            _board("optiverneurips", "Optiver", "Prop Trading/Hedge Fund"),
+            _board("optiverprivate", "Optiver", "Prop Trading/Hedge Fund"),
+        ],
+        workday=[_board("visa.wd5/Visa", "Visa", "Fintech")],
+    )
+    worksheet = _FakeWorksheet(
+        "Supported companies",
+        [
+            ["ai_lab", "gaming"],
+            ["Anthropic", "Roblox"],  # Roblox since removed from config
+        ],
+    )
+
+    new_firms = supported_companies.sync_supported_companies(_FakeSpreadsheet([worksheet]))
+
+    assert new_firms == {
+        "Optiver": "Prop Trading/Hedge Fund",  # once, despite two tokens
+        "Visa": "Fintech",
+    }
+
+
+def test_sync_supported_companies_ignores_header_slugs_and_blank_padding(monkeypatch):
+    # A header cell (a company_type slug) or the "" padding of a shorter
+    # column must never count as a listed firm.
+    _set_boards(
+        monkeypatch,
+        greenhouse=[
+            _board("anthropic", "Anthropic", "AI Lab"),
+            _board("cohere", "Cohere", "AI Lab"),
+        ],
+    )
+    worksheet = _FakeWorksheet(
+        "Supported companies",
+        [["ai_lab", "fintech"], ["Anthropic", "Stripe"], [" Cohere ", ""]],
+    )
+
+    assert supported_companies.sync_supported_companies(_FakeSpreadsheet([worksheet])) == {}
+
+
+def test_sync_supported_companies_announces_nothing_when_the_tab_listed_no_firms(monkeypatch):
+    # First-time setup (or a tab that's only ever had a header): every
+    # configured firm is missing from it, but none of them is newly added.
+    _set_boards(monkeypatch, greenhouse=[_board("anthropic", "Anthropic", "AI Lab")])
+    worksheet = _FakeWorksheet("Supported companies", [["ai_lab"]])
+
+    assert supported_companies.sync_supported_companies(_FakeSpreadsheet([worksheet])) == {}
+    assert worksheet.updated_with == [["ai_lab"], ["Anthropic"]]
+
+
+def test_sync_supported_companies_announces_nothing_for_a_newly_created_tab(monkeypatch):
+    _set_boards(monkeypatch, greenhouse=[_board("anthropic", "Anthropic", "AI Lab")])
+
+    assert supported_companies.sync_supported_companies(_FakeSpreadsheet([])) == {}

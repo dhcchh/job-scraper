@@ -38,7 +38,8 @@ behavior identical.
 There is no formatter or linter. Tests never use the network or live Google
 or Telegram credentials: `tests/conftest.py` forces `GOOGLE_SHEET_ID`/
 `GOOGLE_SERVICE_ACCOUNT_JSON` to dummy values and `TELEGRAM_BOT_TOKEN`/
-`TELEGRAM_CHAT_ID`/`TELEGRAM_THREAD_ID` to `""`, all via `setdefault` *before*
+`TELEGRAM_CHAT_ID`/`TELEGRAM_THREAD_ID`/`TELEGRAM_COMPANIES_CHAT_ID`/
+`TELEGRAM_COMPANIES_THREAD_ID` to `""`, all via `setdefault` *before*
 `jobscraper.config` is ever imported -- config.py's own `load_dotenv()` call
 never overrides a key already in `os.environ` (its default `override=False`),
 so this reliably wins over whatever a real, locally configured `.env` has,
@@ -495,7 +496,15 @@ use a small fake `Worksheet`.
   the ten (category, region) job tabs `main.py` otherwise assumes already
   exist. Also runnable by hand
   (`uv run python -m jobscraper.sheets.supported_companies`) to populate or
-  refresh it immediately without waiting for the next scrape.
+  refresh it immediately without waiting for the next scrape. Before
+  clearing, `sync_supported_companies` reads which firms the tab already
+  lists and returns the configured firms it didn't (firm -> company_type)
+  -- the tab's own previous contents are the only "already announced"
+  record, no separate state. A tab that listed no firms at all returns `{}`
+  so first-time setup doesn't announce every firm. Both callers (`main.run()`
+  and the standalone run) pass that to `telegram.send_new_companies`, since
+  whichever syncs first is the only one that ever sees a firm as new. A
+  renamed firm reads as new under its new name.
 - The scraper logs the spreadsheet title/URL and writes a GitHub Actions job
   summary. Workflow-level concurrency protects Action-triggered runs; it does
   not protect a local run pointed at the production sheet.
@@ -551,6 +560,14 @@ use a small fake `Worksheet`.
   `send_digest`'s "not configured"/failure handling: both are printed and
   returned as `False` rather than no-op'd or logged-and-swallowed, since
   the point of a manual check is to surface what's wrong, not hide it.
+  `telegram.send_new_companies` is a second, separate message: "N new
+  companies added to the job tracker", firms grouped under bold
+  `company_type` headers, ending in the same sheet link -- sent by the same
+  bot to its own `TELEGRAM_COMPANIES_CHAT_ID`/`TELEGRAM_COMPANIES_THREAD_ID`
+  topic (unset chat id disables just this). Same no-op/never-raises
+  contract as `send_digest`; `main.py` calls it right after `send_digest`,
+  unconditionally for the same reason. `--check` also sends a test message
+  there when `TELEGRAM_COMPANIES_CHAT_ID` is set.
 
 ## Open work
 
