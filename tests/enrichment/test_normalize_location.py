@@ -314,3 +314,9 @@ def test_normalize_location_maps_dataiku_country_first_offices(raw, expected):
     # Remote" -- unmapped, classify_region reads "Tokyo"/"Remote" as the
     # country and a real PAC posting lands in RoW.
     assert normalize_location(raw) == expected
+
+
+def test_normalize_location_strips_office_suffix_despite_trailing_whitespace():
+    # Flow Traders' live Greenhouse board has "London Office " with a
+    # trailing space -- the suffix must still come off.
+    assert normalize_location("London Office ") == "London, United Kingdom"

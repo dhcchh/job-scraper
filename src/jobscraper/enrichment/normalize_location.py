@@ -444,7 +444,10 @@ def normalize_location(raw: str) -> str:
     the office field by mistake). Same philosophy as classify_seniority's
     "Unspecified": don't fabricate a signal the data doesn't contain.
     """
-    cleaned = _OFFICE_SUFFIX_RE.sub("", raw).strip()
+    # Stripped first so a trailing space doesn't hide a suffix from the
+    # end-anchored regexes below -- Flow Traders' raw office name is "London
+    # Office " (trailing space), which otherwise stayed "London Office".
+    cleaned = _OFFICE_SUFFIX_RE.sub("", raw.strip()).strip()
     cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _ISO_CODE_PREFIX_RE.sub("", cleaned).strip()
     cleaned = _ISO_CODE_SPACING_RE.sub(r"\1-", cleaned).strip()
