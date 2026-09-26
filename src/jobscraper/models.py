@@ -222,7 +222,8 @@ class Job:
       the same reason as seniority's default -- test Job(...) calls that
       don't care about it.
     source: which board system this posting was fetched from -- "Greenhouse",
-      "Lever", "Ashby", "SmartRecruiters", or "Eightfold" -- a fact about which client
+      "Lever", "Ashby", "SmartRecruiters", "Eightfold", or "Workday" -- a fact
+      about which client
       fetched it, not something in the API response itself, so each
       job_boards/*/client.py stamps it as a fixed literal in its own
       `_to_job` rather than reading it from `raw`. Defaults to "" for the
@@ -246,7 +247,7 @@ class Job:
       gated to a firm allowlist; it's populated whenever a posting itself
       actually discloses one, None otherwise, since whether an employer
       discloses pay varies posting to posting, not firm to firm. Only two of
-      the five board types expose anything structured to read this from:
+      the six board types expose anything structured to read this from:
       Lever's `salaryRange` (`{min, max, currency, interval}`, present only
       when that employer opted in to Lever's own pay-transparency feature --
       confirmed present on Belvedere Trading's live board, absent on this
@@ -260,10 +261,11 @@ class Job:
       Robinhood's live boards -- a pay range, when a posting discloses one,
       is only ever freeform text buried in `content` (e.g. Robinhood's "the
       salary range for this role is ... aligned to one of 3 compensation
-      zones"), in no consistent shape worth regexing out. SmartRecruiters
-      and Eightfold expose no compensation field anywhere in their public
-      APIs either (confirmed against Grab's per-posting detail endpoint and
-      Millennium's live board, respectively). See each
+      zones"), in no consistent shape worth regexing out. SmartRecruiters,
+      Eightfold, and Workday expose no compensation field anywhere in their
+      public APIs either (confirmed against Grab's per-posting detail
+      endpoint, Millennium's live board, and Visa's/Mastercard's list and
+      detail endpoints, respectively). See each
       job_boards/*/client.py's `_salary` for the exact per-board shape.
       Defaults to None. `to_row` renders None as an empty cell because
       Google Sheets has no distinct null cell value.

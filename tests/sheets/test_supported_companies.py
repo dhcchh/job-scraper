@@ -12,12 +12,22 @@ whatever firms happen to be in the real company_toml/*_boards.toml files.
 from jobscraper.sheets import supported_companies
 
 
-def _set_boards(monkeypatch, *, greenhouse=(), lever=(), ashby=(), smartrecruiters=(), eightfold=()):
+def _set_boards(
+    monkeypatch,
+    *,
+    greenhouse=(),
+    lever=(),
+    ashby=(),
+    smartrecruiters=(),
+    eightfold=(),
+    workday=(),
+):
     monkeypatch.setattr(supported_companies.config, "GREENHOUSE_BOARDS", list(greenhouse))
     monkeypatch.setattr(supported_companies.config, "LEVER_BOARDS", list(lever))
     monkeypatch.setattr(supported_companies.config, "ASHBY_BOARDS", list(ashby))
     monkeypatch.setattr(supported_companies.config, "SMARTRECRUITERS_BOARDS", list(smartrecruiters))
     monkeypatch.setattr(supported_companies.config, "EIGHTFOLD_BOARDS", list(eightfold))
+    monkeypatch.setattr(supported_companies.config, "WORKDAY_BOARDS", list(workday))
 
 
 def _board(token, firm, company_type):
@@ -53,12 +63,14 @@ def test_build_columns_groups_and_sorts_within_and_across_categories(monkeypatch
         ashby=[_board("cohere", "Cohere", "AI Lab")],
         smartrecruiters=[_board("Grab", "Grab", "Consumer/Marketplace")],
         eightfold=[_board("mlp", "Millennium", "Prop Trading/Hedge Fund")],
+        workday=[_board("visa.wd5/Visa", "Visa", "Fintech")],
     )
 
     assert supported_companies.build_columns() == {
         "ai_lab": ["Anthropic", "Cohere"],
         "consumer_marketplace": ["Grab"],
         "consumer_media_entertainment": ["Spotify"],
+        "fintech": ["Visa"],
         "prop_trading_hedge_fund": ["Millennium"],
     }
 

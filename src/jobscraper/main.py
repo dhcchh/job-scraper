@@ -6,19 +6,21 @@ tab, prune closed ones.
     uv run python -m jobscraper.main
 
 Loops over GREENHOUSE_BOARDS, then LEVER_BOARDS, then ASHBY_BOARDS, then
-SMARTRECRUITERS_BOARDS, then EIGHTFOLD_BOARDS, from config -- one board at a
-time within each, no concurrency, since this runs once a day and there's no
-rate-limit pressure at this scale. The five board types share one loop body
+SMARTRECRUITERS_BOARDS, then EIGHTFOLD_BOARDS, then WORKDAY_BOARDS, from
+config -- one board at a time within each, no concurrency, since this runs
+once a day and there's no rate-limit pressure at this scale. The six board
+types share one loop body
 (see run()'s board_sources), each entry pairing its config board list with
 its own fetch_<board>_jobs function and a lowercase source label for the
-"skipped this board" log line -- the five board types differ only in which
-board list/fetch function/label that is. All five feed the same
+"skipped this board" log line -- the six board types differ only in which
+board list/fetch function/label that is. All six feed the same
 all_jobs/succeeded_firms/failed_firms accumulators, so a firm's board type
 is otherwise invisible past this point -- prune_closed_postings only ever
 reasons about firms. A board whose fetch fails
 (greenhouse.client.fetch_greenhouse_jobs/lever.client.fetch_lever_jobs/
 ashby.client.fetch_ashby_jobs/smartrecruiters.client.fetch_smartrecruiters_jobs/
-eightfold.client.fetch_eightfold_jobs already retry transient errors -- see
+eightfold.client.fetch_eightfold_jobs/workday.client.fetch_workday_jobs
+already retry transient errors -- see
 those modules -- so what reaches here has exhausted those) is skipped for
 pruning; its
 firm is left out of fetched_boards, so prune_closed_postings never mistakes
@@ -81,9 +83,10 @@ below.
 Right after the per-tab loop, sheets.supported_companies.sync_supported_companies
 rewrites the (separate, user-created) "Supported companies" tab from
 GREENHOUSE_BOARDS/LEVER_BOARDS/ASHBY_BOARDS/SMARTRECRUITERS_BOARDS/
-EIGHTFOLD_BOARDS -- a firm added to any of the five *_boards.toml files
-shows up there on the very next scheduled run instead of needing a manual
-backfill, and a firm removed from all five disappears from it the same way.
+EIGHTFOLD_BOARDS/WORKDAY_BOARDS -- a firm added to any of the six
+*_boards.toml files shows up there on the very next scheduled run instead of
+needing a manual backfill, and a firm removed from all six disappears from
+it the same way.
 Laid out wide, one column per company_type (its slug, e.g.
 "prop_trading_hedge_fund", as the header) with that category's companies
 listed down the column -- see sheets/supported_companies.py for why (a
@@ -93,7 +96,7 @@ skips sheets.writer.set_basic_filter unlike every job tab above.
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add a client module with its own fetch_<board>_jobs() ->
     list[Job], and extend the fetch loop below the same way Greenhouse,
-    Lever, Ashby, SmartRecruiters, and Eightfold already are.
+    Lever, Ashby, SmartRecruiters, Eightfold, and Workday already are.
   - more/edited categories: see enrichment/classify_roles.py's
     CATEGORIES -- add a keyword there, or a whole new category + matching
     spreadsheet tab (x2, one per region -- see classify_region.tab_name).
@@ -117,6 +120,7 @@ from jobscraper.job_boards.eightfold.client import fetch_eightfold_jobs
 from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs
 from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
+from jobscraper.job_boards.workday.client import fetch_workday_jobs
 from jobscraper.models import Job
 from jobscraper.sheets.supported_companies import sync_supported_companies
 from jobscraper.sheets.writer import (
@@ -148,6 +152,7 @@ def run() -> None:
         ("ashby", config.ASHBY_BOARDS, fetch_ashby_jobs),
         ("smartrecruiters", config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
         ("eightfold", config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
+        ("workday", config.WORKDAY_BOARDS, fetch_workday_jobs),
     )
 
     all_jobs: list[Job] = []
@@ -185,7 +190,8 @@ def run() -> None:
     logger.info(
         # succeeded_entries/total counts board TOKENS across
         # GREENHOUSE_BOARDS, LEVER_BOARDS, ASHBY_BOARDS, SMARTRECRUITERS_BOARDS,
-        # and EIGHTFOLD_BOARDS; fetched_boards counts distinct FIRMS, which is
+        # EIGHTFOLD_BOARDS, and WORKDAY_BOARDS; fetched_boards counts
+        # distinct FIRMS, which is
         # smaller whenever one firm has multiple tokens
         # (e.g. Optiver) -- comparing that against the token count would
         # make a fully successful run misleadingly print e.g. "14/15".

@@ -1,0 +1,11 @@
+# Workday job boards to scrape.
+
+[[boards]]
+token = "visa.wd5/Visa"
+firm = "Visa"
+company_type = "Fintech"
+
+[[boards]]
+token = "mastercard.wd1/CorporateCareers"
+firm = "Mastercard"
+company_type = "Fintech"

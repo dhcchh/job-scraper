@@ -223,3 +223,74 @@ def test_normalize_location_strips_trailing_locations_suffix():
     # Non-PAC countries pass through the same way -- no lookup entry needed
     # for a bare country name, only the noise suffix has to go.
     assert normalize_location("Germany Locations") == "Germany"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("US - Austin, TX", "Austin, TX"),
+        ("US - New York, NY", "New York, NY"),
+        ("AE - Dubai, United Arab Emirates", "Dubai, UAE"),
+        ("GB - London, United Kingdom", "London, United Kingdom"),
+        ("HK - Hong Kong, China", "Hong Kong"),
+        ("BR - São Paulo, Brazil", "Sao Paulo, Brazil"),
+        ("PH - Pasay, Philippines - Manila", "Pasay, Philippines"),
+        # "Remote - <country>" after the code: India/Armenia must come out
+        # as something classify_region.is_excluded recognizes.
+        ("IN - Remote - IND", "India"),
+        ("AM - Remote - Armenia", "Armenia"),
+        ("GB - Remote - GBR", "United Kingdom"),
+    ],
+)
+def test_normalize_location_drops_iso_code_prefix_before_a_full_location(raw, expected):
+    # Visa's live Workday board prefixes every location with an ISO code
+    # that only repeats the country already named after it.
+    assert normalize_location(raw) == expected
+
+
+def test_normalize_location_keeps_iso_code_prefix_before_a_bare_city():
+    # No comma after the code -- still the "xx-city" lookup path Ashby's
+    # boards rely on, not the full-location prefix drop above.
+    assert normalize_location("AU - Sydney") == "Sydney, Australia"
+    assert normalize_location("SG - Singapore") == "Singapore"
+    assert normalize_location("SG - Remote") == "SG-Remote"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("Jakarta, Indonesia (6th Floor)", "Jakarta, Indonesia"),
+        ("Navi Mumbai, India (Finicity)", "Navi Mumbai, India"),
+        ("London, England (Angel Lane)", "London, United Kingdom"),
+        ("Manilla, Philippines (Transfast)", "Manila, Philippines"),
+        ("Salt Lake City, Utah (Holladay)", "Salt Lake City, UT"),
+    ],
+)
+def test_normalize_location_strips_a_building_suffix_after_city_and_country(raw, expected):
+    # Mastercard's live Workday board appends a building/acquired-company
+    # name -- unstripped, classify_region reads "Indonesia (6th Floor)" as
+    # the country and is_excluded misses it.
+    assert normalize_location(raw) == expected
+
+
+def test_normalize_location_leaves_a_paren_with_no_comma_before_it():
+    assert normalize_location("Remote (United States)") == "Remote (United States)"
+    assert normalize_location("Singapore (Guoco)") == "Singapore"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("Singapore, SingPost", "Singapore"),
+        ("Wanchai, Hong Kong", "Hong Kong"),
+        ("Besiktas, Istanbul Turkey", "Istanbul, Turkey"),
+        ("O'Fallon, Missouri", "O'Fallon, MO"),
+        ("Purchase, New York", "Purchase, NY"),
+        ("New York City, New York", "New York, NY"),
+        ("Atlanta, Georgia", "Atlanta, GA"),
+        ("Boston, Massachusetts", "Boston, MA"),
+        ("Austin, Texas", "Austin, TX"),
+    ],
+)
+def test_normalize_location_maps_visa_and_mastercard_office_names(raw, expected):
+    assert normalize_location(raw) == expected

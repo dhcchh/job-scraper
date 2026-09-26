@@ -8,7 +8,7 @@ Run standalone to (re)populate the tab immediately --
     uv run python -m jobscraper.sheets.supported_companies
 
 -- and also called from main.run() at the end of every daily scrape, so a
-firm added to any of the five *_boards.toml files shows up here
+firm added to any of the six *_boards.toml files shows up here
 automatically on the very next run, with no separate manual step (unlike
 sheets/backfill.py and sheets/full_refresh.py, which are manual-only). This
 is safe to run unattended because it reasons about nothing but the current
@@ -65,7 +65,7 @@ def build_columns() -> dict[str, list[str]]:
 
     A firm with more than one board token (e.g. Optiver has two Greenhouse
     tokens) is one entry here, not one per token -- this tab answers "which
-    firms are supported", not "which board tokens exist". The five
+    firms are supported", not "which board tokens exist". The six
     *_boards.toml files are walked in the same order main.py's
     board_sources fetch loop uses; a firm's first occurrence wins in the
     unexpected case it were ever listed with two different company_type
@@ -78,6 +78,7 @@ def build_columns() -> dict[str, list[str]]:
         + config.ASHBY_BOARDS
         + config.SMARTRECRUITERS_BOARDS
         + config.EIGHTFOLD_BOARDS
+        + config.WORKDAY_BOARDS
     )
     category_by_firm: dict[str, str] = {}
     for board in all_boards:

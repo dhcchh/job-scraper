@@ -46,12 +46,14 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     # Empty by default so a test that only cares about Greenhouse behavior
     # doesn't also fetch the real, committed company_toml/lever_boards.toml
     # / company_toml/ashby_boards.toml / company_toml/smartrecruiters_boards.toml
-    # / company_toml/eightfold_boards.toml over the network -- a test
-    # exercising one of those loops overrides it itself.
+    # / company_toml/eightfold_boards.toml / company_toml/workday_boards.toml
+    # over the network -- a test exercising one of those loops overrides it
+    # itself.
     monkeypatch.setattr(main.config, "LEVER_BOARDS", [])
     monkeypatch.setattr(main.config, "ASHBY_BOARDS", [])
     monkeypatch.setattr(main.config, "SMARTRECRUITERS_BOARDS", [])
     monkeypatch.setattr(main.config, "EIGHTFOLD_BOARDS", [])
+    monkeypatch.setattr(main.config, "WORKDAY_BOARDS", [])
     # No-op by default -- see module docstring. A test that wants to inspect
     # what main.run() passed send_digest overrides this itself, after
     # calling _patch_sheet_functions.
@@ -388,6 +390,70 @@ def test_run_treats_a_failed_eightfold_board_like_a_failed_greenhouse_board(monk
         main.config,
         "EIGHTFOLD_BOARDS",
         [{"token": "bad", "firm": "BadCo", "company_type": "Big Tech"}],
+    )
+
+    with pytest.raises(RuntimeError, match="BadCo"):
+        main.run()
+
+    assert prune_calls
+    assert all(fetched_boards == set() for fetched_boards in prune_calls)
+
+
+def test_run_fetches_and_merges_workday_boards_alongside_greenhouse(monkeypatch):
+    monkeypatch.setattr(
+        main.config,
+        "GREENHOUSE_BOARDS",
+        [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}],
+    )
+
+    gh_job = _job("Acme", "1", location="London, United Kingdom")
+    wd_job = _job("Visa", "REF1", location="Singapore")
+
+    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(
+        main, "fetch_workday_jobs", lambda token, firm, company_type: [wd_job]
+    )
+
+    prune_calls: list[set[str]] = []
+    append_calls: list[tuple] = []
+    _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
+    # Override _patch_sheet_functions' empty-by-default WORKDAY_BOARDS --
+    # this test specifically exercises the Workday loop.
+    monkeypatch.setattr(
+        main.config,
+        "WORKDAY_BOARDS",
+        [{"token": "visa.wd5/Visa", "firm": "Visa", "company_type": "Fintech"}],
+    )
+
+    main.run()
+
+    assert all(fetched_boards == {"Acme", "Visa"} for fetched_boards in prune_calls)
+    pac_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - PAC"
+    )
+    row_jobs = next(
+        jobs for worksheet, jobs in append_calls if worksheet == "SWE/DE - RoW"
+    )
+    assert pac_jobs == [wd_job]
+    assert row_jobs == [gh_job]
+
+
+def test_run_treats_a_failed_workday_board_like_a_failed_greenhouse_board(monkeypatch):
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [])
+
+    def fake_fetch_workday_jobs(token, firm, company_type):
+        raise RuntimeError("workday down")
+
+    monkeypatch.setattr(main, "fetch_workday_jobs", fake_fetch_workday_jobs)
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    # Override _patch_sheet_functions' empty-by-default WORKDAY_BOARDS --
+    # this test specifically exercises the Workday loop's failure handling.
+    monkeypatch.setattr(
+        main.config,
+        "WORKDAY_BOARDS",
+        [{"token": "bad.wd1/Bad", "firm": "BadCo", "company_type": "Big Tech"}],
     )
 
     with pytest.raises(RuntimeError, match="BadCo"):

@@ -20,14 +20,15 @@ load_dotenv()
 # (rather than the repo root) so the root isn't cluttered as more board
 # platforms are added -- see company_toml/greenhouse_boards.toml,
 # company_toml/lever_boards.toml, company_toml/ashby_boards.toml,
-# company_toml/smartrecruiters_boards.toml, and
-# company_toml/eightfold_boards.toml themselves.
+# company_toml/smartrecruiters_boards.toml, company_toml/eightfold_boards.toml,
+# and company_toml/workday_boards.toml themselves.
 _COMPANY_TOML_DIR = Path(__file__).resolve().parents[2] / "company_toml"
 _BOARDS_FILE = _COMPANY_TOML_DIR / "greenhouse_boards.toml"
 _LEVER_BOARDS_FILE = _COMPANY_TOML_DIR / "lever_boards.toml"
 _ASHBY_BOARDS_FILE = _COMPANY_TOML_DIR / "ashby_boards.toml"
 _SMARTRECRUITERS_BOARDS_FILE = _COMPANY_TOML_DIR / "smartrecruiters_boards.toml"
 _EIGHTFOLD_BOARDS_FILE = _COMPANY_TOML_DIR / "eightfold_boards.toml"
+_WORKDAY_BOARDS_FILE = _COMPANY_TOML_DIR / "workday_boards.toml"
 
 
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
@@ -65,6 +66,11 @@ SMARTRECRUITERS_BOARDS: list[dict] = _load_boards(_SMARTRECRUITERS_BOARDS_FILE)
 # Same shape again -- Eightfold's `token` is a company's own Eightfold
 # subdomain (<token>.eightfold.ai), same idea as Ashby's/Lever's slug.
 EIGHTFOLD_BOARDS: list[dict] = _load_boards(_EIGHTFOLD_BOARDS_FILE)
+
+# Same shape again -- Workday's `token` is "<tenant>.<wdN>/<site>", the three
+# pieces of a company's careers-site URL (<tenant>.<wdN>.myworkdayjobs.com/
+# <site>) that all vary per company -- see job_boards/workday/client.py.
+WORKDAY_BOARDS: list[dict] = _load_boards(_WORKDAY_BOARDS_FILE)
 
 # The spreadsheet id from its URL:
 # https://docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/edit

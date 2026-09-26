@@ -91,6 +91,30 @@ _DUPLICATE_NAME_RE = re.compile(r"^(.+?),\s*\1$", re.IGNORECASE)
 # (handled separately by _REMOTE_PREFIX_RE above).
 _ISO_CODE_SPACING_RE = re.compile(r"^([A-Za-z]{2})\s+-\s+")
 
+# Visa's Workday board prefixes EVERY location with that same spaced ISO code,
+# but in front of a full "City, Country"/"City, ST" -- "US - Austin, TX", "AE
+# - Dubai, United Arab Emirates" -- or a "Remote - <country>" label ("IN -
+# Remote - IND", "AM - Remote - Armenia"), not a bare city. There the code
+# only repeats what follows it, and collapsing it into "US-Austin, TX" (as
+# _ISO_CODE_SPACING_RE would) leaves a key no table entry matches and, for
+# "IN-Remote - IND"/"AM-Remote - Armenia", a string classify_region.
+# is_excluded can't read the country off. So the prefix is dropped entirely
+# instead, checked before _ISO_CODE_SPACING_RE; a bare city ("AU - Sydney",
+# "SG - Singapore", "SG - Remote") doesn't match the lookahead and still goes
+# through the "xx-city" entries below.
+_ISO_CODE_PREFIX_RE = re.compile(
+    r"^[A-Za-z]{2}\s+-\s+(?=[^,]+,|remote\s*-\s*\S)", re.IGNORECASE
+)
+
+# Mastercard's Workday board appends a building or acquired-company name in
+# parens after an otherwise plain "City, Country" -- "Jakarta, Indonesia (6th
+# Floor)", "Navi Mumbai, India (Finicity)", "London, England (Angel Lane)".
+# Left in place, classify_region reads "Indonesia (6th Floor)" as the country,
+# so a posting is_excluded should drop stays in scope. Only stripped after a
+# comma, so a paren that IS the useful part of a no-comma name ("Remote
+# (United States)", "Singapore (Guoco)") is left for the table to handle.
+_BUILDING_SUFFIX_RE = re.compile(r"^([^()]+,[^()]+?)\s*\([^()]*\)$")
+
 # Keyed by the office name lowercased (after stripping a trailing " office"
 # noise suffix -- covers "Amsterdam office", "Chicago Office", etc. without
 # needing a separate entry per suffix variant). Unmapped names pass through
@@ -357,6 +381,38 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     # "London, London, United Kingdom" -- same repeated-name idea as
     # _DUPLICATE_NAME_RE's "City, City" wrapper, one comma over.
     "london, london, united kingdom": "London, United Kingdom",
+    # Seeded from Visa's and Mastercard's live Workday boards (see
+    # job_boards/workday/client.py), after _ISO_CODE_PREFIX_RE/
+    # _BUILDING_SUFFIX_RE above have stripped their wrappers. Visa's
+    # "Singapore, SingPost" (an office inside SingPost's building) reads as
+    # country "SingPost" to classify_region, so a real Singapore posting
+    # would silently land in RoW.
+    "singapore, singpost": "Singapore",
+    # What's left of Visa's "IN - Remote - IND"/"GB - Remote - GBR" once the
+    # prefixes are stripped -- 3-letter ISO codes. India matters most:
+    # unmapped, is_excluded can't recognize it.
+    "ind": "India",
+    "gbr": "United Kingdom",
+    "hong kong, china": "Hong Kong",
+    "wanchai, hong kong": "Hong Kong",
+    "manilla, philippines": "Manila, Philippines",
+    "pasay, philippines - manila": "Pasay, Philippines",
+    "london, england": "London, United Kingdom",
+    "besiktas, istanbul turkey": "Istanbul, Turkey",
+    "são paulo, brazil": "Sao Paulo, Brazil",
+    # Mastercard spells out the full US state name rather than this
+    # module's "City, ST" convention.
+    "o'fallon, missouri": "O'Fallon, MO",
+    "purchase, new york": "Purchase, NY",
+    "new york city, new york": "New York, NY",
+    "arlington, virginia": "Arlington, VA",
+    "atlanta, georgia": "Atlanta, GA",
+    "chicago, illinois": "Chicago, IL",
+    "miami, florida": "Miami, FL",
+    "san francisco, california": "San Francisco, CA",
+    "salt lake city, utah": "Salt Lake City, UT",
+    "boston, massachusetts": "Boston, MA",
+    "austin, texas": "Austin, TX",
 }
 
 
@@ -374,11 +430,13 @@ def normalize_location(raw: str) -> str:
     """
     cleaned = _OFFICE_SUFFIX_RE.sub("", raw).strip()
     cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = _ISO_CODE_PREFIX_RE.sub("", cleaned).strip()
     cleaned = _ISO_CODE_SPACING_RE.sub(r"\1-", cleaned).strip()
     cleaned = _REMOTE_PREFIX_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_PREFIX_NO_DASH_RE.sub("", cleaned).strip()
     cleaned = _REMOTE_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _COUNTRY_CODE_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _WORK_MODE_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = _BUILDING_SUFFIX_RE.sub(r"\1", cleaned).strip()
     cleaned = _DUPLICATE_NAME_RE.sub(r"\1", cleaned).strip()
     return _CANONICAL_LOCATIONS.get(cleaned.lower(), cleaned)

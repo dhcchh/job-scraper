@@ -56,7 +56,7 @@ use a small fake `Worksheet`.
   `.github/workflows/`). "Daily Scrape (Append)"
   (`daily-scrape.yml`, cron + manual `workflow_dispatch`) runs
   `jobscraper.main`: fetches every configured Greenhouse, Lever, Ashby,
-  SmartRecruiters, and Eightfold board, classifies postings into ten tabs
+  SmartRecruiters, Eightfold, and Workday board, classifies postings into ten tabs
   (five categories × `PAC`/`RoW`), appends jobs first seen this run, then
   removes jobs confirmed closed. "Full Refresh (Rebuild)"
   (`full-refresh.yml`, manual `workflow_dispatch` only, no schedule) runs
@@ -64,24 +64,27 @@ use a small fake `Worksheet`.
 - `config.py` is the only module that reads environment variables,
   `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
   `company_toml/ashby_boards.toml`,
-  `company_toml/smartrecruiters_boards.toml`, and
-  `company_toml/eightfold_boards.toml`; import `jobscraper.config`
+  `company_toml/smartrecruiters_boards.toml`,
+  `company_toml/eightfold_boards.toml`, and
+  `company_toml/workday_boards.toml`; import `jobscraper.config`
   rather than copying its settings at import time. Board tokens are checked
   in and are not secrets.
   `_load_boards` validates every `[[boards]]` entry has `token`, `firm`, and
   `company_type` at import time, raising `ValueError` naming the offending
   entry and field(s) rather than letting a typo surface as a `KeyError` deep
-  in `main.py`'s fetch loop. All five board types need only that same
+  in `main.py`'s fetch loop. All six board types need only that same
   `token`/`firm`/`company_type` shape -- Eightfold's `token` is its own
   subdomain (`<token>.eightfold.ai`), same idea as Lever's/Ashby's slug; see
-  `job_boards/eightfold/client.py`.
+  `job_boards/eightfold/client.py`. Workday's packs the three per-company
+  pieces of its careers-site URL into one `"<tenant>.<wdN>/<site>"` string
+  (e.g. `"visa.wd5/Visa"`); see `job_boards/workday/client.py`.
 - `Job` in `models.py` is the shared data shape. Keep `FIELDS`,
   `Job.to_row()`, and the sheet header aligned. The row identity is
   `(board, job_id)`, not `job_id` alone, because Greenhouse IDs are tenant
   scoped. `first_published` is the best available Greenhouse "went live"
   signal; `updated_at` can change after edits and `scraped_date` is only when
   this project first saw the job. `source` records which board system
-  ("Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters"/"Eightfold") a posting came from -- distinct from
+  ("Greenhouse"/"Lever"/"Ashby"/"SmartRecruiters"/"Eightfold"/"Workday") a posting came from -- distinct from
   `board`, which is the firm's name -- and is stamped as a fixed literal by
   each `job_boards/*/client.py`, not read from any API response.
   `description` is the full JD text, but ONLY for a firm in
@@ -108,7 +111,10 @@ use a small fake `Worksheet`.
   populate -- see `job_boards/eightfold/client.py` (it's also unconfirmed
   whether Eightfold even has a separate per-posting detail endpoint with
   real JD text, which is what a future Eightfold firm needing this would
-  have to add). `FIELDS`' current order is
+  have to add). Workday's client never populates it either: the JD is only
+  on each posting's detail endpoint (`jobDescription`), which it doesn't
+  call for that since no Workday firm is in `FIRMS_NEEDING_DESCRIPTION`.
+  `FIELDS`' current order is
   `first_published, updated_at, board, title, location, seniority,
   company_type, url, salary, department, job_id, scraped_date, source,
   description` (columns A-N) -- see `models.py`'s `FIELDS` comment
@@ -121,7 +127,7 @@ use a small fake `Worksheet`.
 - `Job.salary` is a human-readable pay range, or `None` -- unlike `description`,
   NOT gated to a firm allowlist; it's populated whenever a posting itself
   discloses one, `None` otherwise, since disclosure varies posting to posting,
-  not firm to firm. Only two of the five board types expose anything
+  not firm to firm. Only two of the six board types expose anything
   structured to read this from. Lever's `salaryRange`
   (`{min, max, currency, interval}`) is present only when that employer
   opted in to Lever's own pay-transparency feature -- confirmed present on
@@ -144,17 +150,19 @@ use a small fake `Worksheet`.
   Robinhood: "the salary range for this role is ... aligned to one of 3
   compensation zones"), in no consistent shape worth regexing out, so
   `job_boards/greenhouse/client.py` always sets `salary=None`.
-  SmartRecruiters and Eightfold expose no compensation field anywhere in
-  their public APIs either (confirmed against Grab's per-posting detail
-  endpoint and Millennium's live board, respectively), so both clients
-  always set `salary=None` too. `sheets/backfill.py` treats `salary` the same
+  SmartRecruiters, Eightfold, and Workday expose no compensation field
+  anywhere in their public APIs either (confirmed against Grab's
+  per-posting detail endpoint, Millennium's live board, and Visa's/
+  Mastercard's list and detail endpoints, respectively), so all three
+  clients always set `salary=None` too. `sheets/backfill.py` treats `salary` the same
   as `location` -- a fresh re-fetch (when the posting is still open)
   unconditionally overwrites whatever's in the cell, including an empty cell if
   disclosure was removed, rather than only filling in a blank the way
   `first_published` does; a closed posting's row, with no override
   available, is left exactly as it already is.
-- All five board clients share one retry helper,
-  `job_boards/_http.get_with_retries` (3 attempts, exponential 2s/4s
+- All six board clients share one retry policy,
+  `job_boards/_http.get_with_retries` (and `post_with_retries`, for
+  Workday's POST search endpoint) (3 attempts, exponential 2s/4s
   backoff, retrying only a connection error/timeout or a 5xx/429
   HTTPError -- anything else, e.g. a bad/renamed board token, raises
   immediately) -- tested once in `tests/job_boards/test_http.py` rather
@@ -204,10 +212,10 @@ use a small fake `Worksheet`.
   (`<slug>.eightfold.ai/api/apply/v2/jobs`), same retry/skip behavior --
   confirmed against Millennium's live board (`mlp`). This is a real but
   UNDOCUMENTED endpoint -- found by inspecting a real customer's rendered
-  careers page, not a published API contract, so unlike the other four
-  boards there is no guarantee Eightfold won't change its shape or start
-  requiring auth without notice. Unlike the other four boards, there is no
-  single shared host: each company gets its own Eightfold subdomain, so
+  careers page, not a published API contract, so unlike Greenhouse/Lever/
+  Ashby/SmartRecruiters there is no guarantee Eightfold (or Workday, the
+  same story) won't change its shape or start requiring auth without
+  notice. Unlike those four boards, there is no single shared host: each company gets its own Eightfold subdomain, so
   `token` (company_toml/eightfold_boards.toml) is that subdomain, not a
   path segment off a common base URL -- a `domain` query param (the
   company's own corporate domain) shows up in the site's own browser
@@ -256,10 +264,46 @@ use a small fake `Worksheet`.
   endpoint's own `job_description` is always `""` on every live posting
   checked, so `description` stays unconditionally `""` here too (no live
   Eightfold board is in `FIRMS_NEEDING_DESCRIPTION`).
+- `workday/client.py` fetches a company's own Workday careers-site API
+  (`https://<tenant>.<wdN>.myworkdayjobs.com/wday/cxs/<tenant>/<site>`),
+  same retry/skip behavior -- confirmed against Visa's (`visa.wd5/Visa`)
+  and Mastercard's (`mastercard.wd1/CorporateCareers`) live boards.
+  UNDOCUMENTED like Eightfold's (it's what the careers site's own front-end
+  calls), and the `wdN` data-center number varies per company and isn't
+  guessable (`visa.wd1` 422s), so take a new firm's token from its real
+  careers-site URL. The job list is a POST (a JSON search body), paginated
+  via `offset`/`limit` through the shared
+  `job_boards/_http.paginate_with_retries` (`method="POST"`); `limit`
+  above 20 is a 400, and `total` is only real on the FIRST page -- every
+  later page says 0 -- which `paginate_with_retries` handles by keeping the
+  first page's total. At ~2s per page this is the slowest board type per
+  posting by far: Mastercard's ~1,050 postings take ~53 requests, ~2
+  minutes. A list item carries only `title`, `externalPath`,
+  `locationsText`, `postedOn`, and `bulletFields` -- no department, no
+  timestamp, no compensation -- so `department`/`updated_at` stay `""`.
+  `postedOn` is relative text ("Posted Today"/"Yesterday"/"N Days Ago"/
+  "30+ Days Ago"); `first_published` is counted back from `scraped_date`
+  (possibly a day off across timezones) and left `""` for "30+ Days Ago"
+  rather than fabricated. A multi-office posting's `locationsText` is just
+  "N Locations"; its real offices (`location` + `additionalLocations`,
+  falling back to `jobRequisitionLocation` when both are empty) and an
+  exact `startDate` only come from its per-posting detail GET, at ~1-4s
+  each -- so the client only makes that call when
+  `classify_roles.classify_job` routes the posting to a category (~11 of
+  ~160 multi-office postings across both boards), since `main.py` drops a
+  noise posting before ever reading its location. A detail call that still
+  fails after retries (e.g. a 404 for a posting that closed between the
+  two calls) drops just that posting for the run rather than failing the
+  board. `job_id` is `externalPath`'s suffix after its last `_` -- the
+  requisition id plus any "-N" repost counter (e.g. "R-287924-1",
+  "REF088713W") -- not `bulletFields[0]`, which is tenant-configured and
+  missing on at least one live Visa posting.
 - Build locations from Greenhouse's `offices[]`, Lever's
   `categories.allLocations`, Ashby's `location` +
   `secondaryLocations[].location`, SmartRecruiters' single `location.city`,
-  or Eightfold's `locations[]` (leading city segment only -- see above),
+  Eightfold's `locations[]` (leading city segment only -- see above), or
+  Workday's `locationsText` (one office, normalized whole) / detail
+  `location` + `additionalLocations` (multi-office -- see above),
   normalize each office, remove duplicates, then join with `" | "`. Do not
   split `location.name`/`categories.location` by commas: it is free text.
   `normalize_location.py` intentionally falls back to a cleaned unknown
@@ -267,8 +311,14 @@ use a small fake `Worksheet`.
   city as PAC. It also removes `Remote -`, `(Remote)`, `Office`,
   Stripe-style `Location(s)`, a trailing 2-letter country code in parens,
   Spotify-style `(... Mix)` work-arrangement annotations, a repeated "City,
-  City" wrapper, and (seeded from Ashby's Airwallex/Snowflake boards) a
-  spaced-out ISO-code prefix like `"AU - Sydney"` before lookup. The lookup
+  City" wrapper, (seeded from Ashby's Airwallex/Snowflake boards) a
+  spaced-out ISO-code prefix like `"AU - Sydney"`, and (seeded from
+  Workday's Visa/Mastercard boards) that same prefix dropped entirely when a
+  full location or `Remote - <country>` follows it (`"US - Austin, TX"`,
+  `"IN - Remote - IND"`) plus a building/acquired-company paren after a
+  "City, Country" (`"Jakarta, Indonesia (6th Floor)"`) before lookup --
+  both of which otherwise made `is_excluded` miss India/Indonesia/Armenia
+  postings. The lookup
   table itself also carries whole-string entries (seeded from Millennium's
   live Eightfold board) for a "City, Region, Country" triple neither the
   bare-city nor "City, Country" conventions above cover (e.g. "Tokyo,
@@ -418,7 +468,7 @@ use a small fake `Worksheet`.
   unrelated categories' columns since a row here isn't a record the way a
   job posting's row is. Unlike `backfill.py`/`full_refresh.py`, this is NOT
   manual-only: `main.py`'s `run()` calls it unconditionally on every daily
-  scrape (`sync_supported_companies`), so a firm added to any of the five
+  scrape (`sync_supported_companies`), so a firm added to any of the six
   TOML files shows up there on the very next scheduled run with no separate
   step. Safe to run unattended because it reasons about nothing but current
   config, not job/sheet state -- the whole tab is cleared and rewritten from

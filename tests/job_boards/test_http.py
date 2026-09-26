@@ -1,11 +1,12 @@
-"""Tests for job_boards._http.get_with_retries -- the retry policy shared by
-every job_boards/*/client.py, tested once here instead of once per board.
+"""Tests for job_boards._http -- get_with_retries/post_with_retries (the retry
+policy shared by every job_boards/*/client.py) and paginate_with_retries,
+tested once here instead of once per board.
 
 Each client's own test module (tests/greenhouse, tests/lever, tests/ashby,
-tests/smartrecruiters) keeps a single raises_on_http_error test to confirm
-it wires get_with_retries in correctly and propagates a persistent failure,
-but the retry-policy behavior itself (retries/backoff/gives-up) only lives
-here now.
+tests/smartrecruiters, tests/eightfold, tests/workday) keeps a single
+raises_on_http_error test to confirm it wires these in correctly and
+propagates a persistent failure, but the retry-policy behavior itself
+(retries/backoff/gives-up) only lives here now.
 """
 
 import pytest
@@ -188,3 +189,106 @@ def test_get_with_retries_labels_the_retry_log_with_source_and_identifier(
         _http.get_with_retries("greenhouse", "wehrtyou", "https://x/jobs")
 
     assert "greenhouse[wehrtyou]: attempt 1/3 failed" in caplog.text
+
+
+def test_post_with_retries_sends_json_and_retries_like_get(monkeypatch):
+    calls = []
+
+    def fake_post(url, json=None, timeout=None):
+        calls.append((url, json, timeout))
+        if len(calls) < 2:
+            return _RespondingWith(503)
+        return _FakeResponse({"ok": True})
+
+    monkeypatch.setattr(_http.requests, "post", fake_post)
+    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
+
+    response = _http.post_with_retries(
+        "workday", "visa.wd5/Visa", "https://x/jobs", json={"limit": 20}
+    )
+
+    assert response.json() == {"ok": True}
+    assert calls == [("https://x/jobs", {"limit": 20}, 30)] * 2
+
+
+def test_post_with_retries_does_not_retry_a_client_error(monkeypatch):
+    calls = []
+
+    def fake_post(url, json=None, timeout=None):
+        calls.append(url)
+        return _RespondingWith(400)
+
+    monkeypatch.setattr(_http.requests, "post", fake_post)
+    monkeypatch.setattr(
+        _http.time, "sleep", lambda seconds: pytest.fail("should not retry a 400")
+    )
+
+    with pytest.raises(_http.requests.HTTPError):
+        _http.post_with_retries("workday", "visa.wd5/Visa", "https://x/jobs", json={})
+
+    assert len(calls) == 1
+
+
+def test_paginate_with_retries_posts_cursor_in_the_body_and_keeps_the_first_total(
+    monkeypatch,
+):
+    # Workday's shape: `total` is only real on the first page and 0 on every
+    # page after it -- the loop must keep going on the first page's total.
+    pages = {
+        0: {"total": 5, "jobPostings": [{"n": 0}, {"n": 1}]},
+        2: {"total": 0, "jobPostings": [{"n": 2}, {"n": 3}]},
+        4: {"total": 0, "jobPostings": [{"n": 4}]},
+    }
+    bodies = []
+
+    def fake_post(url, json=None, timeout=None):
+        bodies.append(json)
+        return _FakeResponse(pages[json["offset"]])
+
+    monkeypatch.setattr(_http.requests, "post", fake_post)
+    monkeypatch.setattr(
+        _http.requests, "get", lambda *a, **k: pytest.fail("should POST, not GET")
+    )
+
+    items = _http.paginate_with_retries(
+        "workday",
+        "visa.wd5/Visa",
+        "https://x/jobs",
+        method="POST",
+        body={"appliedFacets": {}, "searchText": ""},
+        cursor_param="offset",
+        page_size_param="limit",
+        page_size=2,
+        total_key="total",
+        items_key="jobPostings",
+    )
+
+    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert bodies[0] == {"appliedFacets": {}, "searchText": "", "offset": 0, "limit": 2}
+    assert [body["offset"] for body in bodies] == [0, 2, 4]
+
+
+def test_paginate_with_retries_gets_cursor_as_query_params_by_default(monkeypatch):
+    params_seen = []
+
+    def fake_get(url, params=None, timeout=None):
+        params_seen.append(params)
+        if params["offset"] == 0:
+            return _FakeResponse({"totalFound": 3, "content": [{"n": 0}, {"n": 1}]})
+        return _FakeResponse({"totalFound": 3, "content": [{"n": 2}]})
+
+    monkeypatch.setattr(_http.requests, "get", fake_get)
+
+    items = _http.paginate_with_retries(
+        "smartrecruiters",
+        "Grab",
+        "https://x/postings",
+        cursor_param="offset",
+        page_size_param="limit",
+        page_size=2,
+        total_key="totalFound",
+        items_key="content",
+    )
+
+    assert [item["n"] for item in items] == [0, 1, 2]
+    assert params_seen == [{"offset": 0, "limit": 2}, {"offset": 2, "limit": 2}]
