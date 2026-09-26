@@ -3,14 +3,18 @@ out wide -- one column per company_type, its companies listed down that
 column -- kept in sync with the checked-in company_toml/*_boards.toml files
 rather than maintained by hand.
 
-Run standalone to (re)populate the tab immediately --
+Run standalone --
 
     uv run python -m jobscraper.sheets.supported_companies
 
--- and also called from main.run() at the end of every daily scrape, so a
-firm added to any of the six *_boards.toml files shows up here
-automatically on the very next run, with no separate manual step (unlike
-sheets/backfill.py and sheets/full_refresh.py, which are manual-only). This
+-- which is also exactly what the "Announce New Companies" GitHub Actions
+workflow (.github/workflows/announce-companies.yml) runs every day at 22:00
+SGT, so a firm added to any of the six *_boards.toml files shows up here,
+and is announced on Telegram, automatically at the next 22:00 with no
+separate manual step (unlike sheets/backfill.py and sheets/full_refresh.py,
+which are manual-only). main.run()'s daily scrape deliberately doesn't sync
+this tab -- a firm is only "new" to whichever sync lists it first, so a
+07:00 scrape doing it would announce there instead of at 22:00. This
 is safe to run unattended because it reasons about nothing but the current
 config -- no in-flight job data, no existing-row state to merge with -- so
 there's no interrupted-partway-through state it could ever leave stranded.
@@ -35,9 +39,10 @@ instead of sheets.writer.get_worksheet's usual WorksheetNotFound.
 
 Before clearing, sync_supported_companies reads which firms the tab already
 listed, and returns the configured firms it didn't -- the firms added since
-the last sync -- for telegram.send_new_companies to announce. Both callers
-(main.run() and this module's own __main__) send that announcement, since
-whichever one syncs first is the only one that will ever see a firm as new.
+the last sync -- for telegram.send_new_companies to announce -- which this module's own
+__main__ does, whether run by that workflow or by hand. A manual run
+announces too, since whichever sync lists a firm first is the only one that
+will ever see it as new.
 """
 
 from __future__ import annotations
@@ -188,8 +193,8 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    # Announced here too, not only from main.run(): once this rewrites the
-    # tab, a later scrape no longer sees these firms as new.
+    # Announced by any run of this, the scheduled workflow's or a manual
+    # one: once this rewrites the tab, no later sync sees these firms as new.
     spreadsheet = get_spreadsheet()
     send_new_companies(
         sync_supported_companies(spreadsheet), spreadsheet_url=spreadsheet.url

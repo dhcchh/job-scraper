@@ -45,8 +45,4 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
-          # Optional new-company announcement's own topic (same bot) -- off
-          # until TELEGRAM_COMPANIES_CHAT_ID is added as a repo secret.
-          TELEGRAM_COMPANIES_CHAT_ID: ${{ secrets.TELEGRAM_COMPANIES_CHAT_ID }}
-          TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
         run: uv run python -m jobscraper.main

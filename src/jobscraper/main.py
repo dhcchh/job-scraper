@@ -83,20 +83,11 @@ a full per-job listing) linking back to the sheet rather than to each job
 directly, and why this is called even when failed_firms will fail the run
 below.
 
-Right after the per-tab loop, sheets.supported_companies.sync_supported_companies
-rewrites the (separate, user-created) "Supported companies" tab from
-GREENHOUSE_BOARDS/LEVER_BOARDS/ASHBY_BOARDS/SMARTRECRUITERS_BOARDS/
-EIGHTFOLD_BOARDS/WORKDAY_BOARDS -- a firm added to any of the six
-*_boards.toml files shows up there on the very next scheduled run instead of
-needing a manual backfill, and a firm removed from all six disappears from
-it the same way.
-Laid out wide, one column per company_type (its slug, e.g.
-"prop_trading_hedge_fund", as the header) with that category's companies
-listed down the column -- see sheets/supported_companies.py for why (a
-self-explanatory column per category, not one row per company) and why it
-skips sheets.writer.set_basic_filter unlike every job tab above. It returns
-the firms that tab didn't list yet, which telegram.send_new_companies
-announces (to its own topic) right after send_digest.
+The "Supported companies" tab is deliberately NOT touched here: it's synced
+by the separate 22:00 SGT "Announce New Companies" workflow (see
+sheets/supported_companies.py), since a firm counts as newly added -- and
+gets announced on Telegram -- when that sync first lists it, and a sync
+here would consume that before the announcement's own run.
 
 TODO(extension points), roughly in the order you'll likely reach for them:
   - more boards: add a client module with its own fetch_<board>_jobs() ->
@@ -127,14 +118,13 @@ from jobscraper.job_boards.lever.client import fetch_lever_jobs
 from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
 from jobscraper.job_boards.workday.client import fetch_workday_jobs
 from jobscraper.models import Job
-from jobscraper.sheets.supported_companies import sync_supported_companies
 from jobscraper.sheets.writer import (
     append_jobs,
     get_spreadsheet,
     get_worksheet,
     prune_closed_postings,
 )
-from jobscraper.telegram import DIGEST_CATEGORIES, send_digest, send_new_companies
+from jobscraper.telegram import DIGEST_CATEGORIES, send_digest
 
 logger = logging.getLogger(__name__)
 
@@ -248,14 +238,6 @@ def run() -> None:
             tab_stats[tab] = (len(tab_jobs), len(appended), pruned)
             newly_appended_by_tab[tab] = appended
 
-    # Keeps the user-created "Supported companies" tab (see
-    # sheets/supported_companies.py) current with the *_boards.toml files on
-    # every run, so a firm added there shows up without a separate manual
-    # step. Unconditional, like the per-tab writes above -- it reasons only
-    # about config, not about which boards succeeded this run. Returns the
-    # firms it just added to the tab, announced via send_new_companies below.
-    new_firms = sync_supported_companies(spreadsheet)
-
     markdown = _build_summary_markdown(
         spreadsheet_title=spreadsheet.title,
         spreadsheet_url=spreadsheet.url,
@@ -282,9 +264,6 @@ def run() -> None:
         },
         spreadsheet_url=spreadsheet.url,
     )
-    # Same reasoning: the tab already records these firms as listed, so a
-    # later run would never announce them.
-    send_new_companies(new_firms, spreadsheet_url=spreadsheet.url)
 
     # Keep successful boards current and avoid pruning a failed board, but do
     # not let the workflow look healthy when its result is incomplete. The

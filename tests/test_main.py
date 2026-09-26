@@ -12,8 +12,7 @@ accidentally write into a real one if pytest is ever run inside a GitHub
 Actions job itself; the summary-writing tests below set it to a tmp_path
 file instead.
 
-send_digest (and send_new_companies) is also mocked to a no-op by default
-in _patch_sheet_functions --
+send_digest is also mocked to a no-op by default in _patch_sheet_functions --
 belt-and-suspenders alongside conftest.py forcing TELEGRAM_BOT_TOKEN/
 TELEGRAM_CHAT_ID to "" (which already makes the real send_digest a no-op):
 a test here shouldn't depend on global env state to stay off the network,
@@ -59,14 +58,6 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     # what main.run() passed send_digest overrides this itself, after
     # calling _patch_sheet_functions.
     monkeypatch.setattr(main, "send_digest", lambda new_jobs, spreadsheet_url: None)
-    # No-op by default too -- _FakeSpreadsheet above has none of gspread's
-    # Spreadsheet methods sync_supported_companies needs (worksheets(),
-    # add_worksheet()), and these orchestration tests don't care about the
-    # supported-companies tab. test_run_syncs_supported_companies below
-    # overrides this itself to assert run() actually calls it.
-    monkeypatch.setattr(main, "sync_supported_companies", lambda spreadsheet: {})
-    # No-op by default, same reason as send_digest above.
-    monkeypatch.setattr(main, "send_new_companies", lambda new_firms, spreadsheet_url: None)
 
     def fake_append_jobs(worksheet, jobs):
         if append_calls is not None:
@@ -578,52 +569,6 @@ def test_run_logs_spreadsheet_identity_at_startup(monkeypatch, caplog):
 
     assert _FakeSpreadsheet.title in caplog.text
     assert _FakeSpreadsheet.url in caplog.text
-
-
-def test_run_syncs_supported_companies(monkeypatch):
-    # main.run() must keep the "Supported companies" tab (see
-    # sheets/supported_companies.py) current every run, not just on a
-    # manual backfill -- this is what actually makes a firm added to a
-    # *_boards.toml file show up there without a separate step.
-    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
-    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
-
-    prune_calls: list[set[str]] = []
-    _patch_sheet_functions(monkeypatch, prune_calls)
-
-    sync_calls = []
-    monkeypatch.setattr(
-        main, "sync_supported_companies", lambda spreadsheet: sync_calls.append(spreadsheet)
-    )
-
-    main.run()
-
-    assert len(sync_calls) == 1
-    assert isinstance(sync_calls[0], _FakeSpreadsheet)
-
-
-def test_run_announces_the_firms_sync_supported_companies_newly_added(monkeypatch):
-    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
-    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
-
-    prune_calls: list[set[str]] = []
-    _patch_sheet_functions(monkeypatch, prune_calls)
-
-    monkeypatch.setattr(
-        main, "sync_supported_companies", lambda spreadsheet: {"Acme": "Big Tech"}
-    )
-    announce_calls = []
-    monkeypatch.setattr(
-        main,
-        "send_new_companies",
-        lambda new_firms, spreadsheet_url: announce_calls.append((new_firms, spreadsheet_url)),
-    )
-
-    main.run()
-
-    assert announce_calls == [({"Acme": "Big Tech"}, _FakeSpreadsheet.url)]
 
 
 def test_run_writes_job_summary_when_github_step_summary_is_set(monkeypatch, tmp_path):

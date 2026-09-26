@@ -1,0 +1,42 @@
+name: Announce New Companies
+
+on:
+  schedule:
+    # 14:00 UTC = 22:00 Singapore time (UTC+8, no DST). Same best-effort
+    # caveat as daily-scrape.yml: GitHub Actions cron can start tens of
+    # minutes late, so treat 22:00 SGT as the earliest it runs.
+    - cron: "0 14 * * *"
+  workflow_dispatch: {}
+
+# Deliberately NOT the sheet-write group daily-scrape.yml/full-refresh.yml
+# share: this only writes the "Supported companies" tab, which neither of
+# them touches, and GitHub keeps just one pending run per group -- joining
+# it could let this run replace a queued scrape. Its own group still keeps
+# a manual run and the scheduled one from both announcing the same firm.
+concurrency:
+  group: announce-companies
+  cancel-in-progress: false
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Sync Supported companies tab and announce new firms
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_COMPANIES_CHAT_ID: ${{ secrets.TELEGRAM_COMPANIES_CHAT_ID }}
+          TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
+        run: uv run python -m jobscraper.sheets.supported_companies
