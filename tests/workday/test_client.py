@@ -16,6 +16,18 @@ from jobscraper.job_boards import _http
 from jobscraper.job_boards.workday import client
 
 _SCRAPED = datetime.date(2026, 9, 26)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_http(monkeypatch):
+    """Fail any test that reaches the network without mocking it first --
+    each test's own monkeypatch of client.requests.get/post replaces these."""
+
+    def fail(*args, **kwargs):
+        pytest.fail(f"unmocked HTTP call: {args!r}")
+
+    monkeypatch.setattr(client.requests, "get", fail)
+    monkeypatch.setattr(client.requests, "post", fail)
 _API = "https://visa.wd5.myworkdayjobs.com/wday/cxs/visa/Visa"
 
 
@@ -46,11 +58,18 @@ def _posting(path, title="Software Engineer", locations_text="SG - Singapore", p
     return raw
 
 
-def _serve(monkeypatch, postings, details=None):
+def _serve(monkeypatch, postings, details=None, calibrate=False):
     """Answer the list POST with `postings` (one page) and each detail GET
-    from `details` (externalPath -> jobPostingInfo, or a response object)."""
+    from `details` (externalPath -> jobPostingInfo, or a response object).
+
+    `calibrate=False` skips the one detail call client._workday_today makes
+    to learn Workday's own date, so "Posted N Days Ago" counts back from
+    `scraped_date` -- tests about that call pass True and serve its detail.
+    """
     posts = []
     gets = []
+    if not calibrate:
+        monkeypatch.setattr(client, "_workday_today", lambda token, api, raw_jobs: None)
 
     def fake_post(url, json=None, timeout=None):
         posts.append((url, json))
@@ -120,6 +139,53 @@ def test_fetch_workday_jobs_parses_response(monkeypatch):
     assert second.first_published == ""  # "30+ Days Ago" isn't a date
 
 
+def test_fetch_workday_jobs_counts_days_back_from_workdays_own_date(monkeypatch):
+    # Workday says "Posted 2 Days Ago" for a posting whose exact startDate is
+    # 2026-09-20, so its own date is 2026-09-22 -- every relative date counts
+    # back from that, not from this machine's (later) scrape date.
+    first = "/job/a/Software-Engineer_R-1"
+    _posts, gets = _serve(
+        monkeypatch,
+        [
+            _posting("/job/z/Old-Role_R-0", posted_on="Posted 30+ Days Ago"),
+            _posting(first, posted_on="Posted 2 Days Ago"),
+            _posting("/job/b/Data-Scientist_R-2", posted_on="Posted Yesterday"),
+        ],
+        details={first: {"startDate": "2026-09-20", "postedOn": "Posted 2 Days Ago"}},
+        calibrate=True,
+    )
+
+    old, a, b = client.fetch_workday_jobs(
+        "visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED
+    )
+
+    assert gets == [f"{_API}{first}"]  # skips the "30+ Days Ago" posting
+    assert old.first_published == ""
+    assert a.first_published == "2026-09-20"
+    assert b.first_published == "2026-09-21"
+    assert b.scraped_date == _SCRAPED  # scraped_date itself is unchanged
+
+
+def test_fetch_workday_jobs_falls_back_to_scraped_date_if_workdays_date_is_unknown(
+    monkeypatch, caplog
+):
+    path = "/job/a/Software-Engineer_R-1"
+    _serve(
+        monkeypatch,
+        [_posting(path, posted_on="Posted Yesterday")],
+        details={path: _NotFound()},
+        calibrate=True,
+    )
+
+    with caplog.at_level("WARNING"):
+        [job] = client.fetch_workday_jobs(
+            "visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED
+        )
+
+    assert job.first_published == "2026-09-25"
+    assert "couldn't read Workday's current date" in caplog.text
+
+
 @pytest.mark.parametrize(
     "posted_on, expected",
     [
@@ -176,6 +242,7 @@ def test_fetch_workday_jobs_keeps_paging_past_a_zero_total(monkeypatch):
 
     monkeypatch.setattr(client, "_PAGE_SIZE", 2)
     monkeypatch.setattr(client.requests, "post", fake_post)
+    monkeypatch.setattr(client, "_workday_today", lambda token, api, raw_jobs: None)
 
     jobs = client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
 

@@ -132,8 +132,10 @@ src/jobscraper/
   exception: it exposes both `t_create` and `t_update` (Unix epoch
   seconds), so `first_published`/`updated_at` are both populated, same as
   Greenhouse. Workday gives no timestamp at all, only relative text
-  ("Posted 3 Days Ago"), so its `first_published` is counted back from the
-  scrape date — left `""` for "Posted 30+ Days Ago" — and `updated_at` is
+  ("Posted 3 Days Ago"), so its `first_published` is counted back from
+  Workday's own current date (read off one posting's exact start date, so
+  a run's timezone doesn't matter) — left `""` for "Posted 30+ Days
+  Ago" — and `updated_at` is
   always `""`; a multi-office posting only shows "2 Locations" in the list,
   so its client makes one extra detail request for it, but only when its
   title matches a category (see `job_boards/workday/client.py`). Unlike

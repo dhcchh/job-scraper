@@ -35,11 +35,17 @@ Mastercard's live boards):
 - `postedOn` is relative text, not a date: "Posted Today", "Posted
   Yesterday", "Posted N Days Ago", or "Posted 30+ Days Ago" (~40% of both
   boards' postings). _posted_on_date turns the first three into a date
-  counted back from `scraped_date` -- possibly a day off, since Workday
-  counts days in its own timezone -- and leaves "30+ Days Ago" (or anything
-  unrecognized) as "" rather than fabricate a date. Daily runs see a new
-  posting within a day or two of it going live, so this is only a gap for
-  postings already old when the board was first added.
+  counted back from Workday's OWN current date, and leaves "30+ Days Ago"
+  (or anything unrecognized) as "" rather than fabricate a date. Daily runs
+  see a new posting within a day or two of it going live, so the blank is
+  only a gap for postings already old when the board was first added.
+  Workday counts those days in its own (US) timezone, so counting back from
+  this machine's date instead put every date a day late whenever a run
+  happened after midnight Singapore time but before Workday's day rolled
+  over -- confirmed on 39 of 39 sampled rows after one such run.
+  _workday_today works out Workday's date from one posting's detail call
+  instead (its exact `startDate` plus its own "N Days Ago"), falling back
+  to `scraped_date` if that call fails.
 - `locationsText` is one office's name ("Toronto, Canada", "US - Austin,
   TX") -- normalized whole, never comma-split, the same rule as every other
   board's free-text location -- EXCEPT for a posting open in more than one
@@ -133,8 +139,8 @@ def fetch_workday_jobs(
     Job, same as the other five clients.
 
     `scraped_date` defaults to today and is stamped on every Job returned --
-    it's what sheets.writer prunes on later, and what a relative "Posted N
-    Days Ago" is counted back from.
+    it's what sheets.writer prunes on later. A relative "Posted N Days Ago"
+    is counted back from Workday's own date instead (see _workday_today).
     """
     if scraped_date is None:
         scraped_date = datetime.date.today()
@@ -154,6 +160,7 @@ def fetch_workday_jobs(
         workers=_WORKERS,
     )
     site = api.rsplit("/", 1)[-1]
+    workday_today = _workday_today(token, api, raw_jobs) or scraped_date
 
     # Same defensive posture as the other clients' fetch_*_jobs: one
     # malformed record (no externalPath, or one already seen on an earlier
@@ -175,7 +182,9 @@ def fetch_workday_jobs(
             continue
         seen_ids.add(job_id)
 
-        job = _to_job(raw, job_id, host, site, firm, company_type, scraped_date)
+        job = _to_job(
+            raw, job_id, host, site, firm, company_type, scraped_date, workday_today
+        )
         if _needs_detail(raw, job):
             needs_detail.append((len(jobs), path))
         jobs.append(job)
@@ -280,6 +289,7 @@ def _to_job(
     firm: str,
     company_type: str,
     scraped_date: datetime.date,
+    workday_today: datetime.date,
 ) -> Job:
     title = raw.get("title", "")
     locations_text = raw.get("locationsText") or ""
@@ -295,7 +305,7 @@ def _to_job(
         ),
         url=f"https://{host}/{site}{raw['externalPath']}",
         updated_at="",
-        first_published=_posted_on_date(raw.get("postedOn"), scraped_date),
+        first_published=_posted_on_date(raw.get("postedOn"), workday_today),
         scraped_date=scraped_date,
         seniority=classify_seniority(title, ""),
         company_type=company_type,
@@ -351,18 +361,47 @@ def _normalized_names(entries: list[str | None]) -> list[str]:
     return names
 
 
-def _posted_on_date(posted_on: str | None, scraped_date: datetime.date) -> str:
+def _workday_today(token: str, api: str, raw_jobs: list[dict]) -> datetime.date | None:
+    """Workday's own current date, or None if it can't be worked out.
+
+    One detail call, for the first listed posting whose `postedOn` says how
+    many days ago it went up: its exact `startDate` plus that many days is
+    the date Workday is counting "N Days Ago" from. See the module docstring
+    for why this machine's date can't be used for that.
+    """
+    for raw in raw_jobs:
+        days_ago = _days_ago(raw.get("postedOn"))
+        if days_ago is None or not raw.get("externalPath"):
+            continue
+        info, error = _fetch_detail(token, api, raw["externalPath"])
+        start_date = normalize_date((info or {}).get("startDate"))
+        if not start_date:
+            logger.warning(
+                "workday[%s]: couldn't read Workday's current date (%s), "
+                "counting \"Posted N Days Ago\" back from this machine's date",
+                token,
+                error or "no startDate",
+            )
+            return None
+        return datetime.date.fromisoformat(start_date) + datetime.timedelta(days=days_ago)
+    return None
+
+
+def _posted_on_date(posted_on: str | None, workday_today: datetime.date) -> str:
     """A "Posted ..." label as this project's YYYY-MM-DD date string, or ""
     when it doesn't say how many days ago ("Posted 30+ Days Ago", missing,
     or anything unrecognized)."""
+    days_ago = _days_ago(posted_on)
+    if days_ago is None:
+        return ""
+    return normalize_date(workday_today - datetime.timedelta(days=days_ago))
+
+
+def _days_ago(posted_on: str | None) -> int | None:
     text = (posted_on or "").strip().lower()
     if text == "posted today":
-        days_ago = 0
-    elif text == "posted yesterday":
-        days_ago = 1
-    else:
-        match = _POSTED_DAYS_AGO_RE.match(text)
-        if not match:
-            return ""
-        days_ago = int(match.group(1))
-    return normalize_date(scraped_date - datetime.timedelta(days=days_ago))
+        return 0
+    if text == "posted yesterday":
+        return 1
+    match = _POSTED_DAYS_AGO_RE.match(text)
+    return int(match.group(1)) if match else None

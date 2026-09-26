@@ -291,9 +291,15 @@ use a small fake `Worksheet`.
   `locationsText`, `postedOn`, and `bulletFields` -- no department, no
   timestamp, no compensation -- so `department`/`updated_at` stay `""`.
   `postedOn` is relative text ("Posted Today"/"Yesterday"/"N Days Ago"/
-  "30+ Days Ago"); `first_published` is counted back from `scraped_date`
-  (possibly a day off across timezones) and left `""` for "30+ Days Ago"
-  rather than fabricated. A multi-office posting's `locationsText` is just
+  "30+ Days Ago"); `first_published` is counted back from Workday's OWN
+  current date -- worked out once per board from one posting's detail call
+  (its exact `startDate` + its "N Days Ago"), falling back to
+  `scraped_date` if that fails -- and left `""` for "30+ Days Ago" rather
+  than fabricated. Workday counts days in its own (US) timezone, so
+  counting back from this machine's date put every such date a day late
+  whenever a run fell between midnight Singapore time and Workday's own
+  midnight (a local `backfill` just after midnight SGT shifted 168 rows
+  on 2026-09-27); the scheduled run at 23:00 UTC happened to be immune. A multi-office posting's `locationsText` is just
   "N Locations"; its real offices (`location` + `additionalLocations`,
   falling back to `jobRequisitionLocation` when both are empty) and an
   exact `startDate` only come from its per-posting detail GET, at ~1-4s
