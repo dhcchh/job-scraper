@@ -377,7 +377,12 @@ use a small fake `Worksheet`.
   work-mode wrapper `"Remote (Singapore)"`/`"Hybrid (Denver)"` unwrapped to
   the place -- left in place, both sent real Tokyo/Taiwan/Singapore roles to
   RoW. "Bengaluru" maps to "Bangalore, India"; unmapped, it let 75 Okta/
-  MongoDB India rows sit in RoW instead of being excluded. The lookup
+  MongoDB India rows sit in RoW instead of being excluded. And (seeded from
+  Fivetran) an ISO alpha-3 country prefix -- `"AUS - Sydney"`, `"JPN -
+  Remote"`, `"IND - Bengaluru"` -- resolves through `_ALPHA3_COUNTRIES`: the
+  rest via the table, else `"<place>, <country>"`, or just the country for a
+  remote office, so the region is right even for an unmapped city. Only
+  codes listed there are touched. The lookup
   table itself also carries whole-string entries (seeded from Millennium's
   live Eightfold board) for a "City, Region, Country" triple neither the
   bare-city nor "City, Country" conventions above cover (e.g. "Tokyo,

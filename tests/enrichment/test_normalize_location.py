@@ -345,3 +345,24 @@ def test_normalize_location_strips_office_suffix_despite_trailing_whitespace():
 )
 def test_normalize_location_strips_office_codes_and_work_mode_wrappers(raw, expected):
     assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Fivetran's alpha-3 country prefixes
+        ("AUS - Sydney", "Sydney, Australia"),
+        ("JPN - Remote", "Japan"),
+        ("IND - Bengaluru", "Bangalore, India"),
+        ("USA - Remote - CA", "United States"),
+        ("USA - Austin (dbt)", "Austin, TX"),
+        ("IRL - Dublin (dbt)", "Dublin, Ireland"),
+        ("SRB - Novi Sad", "Novi Sad, Serbia"),
+        ("USA - Oakland", "Oakland, United States"),
+        # an unlisted code, or a non-code word, is left to the usual rules
+        ("XYZ - Somewhere", "XYZ - Somewhere"),
+        ("Remote - Singapore", "Singapore"),
+    ],
+)
+def test_normalize_location_resolves_alpha3_country_prefixes(raw, expected):
+    assert normalize_location(raw) == expected

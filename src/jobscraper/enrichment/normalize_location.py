@@ -137,6 +137,33 @@ _OFFICE_CODE_SUFFIX_RE = re.compile(r"\s*\([A-Z]{2}-[A-Z]{2,3}-[A-Z0-9]+\)$")
 # comes out as "United States" the same way.)
 _WORK_MODE_WRAPPER_RE = re.compile(r"^(?:remote|hybrid)\s*\(([^()]+)\)$", re.IGNORECASE)
 
+# Fivetran's Greenhouse board prefixes every office with an ISO-3166 alpha-3
+# country code -- "AUS - Sydney", "JPN - Remote", "IND - Bengaluru", "USA -
+# Remote - CA", "USA - Austin (dbt)". Left in place, "AUS - Sydney" matched
+# nothing and landed in RoW, and "IND - Bengaluru" escaped is_excluded. The
+# code names the country outright, so _alpha3_location resolves the rest
+# against the table and otherwise falls back to "<place>, <country>" (or just
+# the country, for a remote office) -- the region comes out right even for a
+# city the table doesn't know. Only codes in _ALPHA3_COUNTRIES are touched,
+# spelled the way classify_region's country sets spell them.
+_ALPHA3_PREFIX_RE = re.compile(r"^([A-Z]{3})\s+-\s+(.+)$")
+_ALPHA3_COUNTRIES = {
+    # PAC
+    "SGP": "Singapore", "HKG": "Hong Kong", "AUS": "Australia", "JPN": "Japan",
+    "KOR": "South Korea", "CHN": "China", "TWN": "Taiwan", "NZL": "New Zealand",
+    "THA": "Thailand",
+    # excluded
+    "IND": "India", "VNM": "Vietnam", "MYS": "Malaysia", "IDN": "Indonesia",
+    "ARM": "Armenia", "URY": "Uruguay",
+    # everywhere else seen on a live board
+    "USA": "United States", "CAN": "Canada", "GBR": "United Kingdom",
+    "IRL": "Ireland", "DEU": "Germany", "FRA": "France", "NLD": "Netherlands",
+    "ESP": "Spain", "SRB": "Serbia", "CRI": "Costa Rica", "POL": "Poland",
+    "CHE": "Switzerland", "SWE": "Sweden", "ISR": "Israel", "BRA": "Brazil",
+    "MEX": "Mexico", "ARE": "United Arab Emirates", "PHL": "Philippines",
+}
+_TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)$")
+
 # Keyed by the office name lowercased (after stripping a trailing " office"
 # noise suffix -- covers "Amsterdam office", "Chicago Office", etc. without
 # needing a separate entry per suffix variant). Unmapped names pass through
@@ -449,6 +476,23 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
 }
 
 
+_KNOWN_LOCATIONS = frozenset(_CANONICAL_LOCATIONS.values())
+
+
+def _alpha3_location(country: str, rest: str) -> str:
+    """The office after an alpha-3 prefix: "Sydney" under AUS -> "Sydney,
+    Australia" (via the table), "Remote - CA" under USA -> "United States",
+    an unmapped "Novi Sad" under SRB -> "Novi Sad, Serbia". A trailing
+    annotation like "(dbt)" is dropped first."""
+    place = _TRAILING_PAREN_RE.sub("", rest).strip()
+    if not place or place.lower().startswith("remote"):
+        return country
+    normalized = normalize_location(place)
+    if normalized in _KNOWN_LOCATIONS:
+        return normalized
+    return f"{normalized}, {country}"
+
+
 def normalize_location(raw: str) -> str:
     """Canonical form of one office/location name, or the input cleaned but
     otherwise unchanged if it's not in `_CANONICAL_LOCATIONS`.
@@ -464,6 +508,9 @@ def normalize_location(raw: str) -> str:
     # Stripped first so a trailing space doesn't hide a suffix from the
     # end-anchored regexes below -- Flow Traders' raw office name is "London
     # Office " (trailing space), which otherwise stayed "London Office".
+    alpha3 = _ALPHA3_PREFIX_RE.match(raw.strip())
+    if alpha3 and alpha3.group(1) in _ALPHA3_COUNTRIES:
+        return _alpha3_location(_ALPHA3_COUNTRIES[alpha3.group(1)], alpha3.group(2))
     cleaned = _OFFICE_SUFFIX_RE.sub("", raw.strip()).strip()
     cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _OFFICE_CODE_SUFFIX_RE.sub("", cleaned).strip()
