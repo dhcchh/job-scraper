@@ -118,9 +118,24 @@ _ISO_CODE_PREFIX_RE = re.compile(
 # Floor)", "Navi Mumbai, India (Finicity)", "London, England (Angel Lane)".
 # Left in place, classify_region reads "Indonesia (6th Floor)" as the country,
 # so a posting is_excluded should drop stays in scope. Only stripped after a
-# comma, so a paren that IS the useful part of a no-comma name ("Remote
-# (United States)", "Singapore (Guoco)") is left for the table to handle.
+# comma, so a no-comma name with a paren ("Singapore (Guoco)", "Remote
+# (United States)") is left for the table and _WORK_MODE_WRAPPER_RE below.
 _BUILDING_SUFFIX_RE = re.compile(r"^([^()]+,[^()]+?)\s*\([^()]*\)$")
+
+# Waymo's Greenhouse board appends an internal building code to every office
+# -- "Tokyo (JP-TOK-STRM)", "Taipei (TW-TPE-101)", "Bangalore (IN-BLR-BCPC)",
+# "Remote (US-XX-REMOTE)". Left in place, none of them match the table, so
+# its Tokyo/Taiwan roles landed in RoW and its India roles escaped
+# is_excluded. The code's shape (2-letter country, 2-3 letter site, then a
+# building id) is specific enough not to touch a real place name in parens.
+_OFFICE_CODE_SUFFIX_RE = re.compile(r"\s*\([A-Z]{2}-[A-Z]{2,3}-[A-Z0-9]+\)$")
+
+# Tailscale's and Ramp's boards wrap the place in a work-mode label instead:
+# "Remote (Singapore)", "Remote (Canada)", "Hybrid (Denver)". Unwrapped to the
+# place itself, or classify_region reads "Remote (Singapore)" as the country
+# and sends a Singapore role to RoW. (Perplexity's "Remote (United States)"
+# comes out as "United States" the same way.)
+_WORK_MODE_WRAPPER_RE = re.compile(r"^(?:remote|hybrid)\s*\(([^()]+)\)$", re.IGNORECASE)
 
 # Keyed by the office name lowercased (after stripping a trailing " office"
 # noise suffix -- covers "Amsterdam office", "Chicago Office", etc. without
@@ -181,6 +196,7 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "zurich": "Zurich, Switzerland",
     # -- Middle East / Asia-Pacific --
     "bangalore": "Bangalore, India",
+    "bengaluru": "Bangalore, India",
     "beijing": "Beijing, China",
     "dubai": "Dubai, UAE",
     "gift city": "GIFT City, India",
@@ -221,6 +237,7 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "sydney": "Sydney, Australia",
     "sydney, new south wales, australia": "Sydney, Australia",
     "taipei": "Taipei, Taiwan",
+    "hsinchu": "Hsinchu, Taiwan",
     "tel aviv": "Tel Aviv, Israel",
     "apac": "Asia-Pacific",
     # Vietnam is entirely excluded in classify_region's list (pay not
@@ -449,6 +466,8 @@ def normalize_location(raw: str) -> str:
     # Office " (trailing space), which otherwise stayed "London Office".
     cleaned = _OFFICE_SUFFIX_RE.sub("", raw.strip()).strip()
     cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = _OFFICE_CODE_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = _WORK_MODE_WRAPPER_RE.sub(r"\1", cleaned).strip()
     cleaned = _ISO_CODE_PREFIX_RE.sub("", cleaned).strip()
     cleaned = _ISO_CODE_SPACING_RE.sub(r"\1-", cleaned).strip()
     cleaned = _REMOTE_PREFIX_RE.sub("", cleaned).strip()

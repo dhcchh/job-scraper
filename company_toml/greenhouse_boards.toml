@@ -279,3 +279,28 @@ company_type = "Data/Cloud Infrastructure"
 token = "govtech"
 firm = "GovTech"
 company_type = "Government/Defense Tech"
+
+[[boards]]
+token = "grafanalabs"
+firm = "Grafana Labs"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "tailscale"
+firm = "Tailscale"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "fiveringsllc"
+firm = "Five Rings"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "aqr"
+firm = "AQR"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "waymo"
+firm = "Waymo"
+company_type = "Applied AI Products"

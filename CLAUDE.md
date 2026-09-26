@@ -372,7 +372,12 @@ use a small fake `Worksheet`.
   `"IN - Remote - IND"`) plus a building/acquired-company paren after a
   "City, Country" (`"Jakarta, Indonesia (6th Floor)"`) before lookup --
   both of which otherwise made `is_excluded` miss India/Indonesia/Armenia
-  postings. The lookup
+  postings. Also (seeded from Waymo's Greenhouse board) a building-code
+  paren like `"Tokyo (JP-TOK-STRM)"`, and (seeded from Tailscale/Ramp) a
+  work-mode wrapper `"Remote (Singapore)"`/`"Hybrid (Denver)"` unwrapped to
+  the place -- left in place, both sent real Tokyo/Taiwan/Singapore roles to
+  RoW. "Bengaluru" maps to "Bangalore, India"; unmapped, it let 75 Okta/
+  MongoDB India rows sit in RoW instead of being excluded. The lookup
   table itself also carries whole-string entries (seeded from Millennium's
   live Eightfold board) for a "City, Region, Country" triple neither the
   bare-city nor "City, Country" conventions above cover (e.g. "Tokyo,

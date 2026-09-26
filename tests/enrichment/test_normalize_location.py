@@ -84,9 +84,9 @@ def test_normalize_location_strips_remote_annotation_without_a_dash():
 
 def test_normalize_location_does_not_strip_remote_before_a_parenthetical():
     # Perplexity's "Remote (United States)" must not become "(United
-    # States)" -- the word after "Remote" here is a paren, not a place name
-    # to unwrap.
-    assert normalize_location("Remote (United States)") == "Remote (United States)"
+    # States)" -- the dashless-prefix rule must leave a paren alone. The
+    # work-mode wrapper rule then unwraps it to the place itself.
+    assert normalize_location("Remote (United States)") == "United States"
 
 
 def test_normalize_location_maps_korea_republic_of():
@@ -274,7 +274,9 @@ def test_normalize_location_strips_a_building_suffix_after_city_and_country(raw,
 
 
 def test_normalize_location_leaves_a_paren_with_no_comma_before_it():
-    assert normalize_location("Remote (United States)") == "Remote (United States)"
+    # The building-suffix rule needs a comma; these resolve via the
+    # work-mode wrapper rule and the table instead.
+    assert normalize_location("Remote (United States)") == "United States"
     assert normalize_location("Singapore (Guoco)") == "Singapore"
 
 
@@ -320,3 +322,26 @@ def test_normalize_location_strips_office_suffix_despite_trailing_whitespace():
     # Flow Traders' live Greenhouse board has "London Office " with a
     # trailing space -- the suffix must still come off.
     assert normalize_location("London Office ") == "London, United Kingdom"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Waymo's building codes
+        ("Tokyo (JP-TOK-STRM)", "Tokyo, Japan"),
+        ("Taipei (TW-TPE-101)", "Taipei, Taiwan"),
+        ("Hsinchu (TW-ZBC-TYP)", "Hsinchu, Taiwan"),
+        ("Bangalore (IN-BLR-BCPC)", "Bangalore, India"),
+        ("Remote (US-XX-REMOTE)", "Remote"),
+        # Tailscale's/Ramp's work-mode wrappers
+        ("Remote (Singapore)", "Singapore"),
+        ("Remote (Canada)", "Canada"),
+        ("Hybrid (London)", "London, United Kingdom"),
+        # AQR's/Okta's spelling
+        ("Bengaluru", "Bangalore, India"),
+        # a real place in parens with no work-mode label is left alone
+        ("Singapore (Guoco)", "Singapore"),
+    ],
+)
+def test_normalize_location_strips_office_codes_and_work_mode_wrappers(raw, expected):
+    assert normalize_location(raw) == expected

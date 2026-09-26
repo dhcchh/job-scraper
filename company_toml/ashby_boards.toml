@@ -119,3 +119,18 @@ company_type = "Data/Cloud Infrastructure"
 token = "langchain"
 firm = "LangChain"
 company_type = "Applied AI Products"
+
+[[boards]]
+token = "kraken.com"
+firm = "Kraken"
+company_type = "Crypto Exchange"
+
+[[boards]]
+token = "ramp"
+firm = "Ramp"
+company_type = "Fintech"
+
+[[boards]]
+token = "lovable"
+firm = "Lovable"
+company_type = "Applied AI Products"
