@@ -249,6 +249,17 @@ def send_digest(new_jobs_by_category: dict[str, list[Job]], spreadsheet_url: str
     )
 
 
+# The new-company announcement goes to the whole community, not just members
+# who can open the sheet: access to the tracker is a reward for reaching
+# 30,000 points, so the message says so rather than only linking a sheet
+# most readers can't open yet.
+_TRACKER_PITCH = (
+    "\U0001f3c6 The job tracker is a reward for members who reach "
+    "<b>30,000 points</b>: hit it and you'll be granted access. It's a huge "
+    "edge for landing high-paying roles."
+)
+
+
 def build_new_companies_text(new_firms: dict[str, str], spreadsheet_url: str) -> str | None:
     """The new-company announcement, or None if no firm was added.
 
@@ -273,8 +284,11 @@ def build_new_companies_text(new_firms: dict[str, str], spreadsheet_url: str) ->
     count = len(new_firms)
     noun = "company" if count == 1 else "companies"
     header = f"\U0001f195 {count} new {noun} added to the job tracker"
-    link = f'<a href="{_escape(spreadsheet_url, quote=True)}">See their open roles in the sheet</a>'
-    return "\n\n".join([header, *type_blocks, link])
+    link = (
+        "Already unlocked it? "
+        f'<a href="{_escape(spreadsheet_url, quote=True)}">See their open roles</a>'
+    )
+    return "\n\n".join([header, *type_blocks, _TRACKER_PITCH, link])
 
 
 def send_new_companies(new_firms: dict[str, str], spreadsheet_url: str) -> None:

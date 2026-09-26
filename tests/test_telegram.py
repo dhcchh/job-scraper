@@ -406,8 +406,15 @@ def test_build_new_companies_text_groups_firms_under_sorted_company_type_headers
         "\U0001f195 3 new companies added to the job tracker\n\n"
         "<b>AI Lab</b>\nCohere\n\n"
         "<b>Fintech</b>\nAdyen\nVisa\n\n"
-        f'<a href="{_SHEET_URL}">See their open roles in the sheet</a>'
+        f"{telegram._TRACKER_PITCH}\n\n"
+        f'Already unlocked it? <a href="{_SHEET_URL}">See their open roles</a>'
     )
+
+
+def test_build_new_companies_text_tells_readers_how_to_get_access():
+    text = telegram.build_new_companies_text({"Visa": "Fintech"}, _SHEET_URL)
+    assert "30,000 points" in text
+    assert "granted access" in text
 
 
 def test_build_new_companies_text_uses_the_singular_for_one_firm():

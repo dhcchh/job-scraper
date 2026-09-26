@@ -572,7 +572,10 @@ use a small fake `Worksheet`.
   the point of a manual check is to surface what's wrong, not hide it.
   `telegram.send_new_companies` is a second, separate message: "N new
   companies added to the job tracker", firms grouped under bold
-  `company_type` headers, ending in the same sheet link -- sent by the same
+  `company_type` headers, then `_TRACKER_PITCH` (the tracker is a reward
+  for community members who reach 30,000 points, a big edge for
+  high-paying roles -- most readers can't open the sheet yet), then the
+  sheet link for those who already have access -- sent by the same
   bot to its own `TELEGRAM_COMPANIES_CHAT_ID`/`TELEGRAM_COMPANIES_THREAD_ID`
   topic (unset chat id disables just this). Same no-op/never-raises
   contract as `send_digest`; sent from `sheets/supported_companies.py`'s
