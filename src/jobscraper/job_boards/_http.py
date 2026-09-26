@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -117,6 +118,7 @@ def paginate_with_retries(
     items_key: str,
     method: str = "GET",
     body: dict | None = None,
+    workers: int = 1,
 ) -> list[dict]:
     """Every item across every page of a paginated JSON endpoint.
 
@@ -128,22 +130,15 @@ def paginate_with_retries(
     For `method="GET"` the cursor and page size are query params. For
     `method="POST"` (Workday) they're merged into the JSON `body` instead.
 
-    Advances `cursor_param` (e.g. "offset"/"start") by however many items
-    the page actually returned -- not by `page_size`, since a server may cap
-    or otherwise not honor the requested `page_size_param` (SmartRecruiters
-    caps `limit` at 100; Eightfold ignores `num` entirely and always returns
-    10) -- and stops once the response's own `total_key` count has been
-    collected or a page comes back empty under `items_key` (belt-and-braces
-    against an off-by-one in that count looping forever). A later page
-    reporting a zero/missing total keeps the earlier one: Workday only fills
-    in `total` on the first page and sends 0 on every page after it
-    (confirmed on Visa's and Mastercard's live boards), which would otherwise
-    stop the loop after page two.
+    `workers=1` (the default) fetches one page after another -- see
+    _paginate_sequentially. `workers > 1` fetches every page after the first
+    `workers` at a time instead -- see _paginate_in_parallel -- and falls
+    back to the one-page-at-a-time fetch, from scratch, if that fails or
+    comes back incomplete, so a board that starts rate-limiting parallel
+    requests (or a listing that shifts mid-fetch) costs time, not postings.
     """
-    items: list[dict] = []
-    cursor = 0
-    total: int | None = None
-    while total is None or cursor < total:
+
+    def fetch_page(cursor: int) -> dict:
         page_args = {cursor_param: cursor, page_size_param: page_size}
         if method == "POST":
             response = post_with_retries(
@@ -151,7 +146,53 @@ def paginate_with_retries(
             )
         else:
             response = get_with_retries(source, identifier, url, params=page_args)
-        payload = response.json()
+        return response.json()
+
+    if workers > 1:
+        try:
+            items = _paginate_in_parallel(fetch_page, total_key, items_key, workers)
+        except Exception as exc:
+            logger.warning(
+                "%s[%s]: parallel page fetch failed (%s), refetching one page "
+                "at a time",
+                source,
+                identifier,
+                exc,
+            )
+        else:
+            if items is not None:
+                return items
+            logger.warning(
+                "%s[%s]: parallel page fetch came back with a different "
+                "number of items than the first page's total, refetching one "
+                "page at a time",
+                source,
+                identifier,
+            )
+    return _paginate_sequentially(fetch_page, total_key, items_key)
+
+
+def _paginate_sequentially(
+    fetch_page: Callable[[int], dict], total_key: str, items_key: str
+) -> list[dict]:
+    """One page after another.
+
+    Advances the cursor by however many items the page actually returned --
+    not by the requested page size, since a server may cap or otherwise not
+    honor it (SmartRecruiters caps `limit` at 100; Eightfold ignores `num`
+    entirely and always returns 10) -- and stops once the response's own
+    `total_key` count has been collected or a page comes back empty under
+    `items_key` (belt-and-braces against an off-by-one in that count looping
+    forever). A later page reporting a zero/missing total keeps the earlier
+    one: Workday only fills in `total` on the first page and sends 0 on
+    every page after it (confirmed on Visa's and Mastercard's live boards),
+    which would otherwise stop the loop after page two.
+    """
+    items: list[dict] = []
+    cursor = 0
+    total: int | None = None
+    while total is None or cursor < total:
+        payload = fetch_page(cursor)
         total = payload.get(total_key) or total or 0
         page = payload.get(items_key, [])
         if not page:
@@ -159,6 +200,38 @@ def paginate_with_retries(
         items.extend(page)
         cursor += len(page)
     return items
+
+
+def _paginate_in_parallel(
+    fetch_page: Callable[[int], dict], total_key: str, items_key: str, workers: int
+) -> list[dict] | None:
+    """Every page, the first one alone and the rest `workers` at a time, or
+    None if the result doesn't add up to the first page's total.
+
+    The first page is what says how many items there are (`total_key`) and
+    how many the server actually puts on a page (its length), which is all
+    it takes to know every other page's cursor up front. That's worth it
+    where each request is slow server-side: Workday takes ~1.3s per page
+    whether or not the connection is reused, so Mastercard's 53 pages take
+    ~80-115s one at a time and ~13s eight at a time (both measured).
+
+    Returns None -- for the caller to fall back to _paginate_sequentially --
+    when the pages don't add up to exactly that total, e.g. a page came
+    back short because postings closed mid-fetch. A failed page (after
+    get/post_with_retries' own retries) raises, same as the sequential
+    fetch. Pages are returned in cursor order either way.
+    """
+    first = fetch_page(0)
+    total = first.get(total_key) or 0
+    items = list(first.get(items_key, []))
+    if not items or len(items) >= total:
+        return items
+    stride = len(items)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        payloads = list(pool.map(fetch_page, range(stride, total, stride)))
+    for payload in payloads:
+        items.extend(payload.get(items_key, []))
+    return items if len(items) == total else None
 
 
 def _is_retryable(exc: Exception) -> bool:

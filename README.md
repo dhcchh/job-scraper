@@ -244,9 +244,11 @@ raw minutes math alone would suggest:
   with ~230 open postings (Millennium's own count) costs ~23 requests
   where a similarly-sized Greenhouse/Ashby board costs 1-3 — this board
   type doesn't scale to many companies the way the other four do. Workday
-  is worse still: 20 postings per page at ~2s per request, so Mastercard's
-  ~1,050 postings alone take ~53 requests and ~2 minutes, plus a ~1-4s
-  detail request per multi-office posting that matches a category.
+  would be worse still -- 20 postings per page at ~1.3s per request, so
+  Mastercard's ~1,050 postings take ~53 requests, ~2 minutes one at a
+  time -- so its client fetches pages 8 at a time instead (~18s for
+  Mastercard), falling back to one at a time if that fails or comes back
+  incomplete. Each further ~1,000-posting Workday firm adds roughly 15-20s.
 - **The real unknown: the board platforms themselves.** This design hits
   thousands of different Greenhouse-, Lever-, Ashby-, SmartRecruiters-,
   Eightfold-, and Workday-hosted board subdomains sequentially from one CI runner IP.

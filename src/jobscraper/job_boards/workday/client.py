@@ -19,8 +19,15 @@ Mastercard's live boards):
   above 20 is rejected outright with a 400, so pages are fixed at 20. The
   response's `total` is only filled in on the FIRST page -- every later page
   says `total: 0` -- which job_boards._http.paginate_with_retries tolerates
-  by keeping the first page's total. At ~2s per page, Mastercard's ~1050
-  postings take ~53 requests and ~100s, by far the slowest board per posting.
+  by keeping the first page's total. Each request takes ~1.3s server-side
+  whether or not the connection is reused, so Mastercard's ~1050 postings
+  (53 pages) took ~80-115s one page at a time -- by far the slowest board
+  per posting. Pages are therefore fetched _WORKERS at a time (~13s for the
+  same 53 pages, measured, no rate limiting seen), with an automatic
+  fall-back to the original one-at-a-time fetch if that fails or comes back
+  incomplete -- see job_boards._http.paginate_with_retries. Setting
+  _WORKERS to 1 goes back to one request at a time everywhere in this
+  client.
 - A list item carries only `title`, `externalPath`, `locationsText`,
   `postedOn`, and `bulletFields`: no department, no edited-at timestamp, no
   compensation. So `department`/`updated_at` stay "" and `salary` stays None,
@@ -45,7 +52,10 @@ Mastercard's live boards):
   posting whose title classify_roles.classify_job actually routes to a
   category -- ~11 per day across both boards rather than ~160. A noise
   posting is dropped by main.py before its location is ever looked at, so
-  its "N Locations" placeholder never reaches the sheet.
+  its "N Locations" placeholder never reaches the sheet. Those detail calls
+  also go out _WORKERS at a time; one that still fails after its retries is
+  tried once more on its own, after the rest, before its posting is
+  dropped for the run.
 - `job_id` is the suffix of `externalPath` after its last "_" (e.g.
   "R-287924-1", "REF088713W" -- the requisition id, plus a "-N" when that
   req has been posted more than once), unique on both boards checked and
@@ -76,6 +86,7 @@ import dataclasses
 import datetime
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 # Not called directly here (job_boards._http does the actual GET/POST) --
 # kept as the target tests/workday/test_client.py's monkeypatch.setattr(
@@ -95,6 +106,12 @@ logger = logging.getLogger(__name__)
 # The server's own maximum page size -- `limit` above this is a 400
 # (confirmed against Mastercard's live board), not a silently capped page.
 _PAGE_SIZE = 20
+
+# How many list pages / detail calls to have in flight at once, per board.
+# 8 fetched Mastercard's 53 pages in ~13s with no 429s (vs ~80-115s one at a
+# time). Set to 1 to go back to strictly one request at a time -- the
+# client's original behavior -- e.g. if Workday starts rate-limiting.
+_WORKERS = 8
 
 _TOKEN_RE = re.compile(r"^([A-Za-z0-9-]+)\.(wd\d+)/([^/\s]+)$")
 _MULTI_LOCATION_RE = re.compile(r"^\d+ Locations?$", re.IGNORECASE)
@@ -134,6 +151,7 @@ def fetch_workday_jobs(
         page_size=_PAGE_SIZE,
         total_key="total",
         items_key="jobPostings",
+        workers=_WORKERS,
     )
     site = api.rsplit("/", 1)[-1]
 
@@ -142,10 +160,9 @@ def fetch_workday_jobs(
     # page) is skipped rather than costing this whole board's otherwise-good
     # postings for the day, or than sheets.writer appending the same
     # (board, job_id) twice in one run.
-    jobs = []
+    jobs: list[Job] = []
+    needs_detail: list[tuple[int, str]] = []  # (index into jobs, externalPath)
     skipped = 0
-    detail_fetches = 0
-    detail_failures = 0
     seen_ids: set[str] = set()
     for raw in raw_jobs:
         path = raw.get("externalPath")
@@ -160,27 +177,24 @@ def fetch_workday_jobs(
 
         job = _to_job(raw, job_id, host, site, firm, company_type, scraped_date)
         if _needs_detail(raw, job):
-            detail_fetches += 1
-            try:
-                detail = get_with_retries("workday", token, f"{api}{path}").json()
-            except Exception:
-                # Most likely the posting closed between the list call and
-                # this one (a 404). Dropping just this posting for today is
-                # self-healing either way: if it's really still open, the
-                # next run picks it back up with its real offices, rather
-                # than this run writing it into the wrong region's tab under
-                # an "N Locations" placeholder.
-                logger.warning(
-                    "workday[%s]: couldn't fetch detail for %s, skipping it "
-                    "this run",
-                    token,
-                    path,
-                    exc_info=True,
-                )
-                detail_failures += 1
-                continue
-            job = _with_detail(job, detail.get("jobPostingInfo") or {})
+            needs_detail.append((len(jobs), path))
         jobs.append(job)
+
+    details = _fetch_details(token, api, [path for _index, path in needs_detail])
+    dropped: set[int] = set()
+    for index, path in needs_detail:
+        info = details[path]
+        if info is None:
+            # Most likely the posting closed between the list call and this
+            # one (a 404). Dropping just this posting for today is
+            # self-healing either way: if it's really still open, the next
+            # run picks it back up with its real offices, rather than this
+            # run writing it into the wrong region's tab under an "N
+            # Locations" placeholder.
+            dropped.add(index)
+        else:
+            jobs[index] = _with_detail(jobs[index], info)
+    jobs = [job for index, job in enumerate(jobs) if index not in dropped]
 
     if skipped:
         logger.warning(
@@ -193,11 +207,48 @@ def fetch_workday_jobs(
         "workday[%s]: fetched %d jobs (%d detail lookup(s), %d failed)",
         token,
         len(jobs),
-        detail_fetches,
-        detail_failures,
+        len(needs_detail),
+        len(dropped),
     )
 
     return jobs
+
+
+def _fetch_details(token: str, api: str, paths: list[str]) -> dict[str, dict | None]:
+    """externalPath -> that posting's `jobPostingInfo`, or None if its detail
+    call still fails after a second, one-at-a-time attempt.
+
+    The first attempt runs _WORKERS at a time; anything that failed there
+    (after get_with_retries' own retries) is retried once more on its own
+    afterward, so a burst of rate-limiting doesn't cost postings that a
+    slower request would have fetched fine.
+    """
+    if not paths:
+        return {}
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        first_try = list(pool.map(lambda path: _fetch_detail(token, api, path), paths))
+    details: dict[str, dict | None] = {}
+    for path, (info, _error) in zip(paths, first_try):
+        if info is None:
+            info, error = _fetch_detail(token, api, path)
+            if info is None:
+                logger.warning(
+                    "workday[%s]: couldn't fetch detail for %s (%s), skipping "
+                    "it this run",
+                    token,
+                    path,
+                    error,
+                )
+        details[path] = info
+    return details
+
+
+def _fetch_detail(token: str, api: str, path: str) -> tuple[dict | None, Exception | None]:
+    try:
+        response = get_with_retries("workday", token, f"{api}{path}")
+        return response.json().get("jobPostingInfo") or {}, None
+    except Exception as exc:
+        return None, exc
 
 
 def _parse_token(token: str) -> tuple[str, str]:

@@ -292,3 +292,100 @@ def test_paginate_with_retries_gets_cursor_as_query_params_by_default(monkeypatc
 
     assert [item["n"] for item in items] == [0, 1, 2]
     assert params_seen == [{"offset": 0, "limit": 2}, {"offset": 2, "limit": 2}]
+
+
+def _post_pages(monkeypatch, page_for_call):
+    """Fake requests.post: page_for_call(offset, nth_call_for_that_offset)
+    returns the payload (or a _RespondingWith) for each request."""
+    calls: dict[int, int] = {}
+
+    def fake_post(url, json=None, timeout=None):
+        offset = json["offset"]
+        calls[offset] = calls.get(offset, 0) + 1
+        result = page_for_call(offset, calls[offset])
+        return result if isinstance(result, _RespondingWith) else _FakeResponse(result)
+
+    monkeypatch.setattr(_http.requests, "post", fake_post)
+    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
+    return calls
+
+
+def _paginate_in_parallel(page_size=2):
+    return _http.paginate_with_retries(
+        "workday",
+        "visa.wd5/Visa",
+        "https://x/jobs",
+        method="POST",
+        body={},
+        cursor_param="offset",
+        page_size_param="limit",
+        page_size=page_size,
+        total_key="total",
+        items_key="jobPostings",
+        workers=4,
+    )
+
+
+def _full_page(offset, total=5, size=2):
+    return {
+        "total": total if offset == 0 else 0,
+        "jobPostings": [{"n": n} for n in range(offset, min(offset + size, total))],
+    }
+
+
+def test_paginate_with_retries_in_parallel_fetches_every_page_once_in_order(monkeypatch):
+    calls = _post_pages(monkeypatch, lambda offset, nth: _full_page(offset))
+
+    items = _paginate_in_parallel()
+
+    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert calls == {0: 1, 2: 1, 4: 1}
+
+
+def test_paginate_with_retries_in_parallel_falls_back_when_a_page_fails(
+    monkeypatch, caplog
+):
+    # Offset 2 fails every attempt of the parallel pass (MAX_ATTEMPTS 503s),
+    # then works when the one-page-at-a-time fallback asks again.
+    def page_for_call(offset, nth):
+        if offset == 2 and nth <= _http.MAX_ATTEMPTS:
+            return _RespondingWith(503)
+        return _full_page(offset)
+
+    calls = _post_pages(monkeypatch, page_for_call)
+
+    with caplog.at_level("WARNING"):
+        items = _paginate_in_parallel()
+
+    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert "parallel page fetch failed" in caplog.text
+    assert calls[0] == 2  # once per pass -- the fallback starts over
+
+
+def test_paginate_with_retries_in_parallel_falls_back_when_pages_come_back_short(
+    monkeypatch, caplog
+):
+    # Offset 2 comes back one item short the first time (e.g. a posting
+    # closed mid-fetch), so the parallel pass doesn't add up to its total.
+    def page_for_call(offset, nth):
+        page = _full_page(offset)
+        if offset == 2 and nth == 1:
+            page["jobPostings"] = page["jobPostings"][:1]
+        return page
+
+    _post_pages(monkeypatch, page_for_call)
+
+    with caplog.at_level("WARNING"):
+        items = _paginate_in_parallel()
+
+    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert "different number of items" in caplog.text
+
+
+def test_paginate_with_retries_in_parallel_stops_after_a_single_full_page(monkeypatch):
+    calls = _post_pages(monkeypatch, lambda offset, nth: _full_page(offset, total=2))
+
+    items = _paginate_in_parallel()
+
+    assert [item["n"] for item in items] == [0, 1]
+    assert calls == {0: 1}

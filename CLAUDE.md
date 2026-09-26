@@ -276,9 +276,18 @@ use a small fake `Worksheet`.
   `job_boards/_http.paginate_with_retries` (`method="POST"`); `limit`
   above 20 is a 400, and `total` is only real on the FIRST page -- every
   later page says 0 -- which `paginate_with_retries` handles by keeping the
-  first page's total. At ~2s per page this is the slowest board type per
-  posting by far: Mastercard's ~1,050 postings take ~53 requests, ~2
-  minutes. A list item carries only `title`, `externalPath`,
+  first page's total. Each request takes ~1.3s server-side (connection
+  reuse barely helps), so one page at a time Mastercard's ~1,050 postings
+  (53 pages) took ~2 minutes. The client is therefore the one place this
+  project fetches concurrently: `paginate_with_retries(workers=8)` reads
+  the first page for the total, then fetches the rest 8 at a time (Visa
+  ~14s, Mastercard ~18s, measured; output identical to the sequential
+  fetch). If the parallel pass raises or doesn't add up to that total, it
+  logs a warning and refetches the whole board one page at a time -- the
+  original behavior -- so rate-limiting costs time, not postings.
+  `workday/client.py`'s `_WORKERS = 1` forces one-at-a-time everywhere if
+  Workday ever starts rejecting the parallel pattern; the pre-parallel
+  version is commit `8b47b3e`. A list item carries only `title`, `externalPath`,
   `locationsText`, `postedOn`, and `bulletFields` -- no department, no
   timestamp, no compensation -- so `department`/`updated_at` stay `""`.
   `postedOn` is relative text ("Posted Today"/"Yesterday"/"N Days Ago"/
@@ -291,10 +300,11 @@ use a small fake `Worksheet`.
   each -- so the client only makes that call when
   `classify_roles.classify_job` routes the posting to a category (~11 of
   ~160 multi-office postings across both boards), since `main.py` drops a
-  noise posting before ever reading its location. A detail call that still
-  fails after retries (e.g. a 404 for a posting that closed between the
-  two calls) drops just that posting for the run rather than failing the
-  board. `job_id` is `externalPath`'s suffix after its last `_` -- the
+  noise posting before ever reading its location. Detail calls also go 8
+  at a time; one that still fails after its retries is tried once more on
+  its own, and only then (e.g. a 404 for a posting that closed between the
+  two calls) is just that posting dropped for the run rather than failing
+  the board. `job_id` is `externalPath`'s suffix after its last `_` -- the
   requisition id plus any "-N" repost counter (e.g. "R-287924-1",
   "REF088713W") -- not `bulletFields[0]`, which is tenant-configured and
   missing on at least one live Visa posting.

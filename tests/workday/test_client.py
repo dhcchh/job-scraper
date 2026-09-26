@@ -12,6 +12,7 @@ import datetime
 
 import pytest
 
+from jobscraper.job_boards import _http
 from jobscraper.job_boards.workday import client
 
 _SCRAPED = datetime.date(2026, 9, 26)
@@ -181,7 +182,12 @@ def test_fetch_workday_jobs_keeps_paging_past_a_zero_total(monkeypatch):
     assert [job.job_id for job in jobs] == ["R-1", "R-2", "R-3"]
 
 
-def test_fetch_workday_jobs_fetches_detail_for_a_multi_office_category_posting(monkeypatch):
+@pytest.mark.parametrize("workers", [client._WORKERS, 1])
+def test_fetch_workday_jobs_fetches_detail_for_a_multi_office_category_posting(
+    monkeypatch, workers
+):
+    # workers=1 is the one-request-at-a-time setting kept as a fallback.
+    monkeypatch.setattr(client, "_WORKERS", workers)
     path = "/job/US---Foster-City-CA/Software-Engineer_REF2"
     _posts, gets = _serve(
         monkeypatch,
@@ -265,6 +271,38 @@ def test_fetch_workday_jobs_drops_only_the_posting_whose_detail_fails(monkeypatc
     jobs = client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
 
     assert [job.job_id for job in jobs] == ["R-8"]
+
+
+def test_fetch_workday_jobs_retries_a_failed_detail_call_once_more_before_dropping(
+    monkeypatch,
+):
+    # The parallel pass's detail call keeps getting 503s (every retry), but
+    # the one-at-a-time retry afterward works -- the posting is kept.
+    path = "/job/x/Software-Engineer_R-7"
+    attempts = []
+
+    class _Unavailable:
+        status_code = 503
+
+        def raise_for_status(self):
+            error = client.requests.HTTPError("503")
+            error.response = self
+            raise error
+
+    def detail(url):
+        attempts.append(url)
+        if len(attempts) <= _http.MAX_ATTEMPTS:
+            return _Unavailable()
+        return _FakeResponse({"jobPostingInfo": {"location": "SG - Singapore"}})
+
+    _serve(monkeypatch, [_posting(path, locations_text="2 Locations")])
+    monkeypatch.setattr(client.requests, "get", lambda url, params=None, timeout=None: detail(url))
+    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
+
+    [job] = client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
+
+    assert job.location == "Singapore"
+    assert len(attempts) == _http.MAX_ATTEMPTS + 1
 
 
 def test_fetch_workday_jobs_skips_a_missing_or_duplicate_external_path(monkeypatch):

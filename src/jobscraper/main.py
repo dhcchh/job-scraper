@@ -8,7 +8,10 @@ tab, prune closed ones.
 Loops over GREENHOUSE_BOARDS, then LEVER_BOARDS, then ASHBY_BOARDS, then
 SMARTRECRUITERS_BOARDS, then EIGHTFOLD_BOARDS, then WORKDAY_BOARDS, from
 config -- one board at a time within each, no concurrency, since this runs
-once a day and there's no rate-limit pressure at this scale. The six board
+once a day and there's no rate-limit pressure at this scale (the one
+exception is inside a single board: workday/client.py fetches its own
+pages several at a time, since each Workday request is slow -- see that
+module). The six board
 types share one loop body
 (see run()'s board_sources), each entry pairing its config board list with
 its own fetch_<board>_jobs function and a lowercase source label for the
