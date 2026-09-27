@@ -5,6 +5,7 @@ import os
 from collections import Counter
 
 from jobscraper import config
+from jobscraper.coverage import coverage_markdown, unmatched_titles, unresolved_locations
 from jobscraper.enrichment.classify_region import (
     REGIONS,
     classify_region,
@@ -99,12 +100,12 @@ def run() -> None:
         for category, _keywords in CATEGORIES
         for region in REGIONS
     }
-    noise_count = 0
+    noise_jobs: list[Job] = []
     excluded_count = 0
     for job in all_jobs:
         category = classify_job(job)
         if category is None:
-            noise_count += 1
+            noise_jobs.append(job)
             continue
         if is_excluded(job.location):
             excluded_count += 1
@@ -115,9 +116,9 @@ def run() -> None:
     logger.info(
         "classified %d job(s) across %d tab(s), filtered %d as noise, "
         "%d as excluded-country",
-        len(all_jobs) - noise_count - excluded_count,
+        len(all_jobs) - len(noise_jobs) - excluded_count,
         len(jobs_by_tab),
-        noise_count,
+        len(noise_jobs),
         excluded_count,
     )
 
@@ -161,12 +162,21 @@ def run() -> None:
         failed_firms=failed_firms,
         total_boards=total_boards,
         total_jobs=len(all_jobs),
-        noise_count=noise_count,
+        noise_count=len(noise_jobs),
         excluded_count=excluded_count,
         tab_stats=tab_stats,
         held_back=held_back,
     )
-    _write_job_summary(markdown)
+    locations = unresolved_locations(
+        job for jobs in newly_appended_by_tab.values() for job in jobs
+    )
+    titles = unmatched_titles(noise_jobs)
+    logger.info(
+        "coverage: %d unresolved office(s) in new rows, %d unmatched title phrase(s)",
+        len(locations),
+        len(titles),
+    )
+    _write_job_summary(markdown + coverage_markdown(locations, titles))
 
     send_digest(
         {

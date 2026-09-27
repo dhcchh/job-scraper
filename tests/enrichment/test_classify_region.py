@@ -5,10 +5,12 @@ import pytest
 from jobscraper.enrichment.classify_region import (
     _EXCLUDED_COUNTRIES,
     _PAC_COUNTRIES,
+    _ROW_COUNTRIES,
     _check_disjoint,
     classify_region,
     is_excluded,
     tab_name,
+    unresolved_offices,
 )
 
 
@@ -124,3 +126,45 @@ def test_pac_and_excluded_countries_are_disjoint():
 def test_check_disjoint_raises_on_overlap():
     with pytest.raises(ValueError, match="Singapore"):
         _check_disjoint({"Singapore"}, {"Singapore", "Vietnam"})
+
+
+def test_row_countries_share_nothing_with_pac_or_excluded():
+    assert not (_ROW_COUNTRIES & (_PAC_COUNTRIES | _EXCLUDED_COUNTRIES))
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "Singapore",
+        "Tokyo, Japan",
+        "Hanoi, Vietnam",
+        "London, United Kingdom",
+        "New York, NY",
+        "Denver, Colorado",
+        "Toronto, ON",
+        "Remote",
+        "EMEA",
+    ],
+)
+def test_unresolved_offices_accepts_known_country_parts(location):
+    assert unresolved_offices(location) == []
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "Melbourne",  # a PAC city the lookup table doesn't know yet
+        "Japan-Osaka",
+        "Seoul, Korea",
+        "Pune, Gera Commerzone SEZ",  # a building where the country should be
+        "Bangalore, IN",  # IN is India here, not Indiana
+        "Karachi, Pakistan",  # no PAC/excluded decision yet
+    ],
+)
+def test_unresolved_offices_reports_hidden_countries(location):
+    assert unresolved_offices(location) == [location]
+
+
+def test_unresolved_offices_returns_only_the_unresolved_offices():
+    location = "London, United Kingdom | Melbourne | Japan-Osaka"
+    assert unresolved_offices(location) == ["Melbourne", "Japan-Osaka"]

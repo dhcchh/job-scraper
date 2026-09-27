@@ -228,6 +228,15 @@ src/jobscraper/
   (dropdown filter/sort arrows on every column, so
   board/location/seniority/company_type can be filtered) to each tab, at
   whatever column letters `FIELDS`' current order puts them.
+- **Coverage report**: the end of each run's GitHub Actions job summary
+  lists what the classifiers couldn't place. "Unresolved locations" shows
+  offices in this run's new rows whose country isn't recognized, so they
+  defaulted to RoW and skipped the excluded-country check. A "Probably"
+  column flags the ones that look PAC or excluded, which are likely in the
+  wrong tab. "Unmatched titles" groups postings dropped as noise that
+  mention engineer/data/analyst/quant by role phrase (e.g. "Data Science",
+  "Solutions Engineer"). Fix a gap in `normalize_location.py` or
+  `classify_roles.py`, then run a full refresh for existing rows.
 - **Telegram digest**: `telegram.py` sends one optional message per run —
   this run's newly appended DA/BI, DS/ML/Algos, and SWE/DE postings, PAC
   only, grouped into count lines per (category, firm, location) rather than

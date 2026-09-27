@@ -586,6 +586,29 @@ use a small fake `Worksheet`.
 - The scraper logs the spreadsheet title/URL and writes a GitHub Actions job
   summary. Workflow-level concurrency protects Action-triggered runs; it does
   not protect a local run pointed at the production sheet.
+- The job summary ends with `coverage.py`'s report of what the classifiers
+  couldn't place, so a new location format or missing keyword shows up on
+  the run it first appears instead of being found by hand later.
+  "Unresolved locations" lists offices of rows *appended this run* whose
+  country part (`classify_region.unresolved_offices`) isn't in
+  `_PAC_COUNTRIES`/`_EXCLUDED_COUNTRIES`/`_ROW_COUNTRIES`, a US state,
+  Canadian province, or `_ROW_AREAS` value. Those offices silently default
+  to RoW and skip `is_excluded`. It's limited to new rows because across all
+  ~6,000 open postings the list is dominated by harmless bare US/EU cities
+  (e.g. "San Francisco"). `_ROW_COUNTRIES` deliberately omits Asian
+  countries with no PAC/excluded decision yet (Macau, Pakistan, ...), and
+  `_SUBDIVISIONS` omits "IN"/"ID" (likelier India/Indonesia than
+  Indiana/Idaho), so those get reported. Its "Probably" column re-runs each
+  comma/dash-separated piece and word of an office through
+  `normalize_location` and the region rules ("Japan-Osaka" -> "PAC: Japan",
+  "Mumbai, Nirlon Knowledge Park" -> "excluded: Mumbai, India"), and those
+  rows sort first. "Unmatched titles" groups this run's noise postings that
+  mention engineer/data/analyst/quant by role phrase: the word before
+  engineer/analyst, the word after data/quant. Exact titles barely repeat
+  (2,272 distinct among 2,743 on 2026-09-27), so the phrase is what makes a
+  gap like "Software Engineering" or "Data Science" stand out. Report
+  only -- nothing it finds changes routing until a mapping or keyword is
+  added (and, for rows already in the sheet, a full refresh is run).
 - `GOOGLE_SHEET_ID` is set independently in `.env` (local) and the GitHub
   Actions secret (CI); nothing else cross-checks the two. The optional
   `GOOGLE_SHEET_TITLE` env var closes that gap: when set, `get_spreadsheet()`

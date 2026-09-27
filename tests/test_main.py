@@ -709,6 +709,29 @@ def test_run_writes_job_summary_when_github_step_summary_is_set(monkeypatch, tmp
     assert "SWE/DE - PAC" in content  # job's Singapore location -> PAC tab
 
 
+def test_run_reports_unplaced_locations_and_titles_in_summary(monkeypatch, tmp_path):
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+    jobs = [
+        _job("Acme", "1", location="Japan-Osaka"),  # routed, country unreadable
+        _job("Acme", "2", title="Sales Engineer"),  # noise
+        _job("Acme", "3", title="Account Executive"),  # noise, no watched word
+    ]
+    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: jobs)
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    summary_path = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_path))
+
+    main.run()
+
+    content = summary_path.read_text()
+    assert "| Japan-Osaka | 1 | Acme | PAC: Japan |" in content
+    assert "| Sales Engineer | 1 | 1 | Sales Engineer (Acme) |" in content
+    assert "Account Executive" not in content
+
+
 def test_run_writes_partial_summary_before_failing(monkeypatch, tmp_path):
     boards = [
         {"token": "good", "firm": "GoodCo", "company_type": "Big Tech"},
