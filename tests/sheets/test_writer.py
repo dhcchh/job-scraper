@@ -43,11 +43,25 @@ class _FakeHttpClient:
     accessor.
     """
 
-    def __init__(self):
+    def __init__(self, filter_view_ids=()):
         self.batch_update_calls = []
+        self.filter_view_ids = filter_view_ids
 
     def batch_update(self, spreadsheet_id, body):
         self.batch_update_calls.append((spreadsheet_id, body))
+
+    def fetch_sheet_metadata(self, spreadsheet_id, params=None):
+        views = [{"filterViewId": view_id} for view_id in self.filter_view_ids]
+        return {"sheets": [{"properties": {"sheetId": 123}, "filterViews": views}]}
+
+
+def _deletion_calls(worksheet):
+    """batch_update calls that delete rows -- the filter refresh after is separate."""
+    return [
+        call
+        for call in worksheet.client.batch_update_calls
+        if "deleteDimension" in call[1]["requests"][0]
+    ]
 
 
 def _row(board, job_id, scraped_date):
@@ -177,7 +191,7 @@ def test_prune_removes_postings_missing_from_current_fetch():
     pruned = _prune(worksheet, current_jobs, fetched_boards={"acme"})
 
     assert worksheet.updated_with is None
-    assert worksheet.client.batch_update_calls == [
+    assert _deletion_calls(worksheet) == [
         (
             "sheet-xyz",
             {
@@ -229,7 +243,7 @@ def test_prune_a_board_with_zero_current_postings_removes_all_its_rows():
 
     _prune(worksheet, current_jobs=[], fetched_boards={"acme"})
 
-    assert worksheet.client.batch_update_calls == [
+    assert _deletion_calls(worksheet) == [
         (
             "sheet-xyz",
             {
@@ -263,7 +277,7 @@ def test_prune_deletes_multiple_rows_from_bottom_to_top():
         worksheet, current_jobs=[_job("acme", "3")], fetched_boards={"acme"}
     )
 
-    (spreadsheet_id, body), = worksheet.client.batch_update_calls
+    (spreadsheet_id, body), = _deletion_calls(worksheet)
     assert spreadsheet_id == "sheet-xyz"
     ranges = [request["deleteDimension"]["range"] for request in body["requests"]]
     assert ranges == [
@@ -313,7 +327,7 @@ def test_apply_prune_keeps_held_back_firms_rows():
     )
 
     assert pruned == 1
-    (_spreadsheet_id, body), = worksheet.client.batch_update_calls
+    (_spreadsheet_id, body), = _deletion_calls(worksheet)
     ranges = [request["deleteDimension"]["range"] for request in body["requests"]]
     assert ranges == [
         {"sheetId": 123, "dimension": "ROWS", "startIndex": 2, "endIndex": 3}
@@ -386,70 +400,107 @@ def test_held_back_prunes_allows_ordinary_closures():
     assert held_back == {}
 
 
-def test_format_date_columns_calls_format_when_available():
-    formatted_ranges = []
+def _date_format_request(column):
+    return {
+        "repeatCell": {
+            "range": {
+                "sheetId": 123,
+                "startRowIndex": 1,
+                "startColumnIndex": column,
+                "endColumnIndex": column + 1,
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}
+                }
+            },
+            "fields": "userEnteredFormat(numberFormat)",
+        }
+    }
 
-    class _WorksheetWithFormat:
-        def format(self, range_name, format_dict):
-            formatted_ranges.append((range_name, format_dict))
 
-    ws = _WorksheetWithFormat()
-    writer.format_date_columns(ws)
-    assert len(formatted_ranges) == 2
-    assert formatted_ranges[0] == (
-        "A2:B",
-        {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}},
-    )
-    assert formatted_ranges[1] == (
-        "L2:L",
-        {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}},
-    )
+_WHOLE_TAB = {
+    "sheetId": 123,
+    "startRowIndex": 0,
+    "startColumnIndex": 0,
+    "endColumnIndex": len(writer.HEADER),
+}
 
 
-def test_format_date_columns_tolerates_worksheet_without_format():
-    class _WorksheetWithoutFormat:
+def test_format_tab_sends_every_managed_format_in_one_write():
+    worksheet = _FakeWorksheet()
+    worksheet.client = _FakeHttpClient(filter_view_ids=[7])
+
+    writer.format_tab(worksheet)
+
+    (spreadsheet_id, body), = worksheet.client.batch_update_calls
+    assert spreadsheet_id == "sheet-xyz"
+    assert body["requests"] == [
+        _date_format_request(writer.HEADER.index("first_published")),  # A
+        _date_format_request(writer.HEADER.index("updated_at")),  # B
+        _date_format_request(writer.HEADER.index("scraped_date")),  # L
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": 123,
+                    "startRowIndex": 1,
+                    "startColumnIndex": 13,  # N
+                    "endColumnIndex": 14,
+                },
+                "cell": {"userEnteredFormat": {"wrapStrategy": "CLIP"}},
+                "fields": "userEnteredFormat(wrapStrategy)",
+            }
+        },
+        {"setBasicFilter": {"filter": {"range": _WHOLE_TAB}}},
+        {
+            "updateFilterView": {
+                "filter": {"filterViewId": 7, "range": _WHOLE_TAB},
+                "fields": "range",
+            }
+        },
+    ]
+
+
+def test_format_tab_tolerates_worksheet_without_client():
+    class _WorksheetWithoutClient:
         pass
 
-    ws = _WorksheetWithoutFormat()
-    writer.format_date_columns(ws)  # does not raise
+    writer.format_tab(_WorksheetWithoutClient())  # does not raise
 
 
-def test_format_description_column_clips_instead_of_wrapping():
-    formatted_ranges = []
+def test_set_basic_filter_is_one_write_including_saved_views():
+    worksheet = _FakeWorksheet()
+    worksheet.client = _FakeHttpClient(filter_view_ids=[7, 8])
 
-    class _WorksheetWithFormat:
-        def format(self, range_name, format_dict):
-            formatted_ranges.append((range_name, format_dict))
+    writer.set_basic_filter(worksheet)
 
-    ws = _WorksheetWithFormat()
-    writer.format_description_column(ws)
-    assert formatted_ranges == [("N2:N", {"wrapStrategy": "CLIP"})]
+    (_spreadsheet_id, body), = worksheet.client.batch_update_calls
+    assert [next(iter(request)) for request in body["requests"]] == [
+        "setBasicFilter",
+        "updateFilterView",
+        "updateFilterView",
+    ]
 
 
-def test_format_description_column_tolerates_worksheet_without_format():
-    class _WorksheetWithoutFormat:
+def test_set_basic_filter_still_filters_when_views_cannot_be_read():
+    worksheet = _FakeWorksheet()
+
+    def failing_metadata(spreadsheet_id, params=None):
+        raise RuntimeError("metadata down")
+
+    worksheet.client.fetch_sheet_metadata = failing_metadata
+
+    writer.set_basic_filter(worksheet)
+
+    (_spreadsheet_id, body), = worksheet.client.batch_update_calls
+    assert body["requests"] == [{"setBasicFilter": {"filter": {"range": _WHOLE_TAB}}}]
+
+
+def test_set_basic_filter_tolerates_worksheet_without_client():
+    class _WorksheetWithoutClient:
         pass
 
-    ws = _WorksheetWithoutFormat()
-    writer.format_description_column(ws)  # does not raise
-
-
-def test_set_basic_filter_calls_set_basic_filter_when_available():
-    calls = []
-
-    class _WorksheetWithFilter:
-        def set_basic_filter(self, range_name):
-            calls.append(range_name)
-
-    writer.set_basic_filter(_WorksheetWithFilter())
-    assert calls == ["A1:N"]
-
-
-def test_set_basic_filter_tolerates_worksheet_without_it():
-    class _WorksheetWithoutFilter:
-        pass
-
-    writer.set_basic_filter(_WorksheetWithoutFilter())  # does not raise
+    writer.set_basic_filter(_WorksheetWithoutClient())  # does not raise
 
 
 class _FakeSpreadsheet:

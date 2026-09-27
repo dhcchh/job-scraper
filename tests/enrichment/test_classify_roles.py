@@ -182,3 +182,35 @@ def test_classify_job_vetoes_solutions_architect_even_with_a_real_keyword():
     assert classify_job(
         _job("Senior Manager, Solutions Architecture, AI & Developer Platform")
     ) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Sr. Product Manager, Data Engineering",
+        "Sr. Technical Program Manager, Data Engineering",
+        "Data Engineering Solutions Specialist",
+        "Product Owner - Data Engineer Platform",
+    ],
+)
+def test_classify_job_keeps_de_for_proper_data_engineering_roles(title):
+    # A data-engineering keyword on a PM/pre-sales title names the team.
+    assert classify_job(_job(title)) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Manager, Data Engineering",  # manages the engineers -- a DE role
+        "Data Engineer - Analyst",
+        "Technology Associate Programme - Data Engineering",
+    ],
+)
+def test_classify_job_still_routes_real_data_engineering_roles(title):
+    assert classify_job(_job(title)) == "SWE/DE"
+
+
+def test_de_veto_leaves_other_keywords_alone():
+    # Only the DE keywords are skipped; another category's keyword still counts.
+    title = "Technical Program Manager, Data Engineering & Machine Learning"
+    assert classify_job(_job(title)) == "DS/ML/Algos"

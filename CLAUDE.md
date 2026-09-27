@@ -436,7 +436,13 @@ use a small fake `Worksheet`.
   a conscious decision (not an oversight) when SmartRecruiters/Grab was
   added, to keep today's scope rather than widen it.
   `classify_roles.classify_job` returns `None` for recruiter titles before
-  applying category keywords; keyword precedence is intentional.
+  applying category keywords; keyword precedence is intentional. The
+  data-engineering keywords (`_DE_KEYWORDS`) are skipped on a product/
+  program/project manager, product owner or solutions-specialist title
+  ("Sr. Product Manager, Data Engineering"): SWE/DE takes proper DE roles
+  only. Other categories' keywords on such a title still count, and PM
+  titles reaching a category through other keywords (e.g. "Staff Product
+  Manager, Developer Experience" via "developer") are untouched.
 - `classify_seniority.classify_seniority` matches the title (+ department)
   first and falls back to a board's own structured employment-type value
   only when those carry no level wording at all. Today that value comes
@@ -521,18 +527,25 @@ use a small fake `Worksheet`.
   wherever `first_published` currently sits in `FIELDS` (column A) -- it's
   UI-managed, not something `sheets/backfill.py` rewrites, so reordering
   `FIELDS` again means updating this formula by hand in every tab too.
-  Each tab also has a basic filter (`sheets.writer.set_basic_filter`,
-  applied by `sheets/backfill.py`) giving every column a dropdown
+  Each tab also has a basic filter giving every column a dropdown
   filter/sort arrow -- board, location, seniority, and company_type are the
   ones postings are actually meant to be sliced by, but Sheets' basic filter
   is all-or-nothing over its range, so every column gets one. The
-  `description` column is set to `wrapStrategy: CLIP`
-  (`sheets.writer.format_description_column`, also applied by
-  `sheets/backfill.py`) rather than left to Sheets' default WRAP -- a JD's
-  embedded newlines (see `models.strip_html`) would otherwise auto-expand
-  that row to dozens of lines tall and make scrolling through the tab
-  painful; CLIP keeps every row a single line, with the full text still
-  readable by clicking into the cell.
+  `description` column is set to `wrapStrategy: CLIP` rather than left to
+  Sheets' default WRAP -- a JD's embedded newlines (see `models.strip_html`)
+  would otherwise auto-expand that row to dozens of lines tall and make
+  scrolling through the tab painful; CLIP keeps every row a single line,
+  with the full text still readable by clicking into the cell.
+  `sheets.writer.format_tab` (run by `sheets/backfill.py` and
+  `sheets/full_refresh.py`) applies the date formats, the CLIP, the basic
+  filter and saved filter views as ONE `batch_update`, at columns computed
+  from `FIELDS` (not hardcoded letters). Before 2026-09-27 these were ~5
+  separate writes per tab, which pushed a full refresh over the
+  60-writes-per-minute quota. `sheets.writer.set_basic_filter` (after each
+  append/prune) is likewise one write: the filter plus saved filter views.
+  Because they're batched, a failing saved-filter-view update now fails the
+  whole batch rather than being logged and skipped. Only the metadata read
+  of the views is still tolerated if it fails.
 - `sheets/backfill.py` is manual only. Run it after changing `FIELDS`,
   classification metadata, location normalization, `first_published`, or
   `models.FIRMS_NEEDING_DESCRIPTION`. It refreshes cells in place

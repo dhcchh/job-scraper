@@ -10,10 +10,9 @@ from collections.abc import Iterable, Mapping
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError
-from gspread.utils import rowcol_to_a1
 
 from jobscraper import config
-from jobscraper.models import FIELDS, Job
+from jobscraper.models import DATE_FIELDS, FIELDS, Job
 
 logger = logging.getLogger(__name__)
 
@@ -81,32 +80,81 @@ def get_worksheet(spreadsheet: gspread.Spreadsheet, name: str) -> gspread.Worksh
     return spreadsheet.worksheet(name)
 
 
-def format_date_columns(worksheet: gspread.Worksheet) -> None:
-    """Format the managed date columns as `yyyy-mm-dd`."""
-    if hasattr(worksheet, "format"):
-        worksheet.format("A2:B", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
-        worksheet.format("L2:L", {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}})
+_DATE_FORMAT = {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}}
 
 
-def format_description_column(worksheet: gspread.Worksheet) -> None:
-    """Clip the description column to preserve row height."""
-    if hasattr(worksheet, "format"):
-        worksheet.format("N2:N", {"wrapStrategy": "CLIP"})
+def format_tab(worksheet: gspread.Worksheet) -> None:
+    """Apply every managed format to a tab in one write.
+
+    That's `yyyy-mm-dd` date columns, a clipped description column (so a
+    long JD doesn't blow up its row's height), and the basic filter. One
+    batch rather than a call each keeps a ten-tab refresh well under Sheets'
+    60-writes-per-minute quota.
+    """
+    if not _has_client(worksheet):
+        return
+    requests = [
+        *(_repeat_cell(worksheet, name, _DATE_FORMAT) for name in DATE_FIELDS),
+        _repeat_cell(worksheet, "description", {"wrapStrategy": "CLIP"}),
+        *_filter_requests(worksheet),
+    ]
+    worksheet.client.batch_update(worksheet.spreadsheet_id, {"requests": requests})
 
 
 def set_basic_filter(worksheet: gspread.Worksheet) -> None:
-    """Apply a basic filter over all managed columns."""
-    if hasattr(worksheet, "set_basic_filter"):
-        last_column = rowcol_to_a1(1, len(FIELDS))[:-1]
-        worksheet.set_basic_filter(f"A1:{last_column}")
-        _resize_saved_filter_views(worksheet)
-
-
-def _resize_saved_filter_views(worksheet: gspread.Worksheet) -> None:
-    """Extend saved filter views across the managed columns and rows."""
-    if not hasattr(worksheet, "client") or not hasattr(worksheet, "spreadsheet_id"):
+    """Apply a basic filter over all managed columns, in one write."""
+    if not _has_client(worksheet):
         return
+    worksheet.client.batch_update(
+        worksheet.spreadsheet_id, {"requests": _filter_requests(worksheet)}
+    )
 
+
+def _has_client(worksheet: gspread.Worksheet) -> bool:
+    return hasattr(worksheet, "client") and hasattr(worksheet, "spreadsheet_id")
+
+
+def _repeat_cell(worksheet: gspread.Worksheet, field: str, cell_format: dict) -> dict:
+    """Format one managed column below the header, wherever `FIELDS` puts it."""
+    column = FIELDS.index(field)
+    return {
+        "repeatCell": {
+            "range": {
+                "sheetId": worksheet.id,
+                "startRowIndex": 1,
+                "startColumnIndex": column,
+                "endColumnIndex": column + 1,
+            },
+            "cell": {"userEnteredFormat": cell_format},
+            "fields": "userEnteredFormat(%s)" % ",".join(cell_format),
+        }
+    }
+
+
+def _filter_requests(worksheet: gspread.Worksheet) -> list[dict]:
+    """Set the basic filter, and stretch saved filter views to match it."""
+    grid_range = {
+        "sheetId": worksheet.id,
+        "startRowIndex": 0,
+        "startColumnIndex": 0,
+        "endColumnIndex": len(FIELDS),
+    }
+    return [
+        {"setBasicFilter": {"filter": {"range": grid_range}}},
+        *(
+            {
+                "updateFilterView": {
+                    "filter": {"filterViewId": view_id, "range": grid_range},
+                    "fields": "range",
+                }
+            }
+            for view_id in _saved_filter_view_ids(worksheet)
+        ),
+    ]
+
+
+def _saved_filter_view_ids(worksheet: gspread.Worksheet) -> list[int]:
+    """Ids of the tab's saved filter views, or none if they can't be read."""
     try:
         metadata = worksheet.client.fetch_sheet_metadata(
             worksheet.spreadsheet_id, params={"includeGridData": "false"}
@@ -116,34 +164,13 @@ def _resize_saved_filter_views(worksheet: gspread.Worksheet) -> None:
             for item in metadata["sheets"]
             if item["properties"]["sheetId"] == worksheet.id
         )
-        views = sheet.get("filterViews", [])
-        if not views:
-            return
-
-        grid_range = {
-            "sheetId": worksheet.id,
-            "startRowIndex": 0,
-            "startColumnIndex": 0,
-            "endColumnIndex": len(FIELDS),
-        }
-        requests = [
-            {
-                "updateFilterView": {
-                    "filter": {
-                        "filterViewId": view["filterViewId"],
-                        "range": grid_range,
-                    },
-                    "fields": "range",
-                }
-            }
-            for view in views
-        ]
-        worksheet.client.batch_update(worksheet.spreadsheet_id, {"requests": requests})
     except Exception:
         logger.warning(
-            "couldn't resize saved filter views for sheet id %s", worksheet.id,
+            "couldn't read saved filter views for sheet id %s", worksheet.id,
             exc_info=True,
         )
+        return []
+    return [view["filterViewId"] for view in sheet.get("filterViews", [])]
 
 
 def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> list[Job]:

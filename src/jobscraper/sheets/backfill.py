@@ -29,11 +29,9 @@ from jobscraper.models import (
 )
 from jobscraper.sheets.writer import (
     HEADER,
-    format_date_columns,
-    format_description_column,
+    format_tab,
     get_spreadsheet,
     get_worksheet,
-    set_basic_filter,
 )
 
 logger = logging.getLogger(__name__)
@@ -262,9 +260,7 @@ def refresh_worksheet(
         values=[HEADER] + new_rows,
         value_input_option="USER_ENTERED",
     )
-    format_date_columns(worksheet)
-    format_description_column(worksheet)
-    set_basic_filter(worksheet)
+    format_tab(worksheet)
     logger.info(
         "refresh: rewrote %d row(s) into current column order -- "
         "%d seniority, %d company_type, %d source, %d location, "

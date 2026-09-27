@@ -115,6 +115,18 @@ _RECRUITER_RE = re.compile(r"\brecruiter\b", re.IGNORECASE)
 
 _SOLUTIONS_ARCHITECT_RE = re.compile(r"\bsolutions architect", re.IGNORECASE)
 
+# On a product/program manager or pre-sales title, a data-engineering keyword
+# names the team, not the job ("Sr. Product Manager, Data Engineering") --
+# DE is meant for proper data-engineering roles only.
+_DE_KEYWORDS = frozenset(
+    {"data engineer", "data engineering", "big data engineer", "etl engineer"}
+)
+_NOT_AN_ENGINEERING_ROLE_RE = re.compile(
+    r"\b(?:product|program|project) manager\b|\bproduct owner\b"
+    r"|\bsolutions specialist\b",
+    re.IGNORECASE,
+)
+
 
 def classify_job(job: Job) -> str | None:
     """Return the first matching role category, or None for noise."""
@@ -123,8 +135,13 @@ def classify_job(job: Job) -> str | None:
         return None
     if _SOLUTIONS_ARCHITECT_RE.search(text):
         return None
+    skipped = _DE_KEYWORDS if _NOT_AN_ENGINEERING_ROLE_RE.search(text) else ()
     for category, keywords in CATEGORIES:
-        if any(_contains_keyword(text, keyword) for keyword in keywords):
+        if any(
+            _contains_keyword(text, keyword)
+            for keyword in keywords
+            if keyword not in skipped
+        ):
             return category
     return None
 
