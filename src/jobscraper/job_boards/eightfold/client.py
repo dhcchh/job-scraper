@@ -1,93 +1,15 @@
-"""Eightfold Talent Platform Apply API client.
-
-One function: give it a board slug, get back this run's Job objects -- same
-shape as the Greenhouse/Lever/Ashby/SmartRecruiters clients, adapted to
-Eightfold's response shape (confirmed against Millennium's live board,
-mlp.eightfold.ai):
-
-- Unlike every other client here, there's no single shared host -- each
-  company gets its own Eightfold subdomain (`<slug>.eightfold.ai`), so
-  `board_slug` is used to build the base URL itself, not just the request
-  path. A `domain` query param (the company's own corporate domain, e.g.
-  "mlp.com") shows up in the site's own browser traffic, but confirmed
-  identical responses with and without it -- the subdomain alone already
-  identifies the company -- so it's left off rather than carrying a second,
-  redundant identifier per board in company_toml.
-- The endpoint is paginated via `start`/`num`, but `num` is not honored --
-  the server always returns exactly 10 positions per page regardless of what
-  `num` asks for (confirmed requesting 10/50/100/200/500, all returning 10),
-  unlike SmartRecruiters' client-adjustable-but-server-capped `limit`. So
-  `_fetch_all_pages` pages in fixed strides of `_PAGE_SIZE`, using the
-  response's own `count` as the stopping point.
-- A posting's title is `name`; `department` is a plain top-level string
-  (Millennium's live board always sets it -- "Information Technology",
-  "Trading", "Legal", ...) unlike SmartRecruiters' always-empty `department`
-  object.
-- `locations` is Eightfold's own pre-split per-office list, the same role
-  Greenhouse's `offices[]`/Lever's `categories.allLocations`/Ashby's
-  `location` + `secondaryLocations[].location` play -- but each entry is
-  itself a hierarchical "City, Region, Country" or "City, Country" string
-  (e.g. "Bangalore, Karnataka, India", "Singapore, Singapore") rather than a
-  bare city name. `_location` below keeps just the leading city segment of
-  each entry before handing it to normalize_location.py -- that module's
-  lookup table is keyed by bare city names (it's what every other client
-  already feeds it), and re-deriving the country from the city there (rather
-  than trusting Eightfold's own trailing segment) is what collapses
-  Eightfold's redundant "Tokyo, Tokyo, Japan"/"Shanghai, Shanghai, China"
-  duplication into the same clean "Tokyo, Japan"/"Shanghai, China" every
-  other client already produces, and normalizes "Dubai, United Arab
-  Emirates" to this project's existing "Dubai, UAE" convention with no
-  changes to normalize_location.py itself.
-- Unlike Lever/Ashby/SmartRecruiters (no edited-at signal at all) but like
-  Greenhouse, Eightfold gives a genuine last-edited timestamp separate from
-  first-published: `t_create`/`t_update`, both Unix epoch seconds (confirmed
-  differing on 9 of Millennium's 230 live postings, so this is real signal,
-  not always-equal noise) -- `_epoch_date` converts each to the same
-  YYYY-MM-DD form normalize_date() already produces from every other
-  client's own date fields.
-- `canonicalPositionUrl` is the candidate-facing apply page, already a full
-  URL (unlike SmartRecruiters, nothing needs constructing here).
-- The list endpoint's own `job_description` field is always "" on every
-  live posting checked -- getting real JD text would mean an extra
-  per-posting detail fetch this client doesn't do, since no live Eightfold
-  board is in models.FIRMS_NEEDING_DESCRIPTION today; add that fetch here
-  (same "only for a firm in that set" gating every other client uses) if a
-  future Eightfold firm needs it.
-
-`firm` (not the slug) is what ends up in Job.board, for the same
-readability and dedup-key reasons documented in
-job_boards/greenhouse/client.py. Every Job returned here is stamped
-`source="Eightfold"` -- a fixed literal, not anything read from the
-response -- see models.Job's docstring.
-
-Retries via job_boards._http.get_with_retries, the same shared retry policy
-(transient failures, 3 attempts, exponential backoff) every board client
-uses -- see that module's docstring for the reasoning.
-"""
-
-from __future__ import annotations
+"""Eightfold Apply API client."""
 
 import datetime
 import logging
 
-# Not called directly here anymore (job_boards._http.get_with_retries does
-# the actual GET) -- kept as the target
-# tests/eightfold/test_client.py's monkeypatch.setattr(client.requests,
-# "get", ...) patches, since `requests` is the same module object wherever
-# it's imported, so patching it here still reaches _http's call.
-import requests
-
 from jobscraper.job_boards._http import paginate_with_retries
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
-from jobscraper.enrichment.normalize_location import normalize_location
+from jobscraper.enrichment.normalize_location import normalize_locations
 
 logger = logging.getLogger(__name__)
 
-# The server's own fixed page size -- requesting more (50, 100, ...) still
-# returns 10 (confirmed against Millennium's live board), so
-# _fetch_all_pages pages in strides of this size rather than assuming a
-# larger one is honored.
 _PAGE_SIZE = 10
 
 
@@ -98,28 +20,13 @@ def fetch_eightfold_jobs(
     *,
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
-    """Fetch every open job posted on one company's Eightfold board.
-
-    `board_slug` is the company's Eightfold subdomain (e.g. "mlp" for
-    mlp.eightfold.ai); `firm` and `company_type` (both from
-    company_toml/eightfold_boards.toml) are stored as-is on every returned
-    Job, same as the other four clients.
-
-    `scraped_date` defaults to today and is stamped on every Job returned --
-    it's what sheets.writer prunes on later, not anything from Eightfold.
-    """
+    """Fetch and normalize all open jobs for an Eightfold board."""
     if scraped_date is None:
         scraped_date = datetime.date.today()
 
     url = f"https://{board_slug}.eightfold.ai/api/apply/v2/jobs"
     raw_jobs = _fetch_all_pages(board_slug, url)
 
-    # Same defensive posture as the other clients' fetch_*_jobs: one
-    # malformed record (no id, or an id already seen on an earlier page --
-    # e.g. if the server ever pads a short final page instead of returning
-    # fewer than _PAGE_SIZE items) is skipped rather than costing this whole
-    # board's otherwise-good postings for the day, or than sheets.writer
-    # appending the same (board, job_id) twice in one run.
     jobs = []
     skipped = 0
     seen_ids: set[str] = set()
@@ -145,14 +52,7 @@ def fetch_eightfold_jobs(
 
 
 def _fetch_all_pages(board_slug: str, url: str) -> list[dict]:
-    """Every posting across every page of the jobs endpoint.
-
-    Pages in fixed strides of _PAGE_SIZE (the server's own hard cap) using
-    `start`, stopping once the response's own `count` has been collected or
-    a page comes back empty (belt-and-braces against an off-by-one in
-    `count` looping forever) -- via job_boards._http.paginate_with_retries,
-    shared with smartrecruiters/client.py's own _fetch_all_pages.
-    """
+    """Fetch every jobs page."""
     return paginate_with_retries(
         "eightfold",
         board_slug,
@@ -188,46 +88,20 @@ def _to_job(
             if firm in FIRMS_NEEDING_DESCRIPTION
             else ""
         ),
-        # No compensation field on any posting -- confirmed against
-        # Millennium's live board (the only reachable one) -- see
-        # models.Job.salary.
         salary=None,
     )
 
 
 def _location(raw: dict) -> str:
-    """Every office this posting is open in, normalized and " | "-joined.
-
-    See the module docstring for why only the leading city segment of each
-    "City, Region, Country"-shaped `locations[]` entry is kept before
-    normalizing. Falls back to the singular `location` field only if
-    `locations` is ever missing/empty, same defensive shape as
-    job_boards/greenhouse/client.py's offices/location fallback.
-    """
+    """Normalize and join every listed office."""
     entries = raw.get("locations") or ([raw["location"]] if raw.get("location") else [])
-    names: list[str] = []
-    for entry in entries:
-        city = (entry or "").split(",", 1)[0].strip()
-        normalized = normalize_location(city)
-        if normalized and normalized not in names:
-            names.append(normalized)
-    return " | ".join(names)
+    return normalize_locations(
+        [(entry or "").split(",", 1)[0].strip() for entry in entries]
+    )
 
 
 def _epoch_date(epoch_seconds: int | str | None) -> str:
-    """A Unix epoch (seconds) as this project's YYYY-MM-DD date string, or ""
-    for a missing/zero/non-numeric value.
-
-    `int()` tolerates a numeric string (unconfirmed whether Eightfold ever
-    actually sends one) the same way a real `int` is handled; anything else
-    degrades to "" rather than raising -- unlike the missing-id case in
-    fetch_eightfold_jobs's loop, there's no per-record try/except around
-    _to_job, so letting this raise would fail that firm's ENTIRE fetch over
-    one bad timestamp instead of just leaving this one field blank, the same
-    "don't fabricate a signal the data doesn't contain" fallback
-    first_published/updated_at already use when a board has no edited-at
-    signal at all (see Lever's/Ashby's/SmartRecruiters' clients).
-    """
+    """Convert epoch seconds to an ISO date."""
     if not epoch_seconds:
         return ""
     try:

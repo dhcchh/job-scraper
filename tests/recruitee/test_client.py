@@ -10,6 +10,7 @@ import datetime
 
 import pytest
 
+from jobscraper.job_boards import _http
 from jobscraper.job_boards.recruitee import client
 
 _SAMPLE_RESPONSE = {
@@ -69,7 +70,7 @@ def test_fetch_recruitee_jobs_parses_response(monkeypatch):
         captured["url"] = url
         return _FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(client.requests, "get", fake_get)
+    monkeypatch.setattr(_http.requests, "get", fake_get)
 
     jobs = client.fetch_recruitee_jobs(
         "opengovernmentproducts",
@@ -92,13 +93,13 @@ def test_fetch_recruitee_jobs_parses_response(monkeypatch):
     assert job.scraped_date == datetime.date(2026, 9, 27)
     assert job.company_type == "Government/Defense Tech"
     assert job.source == "Recruitee"
-    assert job.salary is None  # all-null on every live posting -- see module docstring
+    assert job.salary is None
     assert job.description == ""  # OGP isn't in FIRMS_NEEDING_DESCRIPTION
 
 
 def test_fetch_recruitee_jobs_joins_and_dedupes_every_office(monkeypatch):
     monkeypatch.setattr(
-        client.requests, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
+        _http.requests, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
     )
 
     jobs = client.fetch_recruitee_jobs("x", "X", "Big Tech")
@@ -115,7 +116,7 @@ def test_fetch_recruitee_jobs_falls_back_to_top_level_city(monkeypatch):
             {"id": 1, "title": "Engineer", "city": "Singapore", "locations": []}
         ]
     }
-    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
 
     (job,) = client.fetch_recruitee_jobs("x", "X", "Big Tech")
 
@@ -124,7 +125,7 @@ def test_fetch_recruitee_jobs_falls_back_to_top_level_city(monkeypatch):
 
 def test_fetch_recruitee_jobs_fills_description_only_for_listed_firms(monkeypatch):
     monkeypatch.setattr(
-        client.requests, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
+        _http.requests, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
     )
     monkeypatch.setattr(client, "FIRMS_NEEDING_DESCRIPTION", frozenset({"OGP"}))
 
@@ -137,7 +138,7 @@ def test_fetch_recruitee_jobs_fills_description_only_for_listed_firms(monkeypatc
 
 def test_fetch_recruitee_jobs_skips_a_record_without_an_id(monkeypatch):
     response = {"offers": [{"title": "No id"}, {"id": 7, "title": "Engineer"}]}
-    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
 
     jobs = client.fetch_recruitee_jobs("x", "X", "Big Tech")
 
@@ -151,9 +152,9 @@ def test_fetch_recruitee_jobs_raises_on_http_error(monkeypatch):
         status_code = 404
 
         def raise_for_status(self):
-            raise client.requests.HTTPError("boom", response=self)
+            raise _http.requests.HTTPError("boom", response=self)
 
-    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(client.requests.HTTPError):
+    with pytest.raises(_http.requests.HTTPError):
         client.fetch_recruitee_jobs("x", "X", "Big Tech")

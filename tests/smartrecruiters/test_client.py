@@ -5,13 +5,14 @@ Mirrors tests/ashby/test_client.py's structure, adapted to SmartRecruiters'
 response shape: paginated ({"offset", "limit", "totalFound", "content":
 [...]}), `name`/constructed url (not `title`/a URL field), a single
 `location` object (not a pre-split per-office array), and `function.label`
-standing in for department (see client.py's module docstring for why).
+standing in for department.
 """
 
 import datetime
 
 import pytest
 
+from jobscraper.job_boards import _http
 from jobscraper.job_boards.smartrecruiters import client
 
 
@@ -64,7 +65,7 @@ def test_fetch_smartrecruiters_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return _FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(client.requests, "get", fake_get)
+    monkeypatch.setattr(_http.requests, "get", fake_get)
 
     jobs = client.fetch_smartrecruiters_jobs(
         "Acme", "Acme Corp", "Big Tech", scraped_date=datetime.date(2026, 9, 12)
@@ -86,7 +87,7 @@ def test_fetch_smartrecruiters_jobs_parses_response(monkeypatch):
     assert first.first_published == "2025-06-15"
     assert first.updated_at == ""  # no edited-at timestamp at all
     assert first.source == "SmartRecruiters"
-    assert first.description == ""  # never populated -- see module docstring
+    assert first.description == ""
     assert first.salary is None  # no compensation field anywhere in this API
 
     # Missing function/location/releasedDate degrade to "", not a crash.
@@ -115,7 +116,7 @@ def test_fetch_smartrecruiters_jobs_paginates_until_total_found_is_reached(
         calls.append(dict(params))
         return _FakeResponse(page1 if params["offset"] == 0 else page2)
 
-    monkeypatch.setattr(client.requests, "get", fake_get)
+    monkeypatch.setattr(_http.requests, "get", fake_get)
 
     jobs = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
@@ -141,7 +142,7 @@ def test_fetch_smartrecruiters_jobs_stops_on_an_empty_page(monkeypatch):
         calls.append(dict(params))
         return _FakeResponse(page1 if params["offset"] == 0 else empty_page)
 
-    monkeypatch.setattr(client.requests, "get", fake_get)
+    monkeypatch.setattr(_http.requests, "get", fake_get)
 
     jobs = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
@@ -158,7 +159,7 @@ def test_fetch_smartrecruiters_jobs_skips_a_job_missing_id_instead_of_raising(
             {"id": "real-id", "name": "Software Engineer", "company": {"identifier": "Acme"}},
         ]
     )
-    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
 
     jobs = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
@@ -172,7 +173,7 @@ def test_fetch_smartrecruiters_jobs_falls_back_to_empty_department_when_function
     response = _page(
         [{"id": "1", "name": "Administrative Business Partner", "company": {"identifier": "Acme"}}]
     )
-    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
 
     (job,) = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
@@ -187,9 +188,9 @@ def test_fetch_smartrecruiters_jobs_raises_on_http_error(monkeypatch):
     # tests/job_boards/test_http.py, not duplicated here.
     class _FailingResponse:
         def raise_for_status(self):
-            raise client.requests.HTTPError("boom")
+            raise _http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(client.requests.HTTPError):
+    with pytest.raises(_http.requests.HTTPError):
         client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")

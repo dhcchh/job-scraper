@@ -14,6 +14,7 @@ import datetime
 
 import pytest
 
+from jobscraper.job_boards import _http
 from jobscraper.job_boards.eightfold import client
 
 
@@ -65,7 +66,7 @@ def test_fetch_eightfold_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return _FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(client.requests, "get", fake_get)
+    monkeypatch.setattr(_http.requests, "get", fake_get)
 
     jobs = client.fetch_eightfold_jobs(
         "mlp", "Millennium", "Prop Trading/Hedge Fund", scraped_date=datetime.date(2026, 9, 16)
@@ -86,7 +87,7 @@ def test_fetch_eightfold_jobs_parses_response(monkeypatch):
     assert first.first_published == "2026-08-28"  # from t_create, epoch seconds
     assert first.updated_at == "2026-08-28"  # from t_update, epoch seconds
     assert first.source == "Eightfold"
-    assert first.description == ""  # never populated -- see module docstring
+    assert first.description == ""
     assert first.salary is None  # no compensation field on any posting
 
     # Missing department/locations and zero timestamps degrade to "", not a crash.
@@ -164,7 +165,7 @@ def test_fetch_eightfold_jobs_pages_in_fixed_strides_regardless_of_count(monkeyp
             return _FakeResponse(page2)
         return _FakeResponse(page3)
 
-    monkeypatch.setattr(client.requests, "get", fake_get)
+    monkeypatch.setattr(_http.requests, "get", fake_get)
 
     jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
@@ -187,7 +188,7 @@ def test_fetch_eightfold_jobs_stops_on_an_empty_page(monkeypatch):
         calls.append(dict(params))
         return _FakeResponse(page1 if params["start"] == 0 else empty_page)
 
-    monkeypatch.setattr(client.requests, "get", fake_get)
+    monkeypatch.setattr(_http.requests, "get", fake_get)
 
     jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
@@ -202,7 +203,7 @@ def test_fetch_eightfold_jobs_skips_a_job_missing_id_instead_of_raising(monkeypa
             {"id": "real-id", "name": "Software Engineer", "t_create": 0, "t_update": 0},
         ]
     )
-    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
 
     jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
@@ -226,7 +227,7 @@ def test_fetch_eightfold_jobs_skips_a_duplicate_id_across_pages(monkeypatch):
         calls["n"] += 1
         return _FakeResponse(page1 if calls["n"] == 1 else page2)
 
-    monkeypatch.setattr(client.requests, "get", fake_get)
+    monkeypatch.setattr(_http.requests, "get", fake_get)
 
     jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
@@ -253,9 +254,9 @@ def test_fetch_eightfold_jobs_raises_on_http_error(monkeypatch):
     # tests/job_boards/test_http.py, not duplicated here.
     class _FailingResponse:
         def raise_for_status(self):
-            raise client.requests.HTTPError("boom")
+            raise _http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(client.requests, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(client.requests.HTTPError):
+    with pytest.raises(_http.requests.HTTPError):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
