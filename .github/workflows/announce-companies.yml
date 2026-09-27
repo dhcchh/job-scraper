@@ -1,6 +1,11 @@
 name: Announce New Companies
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "company_toml/*_boards.toml"
   schedule:
     # 14:00 UTC = 22:00 Singapore time (UTC+8, no DST). Same best-effort
     # caveat as daily-scrape.yml: GitHub Actions cron can start tens of
@@ -12,7 +17,7 @@ on:
 # share: this only writes the "Supported companies" tab, which neither of
 # them touches, and GitHub keeps just one pending run per group -- joining
 # it could let this run replace a queued scrape. Its own group still keeps
-# a manual run and the scheduled one from both announcing the same firm.
+# push, manual, and scheduled runs from announcing the same firm twice.
 concurrency:
   group: announce-companies
   cancel-in-progress: false

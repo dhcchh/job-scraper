@@ -62,8 +62,9 @@ use a small fake `Worksheet`.
   removes jobs confirmed closed. "Full Refresh (Rebuild)"
   (`full-refresh.yml`, manual `workflow_dispatch` only, no schedule) runs
   `jobscraper.sheets.full_refresh` -- see its own bullet below. A third,
-  "Announce New Companies" (`announce-companies.yml`, cron 14:00 UTC =
-  22:00 SGT + manual `workflow_dispatch`), runs
+  "Announce New Companies" (`announce-companies.yml`, pushes to `main` that
+  change a `company_toml/*_boards.toml` file + cron 14:00 UTC = 22:00 SGT +
+  manual `workflow_dispatch`), runs
   `jobscraper.sheets.supported_companies` and only writes the "Supported
   companies" tab, so it has its own `announce-companies` concurrency group
   instead -- GitHub keeps one pending run per group, so joining
@@ -534,9 +535,10 @@ use a small fake `Worksheet`.
   range as one set of rows, which would scramble the alignment between
   unrelated categories' columns since a row here isn't a record the way a
   job posting's row is. Unlike `backfill.py`/`full_refresh.py`, this is NOT
-  manual-only: the "Announce New Companies" workflow runs it every day at
-  22:00 SGT, so a firm added to any of the seven TOML files shows up there --
-  and is announced on Telegram -- at the next 22:00 with no separate step.
+  manual-only: the "Announce New Companies" workflow runs whenever a change
+  to one of the seven TOML files lands on `main`, so a newly added firm shows
+  up there -- and is announced on Telegram -- immediately after that push.
+  A daily 22:00 SGT run also reconciles any missed updates.
   `main.py`'s `run()` deliberately does NOT sync this tab: a firm is only
   new to whichever sync lists it first, so a 07:00 scrape syncing it would
   consume the announcement. Safe to run unattended because it reasons about nothing but current
@@ -626,7 +628,7 @@ use a small fake `Worksheet`.
   bot to its own `TELEGRAM_COMPANIES_CHAT_ID`/`TELEGRAM_COMPANIES_THREAD_ID`
   topic (unset chat id disables just this). Same no-op/never-raises
   contract as `send_digest`; sent from `sheets/supported_companies.py`'s
-  `__main__` (the 22:00 SGT workflow), not from `main.py`. `--check` also sends a test message
+  `__main__` (the push-triggered/daily workflow), not from `main.py`. `--check` also sends a test message
   there when `TELEGRAM_COMPANIES_CHAT_ID` is set.
 
 ## Open work

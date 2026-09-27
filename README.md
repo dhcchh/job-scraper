@@ -377,11 +377,12 @@ queue rather than run at the same time (both read-then-write every job tab):
   `workflow_dispatch`. Appends newly seen jobs and prunes closed ones —
   the routine, incremental run.
 - **`.github/workflows/announce-companies.yml`** ("Announce New Companies")
-  runs `jobscraper.sheets.supported_companies` at `0 14 * * *` UTC (10pm
-  Singapore time), plus manual `workflow_dispatch`: syncs the "Supported
+  runs `jobscraper.sheets.supported_companies` whenever a board TOML change
+  lands on `main`, with a `0 14 * * *` UTC (10pm Singapore time) reconciliation
+  run and manual `workflow_dispatch` as fallbacks. It syncs the "Supported
   companies" tab from `company_toml/` and posts the Telegram new-company
-  announcement for any firm it didn't list yet. Only touches that tab, so
-  it uses its own concurrency group rather than `sheet-write`.
+  announcement for any firm it didn't list yet. Only touches that tab, so it
+  uses its own concurrency group rather than `sheet-write`.
 - **`.github/workflows/full-refresh.yml`** ("Full Refresh (Rebuild)") runs
   `jobscraper.sheets.full_refresh` on manual `workflow_dispatch` only, no
   schedule. Recomputes every column and re-routes rows across tabs — run
