@@ -3,11 +3,13 @@
 import dataclasses
 import json
 import logging
+import time
 from collections import Counter
 from collections.abc import Iterable, Mapping
 
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.exceptions import APIError
 from gspread.utils import rowcol_to_a1
 
 from jobscraper import config
@@ -38,11 +40,37 @@ def _check_expected_title(spreadsheet: gspread.Spreadsheet) -> None:
         )
 
 
+# Seconds to wait before each retry of a request Sheets rejected for quota.
+_QUOTA_RETRY_WAITS = (10, 20, 40, 60)
+
+
+class _QuotaRetryingHTTPClient(gspread.HTTPClient):
+    """Retry a request Sheets rejected with HTTP 429 (per-minute quota).
+
+    A 429 means the request wasn't applied, so retrying is safe even for an
+    append. A full refresh makes ~7 writes per tab, which exceeded the
+    60-writes-per-minute quota on 2026-09-27. Unlike gspread's own
+    BackOffHTTPClient, 5xx errors are not retried: a failed append may
+    already have landed, and repeating it would duplicate rows.
+    """
+
+    def request(self, *args, **kwargs):
+        for wait in _QUOTA_RETRY_WAITS:
+            try:
+                return super().request(*args, **kwargs)
+            except APIError as err:
+                if err.code != 429:
+                    raise
+                logger.warning("sheets write quota hit, retrying in %ds", wait)
+                time.sleep(wait)
+        return super().request(*args, **kwargs)
+
+
 def get_spreadsheet() -> gspread.Spreadsheet:
     """Open and validate the configured spreadsheet."""
     info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
     credentials = Credentials.from_service_account_info(info, scopes=_SCOPES)
-    client = gspread.authorize(credentials)
+    client = gspread.authorize(credentials, http_client=_QuotaRetryingHTTPClient)
     spreadsheet = client.open_by_key(config.GOOGLE_SHEET_ID)
     _check_expected_title(spreadsheet)
     return spreadsheet

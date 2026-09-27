@@ -471,3 +471,57 @@ def test_check_expected_title_raises_on_mismatch(monkeypatch):
     monkeypatch.setattr(writer.config, "GOOGLE_SHEET_TITLE", "Job Board Tracker")
     with pytest.raises(RuntimeError, match="Some Other Sheet"):
         writer._check_expected_title(_FakeSpreadsheet("Some Other Sheet"))
+
+
+class _FakeResponse:
+    def __init__(self, code):
+        self.text = ""
+        self._code = code
+
+    def json(self):
+        return {"error": {"code": self._code, "message": "x", "status": "x"}}
+
+
+def _quota_client(monkeypatch, codes):
+    """A retrying client whose underlying requests fail with `codes`, then succeed."""
+    calls = []
+    sleeps = []
+
+    def fake_request(self, *args, **kwargs):
+        calls.append(args)
+        if len(calls) <= len(codes):
+            raise writer.APIError(_FakeResponse(codes[len(calls) - 1]))
+        return "ok"
+
+    monkeypatch.setattr(writer.gspread.HTTPClient, "request", fake_request)
+    monkeypatch.setattr(writer.time, "sleep", sleeps.append)
+    client = writer._QuotaRetryingHTTPClient.__new__(writer._QuotaRetryingHTTPClient)
+    return client, calls, sleeps
+
+
+def test_quota_client_retries_a_429_then_succeeds(monkeypatch):
+    client, calls, sleeps = _quota_client(monkeypatch, [429, 429])
+
+    assert client.request("post", "url") == "ok"
+    assert len(calls) == 3
+    assert sleeps == [10, 20]
+
+
+def test_quota_client_gives_up_after_its_last_wait(monkeypatch):
+    client, calls, sleeps = _quota_client(monkeypatch, [429] * 5)
+
+    with pytest.raises(writer.APIError):
+        client.request("post", "url")
+    assert len(calls) == 5
+    assert sleeps == list(writer._QUOTA_RETRY_WAITS)
+
+
+@pytest.mark.parametrize("code", [500, 503, 403])
+def test_quota_client_never_retries_other_errors(monkeypatch, code):
+    # A 5xx append may already have landed -- retrying could duplicate rows.
+    client, calls, sleeps = _quota_client(monkeypatch, [code])
+
+    with pytest.raises(writer.APIError):
+        client.request("post", "url")
+    assert len(calls) == 1
+    assert sleeps == []
