@@ -14,3 +14,8 @@ company_type = "Fintech"
 token = "Canva"
 firm = "Canva"
 company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "X"
+firm = "X"
+company_type = "Consumer/Media & Entertainment"

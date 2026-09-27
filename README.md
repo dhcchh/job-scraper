@@ -239,8 +239,8 @@ See `CLAUDE.md` for design rationale and edge-case invariants.
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~109 boards (61
-Greenhouse, 6 Lever, 27 Ashby, 3 SmartRecruiters, 1 Eightfold, 10 Workday,
+Google Sheet as the datastore — works fine at today's ~110 boards (61
+Greenhouse, 6 Lever, 27 Ashby, 4 SmartRecruiters, 1 Eightfold, 10 Workday,
 1 Recruitee). Realistic
 ceiling: **somewhere around 2,000-5,000 companies**, not the 10,000+ the
 raw minutes math alone would suggest:
@@ -367,6 +367,28 @@ careers.open.gov.sg); the token is still its recruitee.com subdomain.
 
 Commit and push — all seven files are checked in and read directly by local
 runs and CI, no other config changes needed.
+
+### Custom-scraper backlog
+
+The following requested companies cannot yet be added to the board TOML
+files because no endpoint compatible with the seven existing clients has
+been verified. They need a dedicated client (and tests) before the daily job
+can fetch them. Until then, they do not appear in "Supported companies":
+
+| Company | Current integration note |
+| --- | --- |
+| Gojek | Its first-party careers portal appears to use a custom/Kalibrr-backed flow. |
+| Shopify | Its first-party site exposes Ashby job IDs, but not a working standard public Ashby board endpoint. |
+| Zoom | Its first-party careers site uses Workday in the application flow, but does not expose a verified public Workday tenant/site token. |
+| Citadel | Build and verify a client for its first-party careers search. |
+| Meta | Build and verify a client for Meta Careers. |
+| Amazon | Build and verify a client for Amazon Jobs. |
+| Google | Build and verify a client for Google Careers. |
+| The Trade Desk | Build and verify a client for its first-party careers search. |
+
+X is not on this backlog: its public SmartRecruiters company identifier is
+`X`, so it is configured in `smartrecruiters_boards.toml` and follows the
+normal daily scrape and supported-company sync.
 
 ## Cron / CI
 
