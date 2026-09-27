@@ -406,9 +406,13 @@ def test_run_fetches_and_merges_workday_boards_alongside_greenhouse(monkeypatch)
     wd_job = _job("Visa", "REF1", location="Singapore")
 
     monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
-    monkeypatch.setattr(
-        main, "fetch_workday_jobs", lambda token, firm, company_type: [wd_job]
-    )
+    workday_calls = []
+
+    def fake_fetch_workday_jobs(token, firm, company_type, *, location_scope=None):
+        workday_calls.append((token, firm, company_type, location_scope))
+        return [wd_job]
+
+    monkeypatch.setattr(main, "fetch_workday_jobs", fake_fetch_workday_jobs)
 
     prune_calls: list[set[str]] = []
     append_calls: list[tuple] = []
@@ -418,7 +422,14 @@ def test_run_fetches_and_merges_workday_boards_alongside_greenhouse(monkeypatch)
     monkeypatch.setattr(
         main.config,
         "WORKDAY_BOARDS",
-        [{"token": "visa.wd5/Visa", "firm": "Visa", "company_type": "Fintech"}],
+        [
+            {
+                "token": "visa.wd5/Visa",
+                "firm": "Visa",
+                "company_type": "Fintech",
+                "location_scope": "Singapore",
+            }
+        ],
     )
 
     main.run()
@@ -432,6 +443,9 @@ def test_run_fetches_and_merges_workday_boards_alongside_greenhouse(monkeypatch)
     )
     assert pac_jobs == [wd_job]
     assert row_jobs == [gh_job]
+    assert workday_calls == [
+        ("visa.wd5/Visa", "Visa", "Fintech", "Singapore")
+    ]
 
 
 def test_run_treats_a_failed_workday_board_like_a_failed_greenhouse_board(monkeypatch):

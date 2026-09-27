@@ -428,7 +428,14 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
     monkeypatch.setattr(
         backfill.config,
         "WORKDAY_BOARDS",
-        [{"token": "wd.wd1/Site", "firm": "WorkdayCo", "company_type": "Big Tech"}],
+        [
+            {
+                "token": "wd.wd1/Site",
+                "firm": "WorkdayCo",
+                "company_type": "Big Tech",
+                "location_scope": "Singapore",
+            }
+        ],
     )
     monkeypatch.setattr(
         backfill.config,
@@ -461,11 +468,13 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         "fetch_eightfold_jobs",
         lambda token, firm, company_type: [eightfold_job],
     )
-    monkeypatch.setattr(
-        backfill,
-        "fetch_workday_jobs",
-        lambda token, firm, company_type: [workday_job],
-    )
+    workday_scopes = []
+
+    def fake_fetch_workday_jobs(token, firm, company_type, *, location_scope=None):
+        workday_scopes.append(location_scope)
+        return [workday_job]
+
+    monkeypatch.setattr(backfill, "fetch_workday_jobs", fake_fetch_workday_jobs)
     monkeypatch.setattr(
         backfill,
         "fetch_recruitee_jobs",
@@ -483,6 +492,7 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         ("WorkdayCo", "R-6"): workday_job,
         ("RecruiteeCo", "7"): recruitee_job,
     }
+    assert workday_scopes == ["Singapore"]
 
 
 def test_refresh_prefers_a_location_override_over_best_effort_renormalization():

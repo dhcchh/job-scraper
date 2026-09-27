@@ -139,6 +139,49 @@ def test_fetch_workday_jobs_parses_response(monkeypatch):
     assert second.first_published == ""  # "30+ Days Ago" isn't a date
 
 
+def test_fetch_workday_jobs_searches_and_strictly_filters_a_location_scope(
+    monkeypatch,
+):
+    multi = "/job/x/Data-Scientist_R-3"
+    posts, gets = _serve(
+        monkeypatch,
+        [
+            _posting(
+                "/job/x/Software-Engineer_R-1",
+                locations_text="Singapore - Singapore",
+            ),
+            # Workday's full-text search can match the JD even when the job
+            # itself is elsewhere; the client must remove this false positive.
+            _posting(
+                "/job/x/Software-Engineer_R-2",
+                locations_text="India - Hyderabad",
+            ),
+            _posting(multi, title="Data Scientist", locations_text="2 Locations"),
+        ],
+        details={
+            multi: {
+                "location": "Singapore, Pasir Panjang",
+                "additionalLocations": ["Hong Kong"],
+            }
+        },
+    )
+
+    jobs = client.fetch_workday_jobs(
+        "visa.wd5/Visa",
+        "Visa",
+        "Fintech",
+        location_scope="Singapore",
+        scraped_date=_SCRAPED,
+    )
+
+    assert posts[0][1]["searchText"] == "Singapore"
+    assert gets == [f"{_API}{multi}"]
+    assert [(job.job_id, job.location) for job in jobs] == [
+        ("R-1", "Singapore"),
+        ("R-3", "Singapore | Hong Kong"),
+    ]
+
+
 def test_fetch_workday_jobs_counts_days_back_from_workdays_own_date(monkeypatch):
     # Workday says "Posted 2 Days Ago" for a posting whose exact startDate is
     # 2026-09-20, so its own date is 2026-09-22 -- every relative date counts

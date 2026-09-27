@@ -281,6 +281,23 @@ def test_normalize_location_leaves_a_paren_with_no_comma_before_it():
 
 
 @pytest.mark.parametrize(
+    "raw",
+    [
+        "Singapore-CapitaSky",
+        "Singapore, Marina Bay Financial Tower 2",
+        "Singapore, Pasir Panjang",
+        "Singapore, Singapore-Suntec Tower",
+        "Singapore - Singapore",
+    ],
+)
+def test_normalize_location_maps_workday_singapore_offices(raw):
+    # These Workday tenants append a building name in a shape the generic
+    # suffix rules cannot strip. Without exact mappings these real Singapore
+    # roles land in RoW and fail a strict Singapore location scope.
+    assert normalize_location(raw) == "Singapore"
+
+
+@pytest.mark.parametrize(
     "raw,expected",
     [
         ("Singapore, SingPost", "Singapore"),

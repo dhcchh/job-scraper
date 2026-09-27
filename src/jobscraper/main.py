@@ -162,7 +162,12 @@ def run() -> None:
         for board in boards:
             firm = board["firm"]
             try:
-                jobs = fetch(board["token"], firm, board["company_type"])
+                kwargs = (
+                    {"location_scope": board["location_scope"]}
+                    if source == "workday" and board.get("location_scope")
+                    else {}
+                )
+                jobs = fetch(board["token"], firm, board["company_type"], **kwargs)
             except Exception:
                 logger.exception(
                     "%s[%s]: failed to fetch after retries, skipping this "

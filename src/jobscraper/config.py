@@ -71,7 +71,8 @@ EIGHTFOLD_BOARDS: list[dict] = _load_boards(_EIGHTFOLD_BOARDS_FILE)
 
 # Same shape again -- Workday's `token` is "<tenant>.<wdN>/<site>", the three
 # pieces of a company's careers-site URL (<tenant>.<wdN>.myworkdayjobs.com/
-# <site>) that all vary per company -- see job_boards/workday/client.py.
+# <site>) that all vary per company. A large board may also carry the optional
+# `location_scope` field -- see job_boards/workday/client.py.
 WORKDAY_BOARDS: list[dict] = _load_boards(_WORKDAY_BOARDS_FILE)
 
 # Same shape again -- Recruitee's `token` is a company's recruitee.com

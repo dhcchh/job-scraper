@@ -439,6 +439,19 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     # country "SingPost" to classify_region, so a real Singapore posting
     # would silently land in RoW.
     "singapore, singpost": "Singapore",
+    # Tencent and Barclays also name the Singapore office/building rather
+    # than ending the location in a country. Left unmapped,
+    # classify_region would compare "Singapore-CapitaSky" or "Marina Bay
+    # Financial Tower 2" with the PAC country set and route every one of
+    # those live Singapore postings into RoW.
+    "singapore-capitasky": "Singapore",
+    "singapore, marina bay financial tower 2": "Singapore",
+    # NVIDIA and Salesforce use three more building/work-mode variants on
+    # their Singapore-scoped Workday searches. These must canonicalize to
+    # the exact scope name as well as the PAC country name.
+    "singapore, pasir panjang": "Singapore",
+    "singapore, singapore-suntec tower": "Singapore",
+    "singapore - singapore": "Singapore",
     # What's left of Visa's "IN - Remote - IND"/"GB - Remote - GBR" once the
     # prefixes are stripped -- 3-letter ISO codes. India matters most:
     # unmapped, is_excluded can't recognize it.

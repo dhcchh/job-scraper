@@ -28,6 +28,15 @@ Mastercard's live boards):
   incomplete -- see job_boards._http.paginate_with_retries. Setting
   _WORKERS to 1 goes back to one request at a time everywhere in this
   client.
+- A board may set `location_scope = "Singapore"` in its TOML entry when its
+  global board is disproportionately large. The value is sent as Workday's
+  `searchText`, reducing NVIDIA from 2,000 returned postings to 106 and
+  Salesforce from 1,522 to 35 when verified on 2026-09-27. That search is
+  full-text, not a location predicate: it also returned jobs located in Hong
+  Kong, Taiwan, India, and the Philippines because their descriptions
+  mentioned Singapore. The client therefore strictly filters the normalized
+  result after resolving any multi-office details, keeping a posting only
+  when one actual office exactly matches the configured scope.
 - A list item carries only `title`, `externalPath`, `locationsText`,
   `postedOn`, and `bulletFields`: no department, no edited-at timestamp, no
   compensation. So `department`/`updated_at` stay "" and `salary` stays None,
@@ -129,6 +138,7 @@ def fetch_workday_jobs(
     firm: str,
     company_type: str,
     *,
+    location_scope: str | None = None,
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch every open job posted on one company's Workday careers site.
@@ -136,11 +146,17 @@ def fetch_workday_jobs(
     `token` is "<tenant>.<wdN>/<site>" (e.g. "visa.wd5/Visa" for
     visa.wd5.myworkdayjobs.com/Visa); `firm` and `company_type` (both from
     company_toml/workday_boards.toml) are stored as-is on every returned
-    Job, same as the other five clients.
+    Job, same as the other board clients.
 
-    `scraped_date` defaults to today and is stamped on every Job returned --
-    it's what sheets.writer prunes on later. A relative "Posted N Days Ago"
-    is counted back from Workday's own date instead (see _workday_today).
+    `location_scope`, when set, uses that place as Workday's full-text search
+    and then strictly keeps only postings whose normalized location includes
+    it. The second check is required because Workday search also matches job
+    descriptions and can return other countries. This lets an unusually
+    large global board be configured as Singapore-only without fetching all
+    of it. `scraped_date` defaults to today and is stamped on every Job
+    returned -- it's what sheets.writer prunes on later. A relative "Posted
+    N Days Ago" is counted back from Workday's own date instead (see
+    _workday_today).
     """
     if scraped_date is None:
         scraped_date = datetime.date.today()
@@ -151,7 +167,7 @@ def fetch_workday_jobs(
         token,
         f"{api}/jobs",
         method="POST",
-        body={"appliedFacets": {}, "searchText": ""},
+        body={"appliedFacets": {}, "searchText": location_scope or ""},
         cursor_param="offset",
         page_size_param="limit",
         page_size=_PAGE_SIZE,
@@ -205,6 +221,12 @@ def fetch_workday_jobs(
             jobs[index] = _with_detail(jobs[index], info)
     jobs = [job for index, job in enumerate(jobs) if index not in dropped]
 
+    outside_scope = 0
+    if location_scope:
+        unscoped_count = len(jobs)
+        jobs = [job for job in jobs if _location_in_scope(job.location, location_scope)]
+        outside_scope = unscoped_count - len(jobs)
+
     if skipped:
         logger.warning(
             "workday[%s]: skipped %d job(s) missing or duplicating an "
@@ -212,15 +234,31 @@ def fetch_workday_jobs(
             token,
             skipped,
         )
+    scope_summary = (
+        f", {outside_scope} outside {location_scope!r} scope"
+        if location_scope
+        else ""
+    )
     logger.info(
-        "workday[%s]: fetched %d jobs (%d detail lookup(s), %d failed)",
+        "workday[%s]: fetched %d jobs (%d detail lookup(s), %d failed%s)",
         token,
         len(jobs),
         len(needs_detail),
         len(dropped),
+        scope_summary,
     )
 
     return jobs
+
+
+def _location_in_scope(location: str, scope: str) -> bool:
+    """Whether one normalized office in `location` exactly matches `scope`."""
+    normalized_scope = normalize_location(scope).casefold()
+    return any(
+        office.strip().casefold() == normalized_scope
+        for office in location.split("|")
+        if office.strip()
+    )
 
 
 def _fetch_details(token: str, api: str, paths: list[str]) -> dict[str, dict | None]:

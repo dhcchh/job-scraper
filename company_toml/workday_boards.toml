@@ -9,3 +9,45 @@ company_type = "Fintech"
 token = "mastercard.wd1/CorporateCareers"
 firm = "Mastercard"
 company_type = "Fintech"
+
+[[boards]]
+token = "paypal.wd1/jobs"
+firm = "PayPal"
+company_type = "Fintech"
+
+[[boards]]
+token = "tencent.wd1/Tencent_Careers"
+firm = "Tencent"
+company_type = "Consumer Comms/Social"
+
+[[boards]]
+token = "nvidia.wd5/NVIDIAExternalCareerSite"
+firm = "NVIDIA"
+company_type = "Data/Cloud Infrastructure"
+location_scope = "Singapore"
+
+[[boards]]
+token = "salesforce.wd12/External_Career_Site"
+firm = "Salesforce"
+company_type = "Enterprise/Productivity Software"
+location_scope = "Singapore"
+
+[[boards]]
+token = "blackrock.wd1/BlackRock_Professional"
+firm = "BlackRock"
+company_type = "Banking/Asset Management"
+
+[[boards]]
+token = "barclays.wd3/External_Career_Site_Barclays"
+firm = "Barclays"
+company_type = "Banking/Asset Management"
+
+[[boards]]
+token = "gunvor.wd3/Gunvor_Careers"
+firm = "Gunvor"
+company_type = "Commodities Trading"
+
+[[boards]]
+token = "trafigura.wd3/trafiguracareersite"
+firm = "Trafigura"
+company_type = "Commodities Trading"

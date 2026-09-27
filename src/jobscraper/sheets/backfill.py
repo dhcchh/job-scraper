@@ -302,19 +302,24 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
     files.
     """
     overrides: dict[tuple[str, str], Job] = {}
-    for board_list, fetch in (
-        (config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),
-        (config.LEVER_BOARDS, fetch_lever_jobs),
-        (config.ASHBY_BOARDS, fetch_ashby_jobs),
-        (config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
-        (config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
-        (config.WORKDAY_BOARDS, fetch_workday_jobs),
-        (config.RECRUITEE_BOARDS, fetch_recruitee_jobs),
+    for source, board_list, fetch in (
+        ("greenhouse", config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),
+        ("lever", config.LEVER_BOARDS, fetch_lever_jobs),
+        ("ashby", config.ASHBY_BOARDS, fetch_ashby_jobs),
+        ("smartrecruiters", config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
+        ("eightfold", config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
+        ("workday", config.WORKDAY_BOARDS, fetch_workday_jobs),
+        ("recruitee", config.RECRUITEE_BOARDS, fetch_recruitee_jobs),
     ):
         for board in board_list:
             firm = board["firm"]
             try:
-                jobs = fetch(board["token"], firm, board["company_type"])
+                kwargs = (
+                    {"location_scope": board["location_scope"]}
+                    if source == "workday" and board.get("location_scope")
+                    else {}
+                )
+                jobs = fetch(board["token"], firm, board["company_type"], **kwargs)
             except Exception:
                 logger.warning(
                     "refresh: couldn't re-fetch %s for location/first_published"

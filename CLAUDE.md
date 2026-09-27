@@ -80,12 +80,15 @@ use a small fake `Worksheet`.
   `_load_boards` validates every `[[boards]]` entry has `token`, `firm`, and
   `company_type` at import time, raising `ValueError` naming the offending
   entry and field(s) rather than letting a typo surface as a `KeyError` deep
-  in `main.py`'s fetch loop. All seven board types need only that same
+  in `main.py`'s fetch loop. All seven board types need that same required
   `token`/`firm`/`company_type` shape -- Eightfold's `token` is its own
   subdomain (`<token>.eightfold.ai`), same idea as Lever's/Ashby's slug; see
   `job_boards/eightfold/client.py`. Workday's packs the three per-company
   pieces of its careers-site URL into one `"<tenant>.<wdN>/<site>"` string
-  (e.g. `"visa.wd5/Visa"`); see `job_boards/workday/client.py`.
+  (e.g. `"visa.wd5/Visa"`). A Workday entry may additionally set
+  `location_scope = "Singapore"` to search and then strictly retain only
+  postings with a normalized Singapore office; see
+  `job_boards/workday/client.py`.
   Recruitee's is the company's `<token>.recruitee.com` subdomain, like
   Eightfold's.
 - `Job` in `models.py` is the shared data shape. Keep `FIELDS`,

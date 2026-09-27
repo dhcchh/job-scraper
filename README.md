@@ -237,8 +237,8 @@ See `CLAUDE.md` for design rationale and edge-case invariants.
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~93 boards (56
-Greenhouse, 6 Lever, 24 Ashby, 3 SmartRecruiters, 1 Eightfold, 2 Workday,
+Google Sheet as the datastore — works fine at today's ~109 boards (61
+Greenhouse, 6 Lever, 27 Ashby, 3 SmartRecruiters, 1 Eightfold, 10 Workday,
 1 Recruitee). Realistic
 ceiling: **somewhere around 2,000-5,000 companies**, not the 10,000+ the
 raw minutes math alone would suggest:
@@ -346,7 +346,11 @@ company_type = "Fintech"  # free-form label, no fixed list
 
 Workday's API isn't documented either, and the `wdN` data-center number
 varies per company (Visa is `wd5`, Mastercard `wd1`), so take the token
-from the company's real careers-site URL rather than guessing it.
+from the company's real careers-site URL rather than guessing it. An
+unusually large global board can also set `location_scope = "Singapore"`:
+the client uses that as Workday's search text to avoid fetching the whole
+board, then strictly discards full-text false positives whose normalized
+offices do not actually include Singapore.
 
 ```toml
 # company_toml/recruitee_boards.toml
