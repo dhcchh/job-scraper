@@ -153,7 +153,7 @@ def test_unresolved_offices_accepts_known_country_parts(location):
 @pytest.mark.parametrize(
     "location",
     [
-        "Melbourne",  # a PAC city the lookup table doesn't know yet
+        "Hobart",  # a PAC city the lookup table doesn't know
         "Japan-Osaka",
         "Seoul, Korea",
         "Pune, Gera Commerzone SEZ",  # a building where the country should be
@@ -166,5 +166,5 @@ def test_unresolved_offices_reports_hidden_countries(location):
 
 
 def test_unresolved_offices_returns_only_the_unresolved_offices():
-    location = "London, United Kingdom | Melbourne | Japan-Osaka"
-    assert unresolved_offices(location) == ["Melbourne", "Japan-Osaka"]
+    location = "London, United Kingdom | Hobart | Japan-Osaka"
+    assert unresolved_offices(location) == ["Hobart", "Japan-Osaka"]

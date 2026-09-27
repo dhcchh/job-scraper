@@ -72,6 +72,22 @@ def _job(title, department=""):
         ("Forward Deployed Software Engineer", "SWE/DE"),
         ("Forward Deployed AI Engineer", "DS/ML/Algos"),
         ("Forward Deployed Infrastructure Engineer - UK Government", "SRE/DevOps"),
+        # Surfaced by the run summary's unmatched-titles report (2026-09-27):
+        # all were noise before.
+        ("Software Engineering Internship (C++ or Python) - Summer 2027", "SWE/DE"),
+        ("Director, Software Engineering", "SWE/DE"),
+        ("Intern, Software Development Engineer [PSET-Access-ENG]", "SWE/DE"),
+        ("Sr SW Engineer", "SWE/DE"),
+        ("Staff Fullstack Engineer, User Auth Experience", "SWE/DE"),
+        ("Android Engineer, Terminal", "SWE/DE"),
+        ("iOS Engineer, Government Products", "SWE/DE"),
+        ("Senior Java Engineer", "SWE/DE"),
+        ("Python Engineer | Python Performance", "SWE/DE"),
+        ("Cybersecurity Engineer", "SWE/DE"),
+        ("Team Lead, Data Engineering", "SWE/DE"),
+        ("Forward-Deployed Engineer", "SWE/DE"),
+        ("Manager, Forward Deployed Engineering", "SWE/DE"),
+        ("Data Science Intern", "DS/ML/Algos"),
     ],
 )
 def test_classify_job_routes_to_expected_category(title, expected):

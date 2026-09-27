@@ -134,11 +134,12 @@ def unresolved_offices(location: str) -> list[str]:
     Such an office falls through to RoW and can't be excluded, which is
     right only if it isn't really in a PAC or excluded country.
     """
-    return [
-        office
-        for office in _offices(location)
-        if _country_of(office) not in _KNOWN_COUNTRY_PARTS
-    ]
+    return [office for office in _offices(location) if not names_a_country(office)]
+
+
+def names_a_country(place: str) -> bool:
+    """Whether a place's country part is a known country, state or area."""
+    return _country_of(place) in _KNOWN_COUNTRY_PARTS
 
 
 def _country_of(place: str) -> str:

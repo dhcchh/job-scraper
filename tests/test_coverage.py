@@ -18,14 +18,14 @@ def _job(firm, title="Software Engineer", location="Singapore"):
 
 def test_unresolved_locations_counts_postings_and_firms_per_office():
     jobs = [
-        _job("Beta", location="Melbourne"),
-        _job("Acme", location="Melbourne | London, United Kingdom"),
-        _job("Acme", location="Melbourne"),
+        _job("Beta", location="Knutsford"),
+        _job("Acme", location="Knutsford | London, United Kingdom"),
+        _job("Acme", location="Knutsford"),
         _job("Acme", location="Singapore"),
     ]
 
     assert unresolved_locations(jobs) == [
-        Gap("Melbourne", 3, ("Acme", "Beta"), example="Software Engineer (Beta)")
+        Gap("Knutsford", 3, ("Acme", "Beta"), example="Software Engineer (Beta)")
     ]
 
 

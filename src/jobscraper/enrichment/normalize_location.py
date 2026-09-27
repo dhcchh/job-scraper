@@ -2,6 +2,8 @@
 
 import re
 
+from jobscraper.enrichment.classify_region import names_a_country
+
 _OFFICE_SUFFIX_RE = re.compile(r"\s+office$", re.IGNORECASE)
 
 _REMOTE_PREFIX_RE = re.compile(r"^remote\s*-\s*", re.IGNORECASE)
@@ -48,7 +50,19 @@ _ALPHA3_COUNTRIES = {
 _SITE_COUNTRIES = {
     **{country.casefold(): country for country in _ALPHA3_COUNTRIES.values()},
     "korea": "South Korea",
+    "s.korea": "South Korea",
 }
+# Only PAC and excluded codes: a "<code>-<place>" prefix matters for routing
+# only there, and "US-CA-..."/"CA-ON-..." would make a wider list ambiguous.
+_ALPHA2_COUNTRIES = {
+    "SG": "Singapore", "HK": "Hong Kong", "AU": "Australia", "JP": "Japan",
+    "KR": "South Korea", "CN": "China", "TW": "Taiwan", "NZ": "New Zealand",
+    "TH": "Thailand",
+    "IN": "India", "VN": "Vietnam", "MY": "Malaysia", "ID": "Indonesia",
+    "AM": "Armenia", "UY": "Uruguay",
+}
+_COUNTRY_PREFIX_RE = re.compile(r"^([^-]+?)\s*-\s*(.+)$")
+_HYPHEN_SPLIT_RE = re.compile(r"\s*-\s*")
 _TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)$")
 
 _CANONICAL_LOCATIONS: dict[str, str] = {
@@ -173,6 +187,20 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "petaling jaya": "Petaling Jaya, Malaysia",
     "johor bahru": "Johor Bahru, Malaysia",
     "kuala lumpur": "Kuala Lumpur, Malaysia",
+    "melbourne": "Melbourne, Australia",
+    "brisbane": "Brisbane, Australia",
+    "adelaide": "Adelaide, Australia",
+    "perth": "Perth, Australia",
+    "canberra": "Canberra, Australia",
+    "auckland": "Auckland, New Zealand",
+    "wellington": "Wellington, New Zealand",
+    "osaka": "Osaka, Japan",
+    "korea": "South Korea",
+    "seoul, korea": "Seoul, South Korea",
+    "gurugram": "Gurugram, India",
+    "new delhi": "New Delhi, India",
+    "pune": "Pune, India",
+    "chennai": "Chennai, India",
     "jakarta": "Jakarta, Indonesia",
     "bandung": "Bandung, Indonesia",
     "medan": "Medan, Indonesia",
@@ -266,11 +294,47 @@ def _region_site_location(rest: str) -> str | None:
     country = _SITE_COUNTRIES.get(country_part.casefold())
     if country is None:
         return None
+    return _place_in(country, parts) or country
+
+
+def _country_prefix_location(raw: str) -> str | None:
+    """Normalize "<Country or code>-<City>[-<Site>]", e.g. "Japan-Osaka",
+    "IN-Bangalore-MSO", "AU-NSW - Sydney - The Brewery"."""
+    compact = _HYPHEN_SPLIT_RE.sub("-", raw).lower()
+    if raw.lower() in _CANONICAL_LOCATIONS or compact in _CANONICAL_LOCATIONS:
+        return None  # an explicit entry ("cn-shenzhen") wins
+    match = _COUNTRY_PREFIX_RE.match(raw)
+    if not match:
+        return None
+    prefix = match.group(1).strip()
+    country = _ALPHA2_COUNTRIES.get(prefix) or _SITE_COUNTRIES.get(prefix.casefold())
+    if country is None:
+        return None
+    parts = [part for part in _HYPHEN_SPLIT_RE.split(match.group(2)) if part]
+    return _place_in(country, parts) or _alpha3_location(country, parts[0])
+
+
+def _place_in(country: str, parts: list[str]) -> str | None:
+    """Return the first part that resolves to a place inside `country`."""
     for part in parts:
         normalized = normalize_location(part)
         if normalized == country or normalized.endswith(f", {country}"):
             return normalized
-    return country
+    return None
+
+
+def _leading_city_location(cleaned: str) -> str | None:
+    """Normalize "<Known city>, <building or street>", e.g. "Pune, Gera
+    Commerzone SEZ". Skipped when the rest names a country or state ("Melbourne,
+    FL" stays American) or another known place ("Jersey, Montreal, Warsaw" is
+    free-text list, not a building)."""
+    city, _, rest = cleaned.partition(",")
+    if not rest.strip() or names_a_country(rest):
+        return None
+    if any(part.strip().lower() in _CANONICAL_LOCATIONS for part in rest.split(",")):
+        return None
+    location = _CANONICAL_LOCATIONS.get(city.strip().lower())
+    return location if location != "Remote" else None
 
 
 def normalize_location(raw: str) -> str:
@@ -286,6 +350,9 @@ def normalize_location(raw: str) -> str:
         location = _region_site_location(region_site.group(1))
         if location:
             return location
+    location = _country_prefix_location(raw.strip())
+    if location:
+        return location
     cleaned = _OFFICE_SUFFIX_RE.sub("", raw.strip()).strip()
     cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _OFFICE_CODE_SUFFIX_RE.sub("", cleaned).strip()
@@ -300,7 +367,8 @@ def normalize_location(raw: str) -> str:
     cleaned = _WORK_MODE_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _BUILDING_SUFFIX_RE.sub(r"\1", cleaned).strip()
     cleaned = _DUPLICATE_NAME_RE.sub(r"\1", cleaned).strip()
-    return _CANONICAL_LOCATIONS.get(cleaned.lower(), cleaned)
+    canonical = _CANONICAL_LOCATIONS.get(cleaned.lower())
+    return canonical or _leading_city_location(cleaned) or cleaned
 
 
 def normalize_locations(locations: list[str | None]) -> str:

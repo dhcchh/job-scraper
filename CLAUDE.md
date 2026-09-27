@@ -400,7 +400,24 @@ use a small fake `Worksheet`.
   detail entries are site names like `"APAC - Korea - Seoul - ASEM
   Tower"`: when the segment after the region is a country in
   `_SITE_COUNTRIES`, they resolve to the first later segment that maps to a
-  known location in that country, else just the country. The lookup
+  known location in that country, else just the country. The same idea
+  without a region prefix, `_country_prefix_location` (seeded from Tencent,
+  Airwallex, Snowflake, and Block), reads `"Japan-Tokyo-Business Tower"`,
+  `"S.Korea-Seoul"`, `"IN-Bangalore-MSO"`, `"MY-Kuala Lumpur"`, and
+  `"AU-NSW - Sydney - The Brewery"`. The prefix must be a `_SITE_COUNTRIES`
+  name or a two-letter code in `_ALPHA2_COUNTRIES`, which lists PAC and
+  excluded codes only, so `"US-CA-Menlo Park"`/`"UK-London"` stay as they
+  are (RoW either way). An exact table entry (`"cn-shenzhen"`, spaced or
+  not) still wins, and an unmapped city is kept (`"China-Shenzhen"` ->
+  `"Shenzhen, China"`). `_leading_city_location` (seeded from Barclays'
+  Workday board) reads `"<known city>, <building or street>"` --
+  `"Pune, Gera Commerzone SEZ"`, `"Mumbai, Nirlon Knowledge Park ..."`,
+  `"Hong Kong, Cheung Kong Center"` -- as the city, unless the rest names a
+  country/state (`classify_region.names_a_country`, so `"Melbourne, FL"`
+  stays American) or another known place (`"Jersey, Montreal, Warsaw"` is a
+  free-text list, not a building). Unhandled, both formats sent PAC roles to
+  RoW and let ~180 India/Malaysia postings escape `is_excluded`; the run
+  summary's unresolved-locations report (below) is what surfaced them. The lookup
   table itself also carries whole-string entries (seeded from Millennium's
   live Eightfold board) for a "City, Region, Country" triple neither the
   bare-city nor "City, Country" conventions above cover (e.g. "Tokyo,

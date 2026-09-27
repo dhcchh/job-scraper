@@ -253,7 +253,8 @@ def test_normalize_location_keeps_iso_code_prefix_before_a_bare_city():
     # boards rely on, not the full-location prefix drop above.
     assert normalize_location("AU - Sydney") == "Sydney, Australia"
     assert normalize_location("SG - Singapore") == "Singapore"
-    assert normalize_location("SG - Remote") == "SG-Remote"
+    # Was "SG-Remote", which routed a remote Singapore role to RoW.
+    assert normalize_location("SG - Remote") == "Singapore"
 
 
 @pytest.mark.parametrize(
@@ -425,3 +426,91 @@ def test_normalize_location_maps_netflix_taipei_offices():
     # "Taipei City,Taiwan" and "Xinyi District,Taipei City,Taiwan".
     assert normalize_location("Taipei City") == "Taipei, Taiwan"
     assert normalize_location("Xinyi District") == "Taipei, Taiwan"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Tencent: "<Country>-<City>[-<Building>]".
+        ("Japan-Tokyo-Business Tower", "Tokyo, Japan"),
+        ("Japan-Osaka", "Osaka, Japan"),
+        ("S.Korea-Seoul", "Seoul, South Korea"),
+        ("China-Shenzhen", "Shenzhen, China"),  # unmapped city, kept
+        ("Malaysia-Kuala Lumpur", "Kuala Lumpur, Malaysia"),
+        ("New Zealand-Auckland", "Auckland, New Zealand"),
+        ("United Kingdom-London", "London, United Kingdom"),
+        ("India - Remote", "India"),
+        # Airwallex/Snowflake/Block: a PAC or excluded ISO code prefix.
+        ("IN-Bangalore-MSO", "Bangalore, India"),
+        ("IN-Pune", "Pune, India"),
+        ("MY-Kuala Lumpur", "Kuala Lumpur, Malaysia"),
+        ("ID-Jakarta", "Jakarta, Indonesia"),
+        ("CN-Wenzhou", "Wenzhou, China"),
+        ("CN - Shenzhen", "Shenzhen, China"),  # the "cn-shenzhen" entry still wins
+        ("AU-NSW - Sydney - The Brewery", "Sydney, Australia"),
+        ("AU-NSW - Remote", "NSW, Australia"),
+        ("MY-Malaysia-Remote", "Malaysia"),
+        ("JP-Remote", "Japan"),
+        ("TW-Taipei City", "Taipei, Taiwan"),
+    ],
+)
+def test_normalize_location_resolves_a_country_prefixed_site(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "US-CA-Menlo Park",  # a RoW code -- left alone, it routes RoW anyway
+        "UK-London",
+        "CN-Changsha",  # an explicit table entry still wins
+    ],
+)
+def test_normalize_location_leaves_other_code_prefixes_to_the_table(raw):
+    assert normalize_location(raw) == {
+        "US-CA-Menlo Park": "US-CA-Menlo Park",
+        "UK-London": "UK-London",
+        "CN-Changsha": "Changsha, China",
+    }[raw]
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Barclays: "<City>, <building>".
+        ("Pune, Gera Commerzone SEZ", "Pune, India"),
+        ("Gurugram, DLF Downtown", "Gurugram, India"),
+        ("Mumbai, Nirlon Knowledge Park (BX) 9th & 11-12 floor", "Mumbai, India"),
+        ("Hong Kong, Cheung Kong Center", "Hong Kong"),
+        ("London, Greater London", "London, United Kingdom"),
+        ("Seoul, Korea", "Seoul, South Korea"),
+        # A country or state after the comma means it isn't a building.
+        ("Melbourne, FL", "Melbourne, FL"),
+        ("Dublin, CA", "Dublin, CA"),
+        ("Perth, Scotland", "Perth, Scotland"),
+        # Nor does another known place: that's a free-text list.
+        ("Jersey, Montreal, Warsaw", "Jersey, Montreal, Warsaw"),
+    ],
+)
+def test_normalize_location_reads_a_leading_city_before_a_building(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("Melbourne", "Melbourne, Australia"),
+        ("Brisbane", "Brisbane, Australia"),
+        ("Adelaide", "Adelaide, Australia"),
+        ("Perth", "Perth, Australia"),
+        ("Canberra", "Canberra, Australia"),
+        ("Auckland", "Auckland, New Zealand"),
+        ("Wellington", "Wellington, New Zealand"),
+        ("Osaka", "Osaka, Japan"),
+        ("Korea", "South Korea"),
+        ("Gurugram", "Gurugram, India"),
+        ("New Delhi", "New Delhi, India"),
+    ],
+)
+def test_normalize_location_maps_bare_pac_and_excluded_cities(raw, expected):
+    assert normalize_location(raw) == expected
