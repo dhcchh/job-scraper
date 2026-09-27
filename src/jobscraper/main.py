@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections import Counter
 
 from jobscraper import config
 from jobscraper.enrichment.classify_region import (
@@ -23,10 +24,13 @@ from jobscraper.job_boards.fetchers import (
 from jobscraper.models import Job
 from jobscraper.sheets.supported_companies import sync_and_announce
 from jobscraper.sheets.writer import (
+    PrunePlan,
     append_jobs,
+    apply_prune,
     get_spreadsheet,
     get_worksheet,
-    prune_closed_postings,
+    held_back_prunes,
+    plan_prune,
 )
 from jobscraper.telegram import DIGEST_CATEGORIES, send_digest
 
@@ -117,19 +121,38 @@ def run() -> None:
         excluded_count,
     )
 
-    tab_stats: dict[str, tuple[int, int, int]] = {}
     newly_appended_by_tab: dict[str, list[Job]] = {}
+    prune_plans: dict[str, PrunePlan] = {}
     for category, _keywords in CATEGORIES:
         for region in REGIONS:
             tab = tab_name(category, region)
             tab_jobs = jobs_by_tab[tab]
             worksheet = get_worksheet(spreadsheet, tab)
-            appended = append_jobs(worksheet, tab_jobs)
-            pruned = prune_closed_postings(
+            newly_appended_by_tab[tab] = append_jobs(worksheet, tab_jobs)
+            prune_plans[tab] = plan_prune(
                 worksheet, tab_jobs, fetched_boards=fetched_boards
             )
-            tab_stats[tab] = (len(tab_jobs), len(appended), pruned)
-            newly_appended_by_tab[tab] = appended
+
+    # Every tab is planned before any is pruned, so the guard sees a firm's
+    # whole footprint rather than one tab's slice of it.
+    held_back: dict[str, str] = {}
+    for firm, reason in held_back_prunes(
+        prune_plans.values(),
+        fetched_counts=Counter(job.board for job in all_jobs),
+        appended_counts=Counter(
+            job.board for jobs in newly_appended_by_tab.values() for job in jobs
+        ),
+    ).items():
+        if firm in config.FORCE_PRUNE_FIRMS:
+            logger.warning("prune guard overridden for %s: %s", firm, reason)
+        else:
+            logger.warning("prune held back for %s: %s", firm, reason)
+            held_back[firm] = reason
+
+    tab_stats: dict[str, tuple[int, int, int]] = {}
+    for tab, plan in prune_plans.items():
+        pruned = apply_prune(plan, held_back)
+        tab_stats[tab] = (len(jobs_by_tab[tab]), len(newly_appended_by_tab[tab]), pruned)
 
     markdown = _build_summary_markdown(
         spreadsheet_title=spreadsheet.title,
@@ -141,6 +164,7 @@ def run() -> None:
         noise_count=noise_count,
         excluded_count=excluded_count,
         tab_stats=tab_stats,
+        held_back=held_back,
     )
     _write_job_summary(markdown)
 
@@ -152,11 +176,13 @@ def run() -> None:
         spreadsheet_url=spreadsheet.url,
     )
 
+    problems = []
     if failed_firms:
-        raise RuntimeError(
-            "scrape completed with failed board fetches: "
-            + ", ".join(sorted(failed_firms))
-        )
+        problems.append("failed board fetches: " + ", ".join(sorted(failed_firms)))
+    if held_back:
+        problems.append("prune held back for: " + ", ".join(sorted(held_back)))
+    if problems:
+        raise RuntimeError("scrape completed with " + "; ".join(problems))
 
 
 def _build_summary_markdown(
@@ -170,13 +196,16 @@ def _build_summary_markdown(
     noise_count: int,
     excluded_count: int,
     tab_stats: dict[str, tuple[int, int, int]],
+    held_back: dict[str, str] | None = None,
 ) -> str:
     """Build the GitHub Actions run summary."""
+    held_back = held_back or {}
     total_appended = sum(appended for _count, appended, _pruned in tab_stats.values())
     total_pruned = sum(pruned for _count, _appended, pruned in tab_stats.values())
 
     lines = [
-        f"## Job scraper run: {'success' if not failed_firms else 'partial failure'}",
+        "## Job scraper run: "
+        + ("partial failure" if failed_firms or held_back else "success"),
         "",
         f"Spreadsheet: [{spreadsheet_title}]({spreadsheet_url})",
         "",
@@ -185,13 +214,27 @@ def _build_summary_markdown(
         f"- Jobs fetched: {total_jobs} ({noise_count} filtered as noise, "
         f"{excluded_count} excluded by country)",
         f"- Appended: {total_appended} new row(s)",
-        f"- Pruned: {total_pruned} closed posting(s)",
+        f"- Pruned: {total_pruned} closed posting(s)"
+        + (f" -- held back for: {', '.join(sorted(held_back))}" if held_back else ""),
         "",
         "| Tab | Jobs this run | Appended | Pruned |",
         "| --- | ---: | ---: | ---: |",
     ]
     for tab, (job_count, appended, pruned) in sorted(tab_stats.items()):
         lines.append(f"| {tab} | {job_count} | {appended} | {pruned} |")
+
+    if held_back:
+        lines += [
+            "",
+            "### Prune held back",
+            "",
+            "These firms' closed-looking rows were kept: the drop looks more "
+            "like a broken fetch than real closures. If the closures are real, "
+            'rerun "Daily Scrape (Append)" with `force_prune_firms` set to the '
+            "firm name(s).",
+            "",
+        ]
+        lines += [f"- {firm}: {reason}" for firm, reason in sorted(held_back.items())]
 
     return "\n".join(lines) + "\n"
 

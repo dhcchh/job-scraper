@@ -1,7 +1,10 @@
 """Google Sheets access, formatting, append, and pruning helpers."""
 
+import dataclasses
 import json
 import logging
+from collections import Counter
+from collections.abc import Iterable, Mapping
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -15,6 +18,14 @@ logger = logging.getLogger(__name__)
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 HEADER = list(FIELDS)
+_BOARD_INDEX = HEADER.index("board")
+_JOB_ID_INDEX = HEADER.index("job_id")
+
+# A board that "succeeds" but has quietly broken (a WAF page parsed as an
+# empty list, a pagination or job_id change) looks just like a firm closing
+# most of its postings at once, so pruning that much needs a human's say-so.
+PRUNE_GUARD_MAX_FRACTION = 0.5
+PRUNE_GUARD_MIN_ROWS = 5
 
 
 def _check_expected_title(spreadsheet: gspread.Spreadsheet) -> None:
@@ -137,49 +148,101 @@ def _existing_keys(worksheet: gspread.Worksheet) -> set[tuple[str, str]]:
         return set()
 
     header, *data_rows = all_values
-    board_index = _column_index(header, "board")
-    job_id_index = _column_index(header, "job_id")
-
+    _check_header(worksheet, header)
     keys = set()
     for row in data_rows:
-        key = _row_key(row, board_index, job_id_index)
+        key = _row_key(row)
         if key is not None:
             keys.add(key)
     return keys
 
 
-def prune_closed_postings(
+@dataclasses.dataclass(frozen=True, slots=True)
+class PrunePlan:
+    """One tab's closed rows, found before any tab is pruned."""
+
+    worksheet: gspread.Worksheet
+    closed_rows: dict[str, list[int]]  # board -> 1-based data row indexes
+    tracked_counts: Counter[str]  # board -> rows in the tab, closed or not
+
+
+def plan_prune(
     worksheet: gspread.Worksheet,
     current_jobs: list[Job],
     fetched_boards: set[str],
-) -> int:
-    """Delete rows confirmed absent from successfully fetched boards."""
+) -> PrunePlan:
+    """Find rows confirmed absent from successfully fetched boards."""
+    closed_rows: dict[str, list[int]] = {}
+    tracked_counts: Counter[str] = Counter()
     all_values = worksheet.get_all_values()
     if not all_values:
-        return 0  # empty sheet -- nothing to prune, no header to preserve either
+        return PrunePlan(worksheet, closed_rows, tracked_counts)
 
     header, *data_rows = all_values
-    board_index = _column_index(header, "board")
-    job_id_index = _column_index(header, "job_id")
+    _check_header(worksheet, header)
     current_keys = {(job.board, job.job_id) for job in current_jobs}
-
-    def is_closed(row: list[str]) -> bool:
-        key = _row_key(row, board_index, job_id_index)
+    for row_index, row in enumerate(data_rows, start=1):
+        key = _row_key(row)
         if key is None:
-            return False  # can't confirm closure -- leave it alone
+            continue  # can't confirm closure -- leave it alone
         board, _job_id = key
-        return board in fetched_boards and key not in current_keys
+        tracked_counts[board] += 1
+        if board in fetched_boards and key not in current_keys:
+            closed_rows.setdefault(board, []).append(row_index)
+    return PrunePlan(worksheet, closed_rows, tracked_counts)
 
-    closed_row_indexes = [
+
+def held_back_prunes(
+    plans: Iterable[PrunePlan],
+    fetched_counts: Mapping[str, int],
+    appended_counts: Mapping[str, int],
+) -> dict[str, str]:
+    """Return firm -> reason for each firm whose prune looks like a broken fetch.
+
+    Counts are summed across every tab. Rows appended this run are left out
+    of a firm's tracked total, so a job_id format change (every old row
+    closed, every posting re-appended under a new id) still reads as 100%.
+    """
+    closed: Counter[str] = Counter()
+    tracked: Counter[str] = Counter()
+    for plan in plans:
+        for board, rows in plan.closed_rows.items():
+            closed[board] += len(rows)
+        tracked.update(plan.tracked_counts)
+
+    held_back = {}
+    for firm, closed_count in sorted(closed.items()):
+        previously_tracked = tracked[firm] - appended_counts.get(firm, 0)
+        if fetched_counts.get(firm, 0) == 0:
+            held_back[firm] = (
+                f"board returned 0 postings; would prune all {closed_count} "
+                "tracked row(s)"
+            )
+        elif (
+            closed_count >= PRUNE_GUARD_MIN_ROWS
+            and closed_count > PRUNE_GUARD_MAX_FRACTION * previously_tracked
+        ):
+            held_back[firm] = (
+                f"would prune {closed_count} of {previously_tracked} tracked row(s)"
+            )
+    return held_back
+
+
+def apply_prune(plan: PrunePlan, held_back: Iterable[str] = ()) -> int:
+    """Delete a plan's closed rows, except those of held-back firms."""
+    held_back = set(held_back)
+    closed_row_indexes = sorted(
         row_index
-        for row_index, row in enumerate(data_rows, start=1)
-        if is_closed(row)
-    ]
+        for board, row_indexes in plan.closed_rows.items()
+        if board not in held_back
+        for row_index in row_indexes
+    )
     pruned_count = len(closed_row_indexes)
     if pruned_count == 0:
         logger.info("prune: no closed postings")
         return 0
 
+    worksheet = plan.worksheet
     # Delete bottom-up so one request cannot shift a later row index.
     requests = [
         {
@@ -200,20 +263,27 @@ def prune_closed_postings(
     return pruned_count
 
 
-def _row_key(
-    row: list[str], board_index: int, job_id_index: int
-) -> tuple[str, str] | None:
+def _check_header(worksheet: gspread.Worksheet, header: list[str]) -> None:
+    """Refuse a tab whose header disagrees with this code's `FIELDS`.
+
+    Rows are written and read by position, so a tab migrated by code this
+    checkout doesn't have would get shifted rows -- the 2026-09-21 incident
+    corrupted job_id this way, and prune then deleted the corrupted rows.
+    Extra columns after `FIELDS` are left alone and tolerated.
+    """
+    if header[: len(HEADER)] != HEADER:
+        raise RuntimeError(
+            f"{worksheet.title!r}: sheet header {header!r} doesn't start with "
+            f"this code's FIELDS {HEADER!r} -- refusing to append or prune. "
+            "The sheet was likely migrated by code this checkout doesn't have "
+            "(or vice versa): push that code, or rerun sheets.backfill from a "
+            "pushed checkout."
+        )
+
+
+def _row_key(row: list[str]) -> tuple[str, str] | None:
     """Read a row's `(board, job_id)`, returning None for a short row."""
     try:
-        return (row[board_index], row[job_id_index])
+        return (row[_BOARD_INDEX], row[_JOB_ID_INDEX])
     except IndexError:
         return None
-
-
-def _column_index(header: list[str], column_name: str) -> int:
-    try:
-        return header.index(column_name)
-    except ValueError:
-        raise ValueError(
-            f"expected a {column_name!r} column in the sheet header, got {header!r}"
-        ) from None

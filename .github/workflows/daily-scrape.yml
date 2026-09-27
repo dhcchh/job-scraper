@@ -14,7 +14,15 @@ on:
     # known caveat, not something this workflow works around, so treat
     # 07:00 SGT as the earliest it starts rather than a guaranteed time.
     - cron: "0 23 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_prune_firms:
+        description: >-
+          Comma-separated firms whose held-back prune should go ahead this run
+          (only after confirming their postings really closed)
+        required: false
+        default: ""
+        type: string
 
 # Shared with full-refresh.yml: both read-then-write every tab, so they must
 # never run at the same time -- concurrent runs could both read the same
@@ -52,4 +60,6 @@ jobs:
           TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
           TELEGRAM_COMPANIES_CHAT_ID: ${{ secrets.TELEGRAM_COMPANIES_CHAT_ID }}
           TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
+          # Empty on schedule/push runs, which have no inputs.
+          FORCE_PRUNE_FIRMS: ${{ inputs.force_prune_firms }}
         run: uv run python -m jobscraper.main

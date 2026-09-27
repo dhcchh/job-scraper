@@ -3,8 +3,8 @@ logging, and end-of-run job summary.
 
 fetch_greenhouse_jobs/fetch_lever_jobs/fetch_ashby_jobs/
 fetch_smartrecruiters_jobs/fetch_eightfold_jobs, get_spreadsheet,
-get_worksheet, append_jobs and
-prune_closed_postings are all monkeypatched here -- this exercises only
+get_worksheet, append_jobs, plan_prune and
+apply_prune are all monkeypatched here -- this exercises only
 run()'s own orchestration (which boards it treats as "fetched" for pruning
 purposes), not gspread or the network. GITHUB_STEP_SUMMARY is explicitly
 unset in _patch_sheet_functions so these orchestration tests can't
@@ -24,11 +24,13 @@ capture what main.run() actually passed send_digest.
 """
 
 import datetime
+from collections import Counter
 
 import pytest
 
 from jobscraper import main
 from jobscraper.models import Job
+from jobscraper.sheets.writer import PrunePlan
 
 
 def _job(firm, job_id, title="Software Engineer", location="Remote"):
@@ -71,12 +73,14 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
             append_calls.append((worksheet, jobs))
         return jobs  # simulate every job as newly appended
 
-    def fake_prune_closed_postings(worksheet, jobs, fetched_boards):
+    def fake_plan_prune(worksheet, jobs, fetched_boards):
         prune_calls.append(fetched_boards)
-        return 0
+        return PrunePlan(worksheet, {}, Counter())
 
     monkeypatch.setattr(main, "append_jobs", fake_append_jobs)
-    monkeypatch.setattr(main, "prune_closed_postings", fake_prune_closed_postings)
+    monkeypatch.setattr(main, "plan_prune", fake_plan_prune)
+    monkeypatch.setattr(main, "apply_prune", lambda plan, held_back: 0)
+    monkeypatch.setattr(main.config, "FORCE_PRUNE_FIRMS", frozenset())
 
 
 def test_run_syncs_supported_companies_before_fetching_jobs(monkeypatch):
@@ -602,6 +606,70 @@ def test_run_completes_when_every_board_fails(monkeypatch):
     assert all(fetched_boards == set() for fetched_boards in prune_calls)
 
 
+def _patch_stale_rows(monkeypatch, firm, row_count):
+    """Give `firm` row_count tracked rows on one tab, none of them still open,
+    and capture what apply_prune was told to hold back."""
+
+    def fake_plan_prune(worksheet, jobs, fetched_boards):
+        if worksheet != "SWE/DE - RoW" or firm not in fetched_boards:
+            return PrunePlan(worksheet, {}, Counter())
+        return PrunePlan(
+            worksheet, {firm: list(range(1, row_count + 1))}, Counter({firm: row_count})
+        )
+
+    apply_calls = []
+
+    def fake_apply_prune(plan, held_back):
+        apply_calls.append((plan.worksheet, dict(held_back)))
+        return sum(
+            len(rows) for board, rows in plan.closed_rows.items() if board not in held_back
+        )
+
+    monkeypatch.setattr(main, "plan_prune", fake_plan_prune)
+    monkeypatch.setattr(main, "apply_prune", fake_apply_prune)
+    return apply_calls
+
+
+def test_run_holds_back_prune_for_a_board_that_returned_nothing(monkeypatch, tmp_path):
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    apply_calls = _patch_stale_rows(monkeypatch, "Acme", 12)
+    summary_path = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_path))
+
+    with pytest.raises(RuntimeError, match="prune held back for: Acme"):
+        main.run()
+
+    assert apply_calls  # every tab still gets its (possibly empty) prune
+    assert all("Acme" in held_back for _worksheet, held_back in apply_calls)
+    content = summary_path.read_text()
+    assert "Job scraper run: partial failure" in content
+    assert "Pruned: 0 closed posting(s) -- held back for: Acme" in content
+    assert (
+        "- Acme: board returned 0 postings; would prune all 12 tracked row(s)"
+        in content
+    )
+
+
+def test_run_prunes_a_held_back_firm_when_forced(monkeypatch):
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    apply_calls = _patch_stale_rows(monkeypatch, "Acme", 12)
+    monkeypatch.setattr(main.config, "FORCE_PRUNE_FIRMS", frozenset({"Acme"}))
+
+    main.run()  # no held-back prune left to fail on
+
+    assert all(held_back == {} for _worksheet, held_back in apply_calls)
+
+
 def test_run_logs_spreadsheet_identity_at_startup(monkeypatch, caplog):
     # Guards against a GOOGLE_SHEET_ID that's drifted between .env and the
     # CI secret -- the log line is the only way such a mismatch becomes
@@ -700,6 +768,27 @@ def test_build_summary_markdown_reports_failure_and_per_tab_counts():
     assert "Pruned: 1 closed posting(s)" in markdown
     assert "| SWE/DE - PAC | 2 | 1 | 0 |" in markdown
     assert "| SWE/DE - RoW | 5 | 4 | 1 |" in markdown
+
+
+def test_build_summary_markdown_lists_held_back_prunes():
+    markdown = main._build_summary_markdown(
+        spreadsheet_title="Test Sheet",
+        spreadsheet_url="https://example.com/sheet",
+        succeeded_firms={"GoodCo"},
+        failed_firms=set(),
+        total_boards=1,
+        total_jobs=1,
+        noise_count=0,
+        excluded_count=0,
+        tab_stats={"SWE/DE - PAC": (1, 0, 0)},
+        held_back={"GoodCo": "would prune 9 of 10 tracked row(s)"},
+    )
+
+    assert "## Job scraper run: partial failure" in markdown
+    assert "Pruned: 0 closed posting(s) -- held back for: GoodCo" in markdown
+    assert "### Prune held back" in markdown
+    assert "`force_prune_firms`" in markdown
+    assert "- GoodCo: would prune 9 of 10 tracked row(s)" in markdown
 
 
 def test_build_summary_markdown_reports_success_when_nothing_failed():

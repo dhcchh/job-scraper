@@ -33,7 +33,10 @@ read that corrupted `job_id`, concluded the posting had closed, and silently
 deleted nearly every row appended that same run -- every day, for two days,
 with the workflow still reporting success each time. Running these commands
 only from a clean, pushed checkout is what keeps local and CI-scheduled
-behavior identical.
+behavior identical. `sheets/writer.py` now backstops this: `append_jobs`
+and `plan_prune` raise on a tab whose header doesn't start with `FIELDS`
+(`_check_header`), so a drifted run fails loudly instead of corrupting
+rows -- but CI then stays red until the code is pushed, so the rule stands.
 
 There is no formatter or linter. Tests never use the network or live Google
 or Telegram credentials: `tests/conftest.py` forces `GOOGLE_SHEET_ID`/
@@ -476,7 +479,18 @@ use a small fake `Worksheet`.
   boards fetched successfully (and all tokens for a multi-token firm).
   Pruning uses an atomic Sheets batch of row deletions, but concurrent writers
   can still duplicate appends. Use `USER_ENTERED` values so Sheets preserves
-  dates and linkifies URLs.
+  dates and linkifies URLs. Pruning is two steps: `main.py` runs
+  `plan_prune` on every tab (after that tab's append) before `apply_prune`
+  deletes anything, so `held_back_prunes` can judge each firm across all
+  ten tabs. It holds back a firm whose board fetched without error but
+  returned 0 postings (noise included), or whose prune would remove at
+  least `PRUNE_GUARD_MIN_ROWS` rows and more than half of the rows it had
+  before this run (rows appended this run don't count, so a `job_id` format
+  change reads as 100%, not 50%). Either looks like a quietly broken fetch
+  (a WAF page, a changed API shape) rather than real closures. A held-back
+  firm's rows are kept, listed in the job summary, and fail the run like a
+  failed fetch. If the closures are real, rerun "Daily Scrape (Append)"
+  with its `force_prune_firms` input (`FORCE_PRUNE_FIRMS` in `config.py`).
 - Each job tab has a conditional formatting rule
   (`=AND(ISNUMBER($A2), $A2>=TODAY()-7)`) highlighting columns A–K green when
   `first_published` falls within the past 7 days. Like all sheet formatting, it

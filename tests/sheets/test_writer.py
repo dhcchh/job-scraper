@@ -6,6 +6,7 @@ any real network call or credential.
 """
 
 import datetime
+from collections import Counter
 
 import pytest
 
@@ -14,6 +15,8 @@ from jobscraper.sheets import writer
 
 
 class _FakeWorksheet:
+    title = "SWE/DE - PAC"
+
     def __init__(self, rows=None):
         self._rows = rows or []
         self.appended = None
@@ -119,8 +122,46 @@ def test_append_jobs_same_job_id_different_board_is_not_a_duplicate():
     assert worksheet.appended == [job.to_row()]
 
 
+def test_append_jobs_refuses_a_reordered_header():
+    # The 2026-09-21 incident: the sheet's header was migrated by unpushed
+    # code, so CI appended rows shifted against it.
+    header = list(reversed(writer.HEADER))
+    worksheet = _FakeWorksheet([header, _row("acme", "1", "2026-09-01")])
+    job = Job("acme", "2", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
+
+    with pytest.raises(RuntimeError, match="refusing to append or prune"):
+        writer.append_jobs(worksheet, [job])
+
+    assert worksheet.appended is None
+
+
+def test_append_jobs_refuses_a_header_missing_a_field():
+    worksheet = _FakeWorksheet([writer.HEADER[:-1]])
+    job = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
+
+    with pytest.raises(RuntimeError, match="SWE/DE - PAC"):
+        writer.append_jobs(worksheet, [job])
+
+    assert worksheet.appended is None
+
+
+def test_append_jobs_tolerates_extra_columns_after_fields():
+    header = writer.HEADER + ["notes", ""]
+    worksheet = _FakeWorksheet([header, _row("acme", "1", "2026-09-01") + ["x", ""]])
+    job = Job("acme", "2", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
+
+    writer.append_jobs(worksheet, [job])
+
+    assert worksheet.appended == [job.to_row()]
+
+
 def _job(board, job_id):
     return Job(board, job_id, "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
+
+
+def _prune(worksheet, current_jobs, fetched_boards, held_back=()):
+    plan = writer.plan_prune(worksheet, current_jobs, fetched_boards)
+    return writer.apply_prune(plan, held_back)
 
 
 def test_prune_removes_postings_missing_from_current_fetch():
@@ -133,7 +174,7 @@ def test_prune_removes_postings_missing_from_current_fetch():
     worksheet = _FakeWorksheet(rows)
     current_jobs = [_job("acme", "2"), _job("acme", "3")]
 
-    pruned = writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
+    pruned = _prune(worksheet, current_jobs, fetched_boards={"acme"})
 
     assert worksheet.updated_with is None
     assert worksheet.client.batch_update_calls == [
@@ -163,7 +204,7 @@ def test_prune_noop_when_nothing_closed():
     worksheet = _FakeWorksheet(rows)
     current_jobs = [_job("acme", "1")]
 
-    pruned = writer.prune_closed_postings(worksheet, current_jobs, fetched_boards={"acme"})
+    pruned = _prune(worksheet, current_jobs, fetched_boards={"acme"})
 
     assert worksheet.client.batch_update_calls == []
     assert pruned == 0
@@ -175,7 +216,7 @@ def test_prune_leaves_unfetched_board_rows_alone():
     rows = [writer.HEADER, _row("beta", "1", "2026-01-01")]
     worksheet = _FakeWorksheet(rows)
 
-    writer.prune_closed_postings(worksheet, current_jobs=[], fetched_boards={"acme"})
+    _prune(worksheet, current_jobs=[], fetched_boards={"acme"})
 
     assert worksheet.client.batch_update_calls == []
 
@@ -186,7 +227,7 @@ def test_prune_a_board_with_zero_current_postings_removes_all_its_rows():
     rows = [writer.HEADER, _row("acme", "1", "2026-01-01")]
     worksheet = _FakeWorksheet(rows)
 
-    writer.prune_closed_postings(worksheet, current_jobs=[], fetched_boards={"acme"})
+    _prune(worksheet, current_jobs=[], fetched_boards={"acme"})
 
     assert worksheet.client.batch_update_calls == [
         (
@@ -218,7 +259,7 @@ def test_prune_deletes_multiple_rows_from_bottom_to_top():
     ]
     worksheet = _FakeWorksheet(rows)
 
-    writer.prune_closed_postings(
+    _prune(
         worksheet, current_jobs=[_job("acme", "3")], fetched_boards={"acme"}
     )
 
@@ -231,14 +272,118 @@ def test_prune_deletes_multiple_rows_from_bottom_to_top():
     ]
 
 
-def test_prune_missing_board_column_raises():
-    worksheet = _FakeWorksheet([["job_id"]])
-    with pytest.raises(ValueError):
-        writer.prune_closed_postings(worksheet, current_jobs=[], fetched_boards=set())
+def test_prune_refuses_a_mismatched_header():
+    worksheet = _FakeWorksheet([["job_id"], ["1"]])
+    with pytest.raises(RuntimeError, match="refusing to append or prune"):
+        _prune(worksheet, current_jobs=[], fetched_boards={"acme"})
+    assert worksheet.client.batch_update_calls == []
 
 
 def test_row_key_tolerates_malformed_row():
-    assert writer._row_key(["a"], board_index=0, job_id_index=5) is None
+    assert writer._row_key(["a"]) is None
+
+
+def test_plan_prune_counts_every_tracked_row_per_board():
+    rows = [
+        writer.HEADER,
+        _row("acme", "1", "2026-07-01"),  # closed
+        _row("acme", "2", "2026-08-20"),  # still open
+        _row("beta", "1", "2026-01-01"),  # beta not fetched -- never closed
+    ]
+    worksheet = _FakeWorksheet(rows)
+
+    plan = writer.plan_prune(worksheet, [_job("acme", "2")], fetched_boards={"acme"})
+
+    assert plan.closed_rows == {"acme": [1]}
+    assert plan.tracked_counts == {"acme": 2, "beta": 1}
+    assert worksheet.client.batch_update_calls == []  # planning never deletes
+
+
+def test_apply_prune_keeps_held_back_firms_rows():
+    rows = [
+        writer.HEADER,
+        _row("acme", "1", "2026-07-01"),
+        _row("beta", "1", "2026-07-01"),
+        _row("acme", "2", "2026-07-01"),
+    ]
+    worksheet = _FakeWorksheet(rows)
+
+    pruned = _prune(
+        worksheet, current_jobs=[], fetched_boards={"acme", "beta"}, held_back={"acme"}
+    )
+
+    assert pruned == 1
+    (_spreadsheet_id, body), = worksheet.client.batch_update_calls
+    ranges = [request["deleteDimension"]["range"] for request in body["requests"]]
+    assert ranges == [
+        {"sheetId": 123, "dimension": "ROWS", "startIndex": 2, "endIndex": 3}
+    ]
+
+
+def test_apply_prune_noop_when_every_closed_row_is_held_back():
+    worksheet = _FakeWorksheet([writer.HEADER, _row("acme", "1", "2026-07-01")])
+
+    pruned = _prune(worksheet, current_jobs=[], fetched_boards={"acme"}, held_back={"acme"})
+
+    assert pruned == 0
+    assert worksheet.client.batch_update_calls == []
+
+
+def _plan(closed_rows, tracked_counts):
+    return writer.PrunePlan(_FakeWorksheet(), closed_rows, Counter(tracked_counts))
+
+
+def test_held_back_prunes_holds_a_firm_whose_board_returned_nothing():
+    # Even one row: a board with zero postings of any kind (noise included)
+    # is far likelier broken than empty.
+    plans = [_plan({"acme": [1]}, {"acme": 1})]
+
+    held_back = writer.held_back_prunes(plans, fetched_counts={}, appended_counts={})
+
+    assert held_back == {
+        "acme": "board returned 0 postings; would prune all 1 tracked row(s)"
+    }
+
+
+def test_held_back_prunes_holds_a_majority_drop_summed_across_tabs():
+    plans = [
+        _plan({"acme": [1, 2, 3]}, {"acme": 4}),
+        _plan({"acme": [5, 6, 7]}, {"acme": 6}),
+    ]
+
+    held_back = writer.held_back_prunes(
+        plans, fetched_counts={"acme": 40}, appended_counts={}
+    )
+
+    assert held_back == {"acme": "would prune 6 of 10 tracked row(s)"}
+
+
+def test_held_back_prunes_ignores_rows_appended_this_run():
+    # A job_id format change: all 6 old rows look closed, and the same 6
+    # postings were just appended under new ids -- still 6 of 6, not 6 of 12.
+    plans = [_plan({"acme": [1, 2, 3, 4, 5, 6]}, {"acme": 12})]
+
+    held_back = writer.held_back_prunes(
+        plans, fetched_counts={"acme": 6}, appended_counts={"acme": 6}
+    )
+
+    assert held_back == {"acme": "would prune 6 of 6 tracked row(s)"}
+
+
+def test_held_back_prunes_allows_ordinary_closures():
+    plans = [
+        _plan({"acme": [1, 2, 3, 4, 5]}, {"acme": 10}),  # exactly half
+        _plan({"beta": [1, 2, 3, 4]}, {"beta": 4}),  # all, but under the minimum
+        _plan({}, {"gamma": 3}),  # nothing closed
+    ]
+
+    held_back = writer.held_back_prunes(
+        plans,
+        fetched_counts={"acme": 20, "beta": 1, "gamma": 3},
+        appended_counts={},
+    )
+
+    assert held_back == {}
 
 
 def test_format_date_columns_calls_format_when_available():

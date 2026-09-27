@@ -207,6 +207,11 @@ src/jobscraper/
   atomic batch of row deletions so a failure leaves the sheet untouched.
   Multi-token firms are only pruned once all their tokens succeed. Row
   order is never touched, so your own sort/filter setup survives every run.
+  A firm whose board returned no postings at all, or that would lose more
+  than half its tracked rows (and at least 5) in one run, is held back
+  rather than pruned -- that looks more like a broken fetch than real
+  closures -- and fails the run so someone looks. Appending or pruning
+  also refuses any tab whose header doesn't start with `FIELDS`.
 - **Backfill**: `sheets/backfill.py` re-applies current classifiers,
   location normalization, and column order to every existing row — run it
   after changing `FIELDS`, keyword lists, the location lookup table, or
@@ -416,7 +421,12 @@ Every run makes these data changes:
 3. Appends newly discovered jobs.
 4. Removes jobs confirmed closed. A company's rows are only eligible for
    removal when every configured board fetch for that company succeeded, so
-   a failed fetch cannot make its existing jobs look closed.
+   a failed fetch cannot make its existing jobs look closed. A company whose
+   board returned no postings, or that would lose more than half its
+   tracked rows at once, is held back instead: its rows stay, the job
+   summary lists it, and the run fails. If those postings really closed,
+   rerun this workflow manually with `force_prune_firms` set to the company
+   name(s), comma-separated.
 5. Optionally sends the new-company announcement and the digest of newly
    appended PAC jobs when their Telegram destinations are configured.
 

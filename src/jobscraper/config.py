@@ -55,3 +55,14 @@ TELEGRAM_THREAD_ID: int | None = _optional_int("TELEGRAM_THREAD_ID")
 
 TELEGRAM_COMPANIES_CHAT_ID: int | None = _optional_int("TELEGRAM_COMPANIES_CHAT_ID")
 TELEGRAM_COMPANIES_THREAD_ID: int | None = _optional_int("TELEGRAM_COMPANIES_THREAD_ID")
+
+
+def _optional_set(name: str) -> frozenset[str]:
+    """Read an optional comma-separated list, ignoring blank entries."""
+    items = os.environ.get(name, "").split(",")
+    return frozenset(item.strip() for item in items if item.strip())
+
+
+# Firms whose prune guard (sheets.writer.held_back_prunes) is bypassed for
+# this run, after confirming their closures are real.
+FORCE_PRUNE_FIRMS: frozenset[str] = _optional_set("FORCE_PRUNE_FIRMS")
