@@ -374,20 +374,54 @@ Two GitHub Actions workflows. The scrape and the full refresh share
 `concurrency: { group: sheet-write, cancel-in-progress: false }` so they
 queue rather than run at the same time (both read-then-write every job tab):
 
-- **`.github/workflows/daily-scrape.yml`** ("Daily Scrape (Append)") runs
-  `jobscraper.main` whenever a board TOML change lands on `main`, at
-  `0 23 * * *` UTC (7am Singapore time, next day), and on manual
-  `workflow_dispatch`. Every run first syncs the "Supported companies" tab
-  and announces newly listed firms, then fetches all configured boards,
-  appends newly seen jobs, and prunes closed ones. Triggering the same workflow
-  for a board-config push means both the company list and that company's jobs
-  are refreshed together.
-- **`.github/workflows/full-refresh.yml`** ("Full Refresh (Rebuild)") runs
-  `jobscraper.sheets.full_refresh` on manual `workflow_dispatch` only, no
-  schedule. Recomputes every column and re-routes rows across tabs — run
-  this by hand after a classification/metadata change has piled up enough
-  stale or misplaced rows to be worth a full rebuild (see
-  `sheets/full_refresh.py`'s module docstring).
+### Daily Scrape (Append)
+
+`.github/workflows/daily-scrape.yml` runs `jobscraper.main`:
+
+- whenever a `company_toml/*_boards.toml` change lands on `main`;
+- at `0 23 * * *` UTC (7am Singapore time, next day); and
+- on manual `workflow_dispatch`.
+
+Every run makes these data changes:
+
+1. Completely rebuilds the "Supported companies" tab from the board TOML
+   files. This adds new companies, removes deleted companies, moves companies
+   whose `company_type` changed, and deduplicates firms with multiple tokens.
+2. Fetches current jobs from every configured company and classifies them
+   into the ten role/region tabs.
+3. Appends newly discovered jobs.
+4. Removes jobs confirmed closed. A company's rows are only eligible for
+   removal when every configured board fetch for that company succeeded, so
+   a failed fetch cannot make its existing jobs look closed.
+5. Optionally sends the new-company announcement and the digest of newly
+   appended PAC jobs when their Telegram destinations are configured.
+
+This workflow does **not** refresh fields on already-tracked, still-open job
+rows. Use Full Refresh when existing rows need to be recomputed.
+
+### Full Refresh (Rebuild)
+
+`.github/workflows/full-refresh.yml` runs
+`jobscraper.sheets.full_refresh` on manual `workflow_dispatch` only. It has no
+schedule.
+
+Every run makes these data changes across the ten job tabs:
+
+1. Reads every existing row, then rewrites each tab using the current header
+   and column order.
+2. Recomputes seniority, company type, board source, normalized location,
+   first-published date, salary, description, URL formulas, date formatting,
+   and filters.
+3. Reclassifies each existing job and moves it to the correct role/region tab.
+4. Removes duplicate rows found across tabs.
+5. Drops jobs located entirely in excluded countries. A job that no longer
+   matches any role category remains on its current tab instead of being
+   silently deleted.
+
+Full Refresh does **not** discover and append new jobs, prune jobs merely
+because they have closed, update the "Supported companies" tab, or send
+Telegram messages. Run it after changes to classifiers, metadata, managed
+columns, or formatting need to be applied to historical rows.
 
 Both need the same two repo secrets: `GOOGLE_SHEET_ID` and
 `GOOGLE_SERVICE_ACCOUNT_JSON`. The daily scrape optionally also uses
