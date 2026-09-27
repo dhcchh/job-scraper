@@ -1,6 +1,11 @@
 name: Daily Scrape (Append)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "company_toml/*_boards.toml"
   schedule:
     # 23:00 UTC = 07:00 Singapore time the NEXT day (UTC+8, no DST) -- so
     # this fires on the previous UTC date to land on a Singapore morning.
@@ -45,4 +50,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+          TELEGRAM_COMPANIES_CHAT_ID: ${{ secrets.TELEGRAM_COMPANIES_CHAT_ID }}
+          TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
         run: uv run python -m jobscraper.main

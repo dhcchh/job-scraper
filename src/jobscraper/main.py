@@ -21,6 +21,7 @@ from jobscraper.job_boards.fetchers import (
     fetch_workday_jobs,
 )
 from jobscraper.models import Job
+from jobscraper.sheets.supported_companies import sync_and_announce
 from jobscraper.sheets.writer import (
     append_jobs,
     get_spreadsheet,
@@ -37,6 +38,7 @@ def run() -> None:
     logger.info(
         "writing to spreadsheet %r (%s)", spreadsheet.title, spreadsheet.url
     )
+    sync_and_announce(spreadsheet)
 
     board_sources = (
         ("greenhouse", config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),

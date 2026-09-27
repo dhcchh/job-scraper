@@ -12,7 +12,8 @@ accidentally write into a real one if pytest is ever run inside a GitHub
 Actions job itself; the summary-writing tests below set it to a tmp_path
 file instead.
 
-send_digest is also mocked to a no-op by default in _patch_sheet_functions --
+sync_and_announce and send_digest are also mocked to no-ops by default in
+_patch_sheet_functions --
 belt-and-suspenders alongside conftest.py forcing TELEGRAM_BOT_TOKEN/
 TELEGRAM_CHAT_ID to "" (which already makes the real send_digest a no-op):
 a test here shouldn't depend on global env state to stay off the network,
@@ -56,6 +57,10 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main.config, "EIGHTFOLD_BOARDS", [])
     monkeypatch.setattr(main.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(main.config, "RECRUITEE_BOARDS", [])
+    # main.run() always syncs the supported-company tab before fetching jobs.
+    # Keep orchestration tests isolated from gspread and Telegram unless a
+    # test explicitly replaces this mock to inspect the call.
+    monkeypatch.setattr(main, "sync_and_announce", lambda spreadsheet: None)
     # No-op by default -- see module docstring. A test that wants to inspect
     # what main.run() passed send_digest overrides this itself, after
     # calling _patch_sheet_functions.
@@ -72,6 +77,34 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
 
     monkeypatch.setattr(main, "append_jobs", fake_append_jobs)
     monkeypatch.setattr(main, "prune_closed_postings", fake_prune_closed_postings)
+
+
+def test_run_syncs_supported_companies_before_fetching_jobs(monkeypatch):
+    spreadsheet = _FakeSpreadsheet()
+    events = []
+    monkeypatch.setattr(
+        main.config,
+        "GREENHOUSE_BOARDS",
+        [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}],
+    )
+
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+    monkeypatch.setattr(main, "get_spreadsheet", lambda: spreadsheet)
+    monkeypatch.setattr(
+        main,
+        "sync_and_announce",
+        lambda synced_spreadsheet: events.append(("sync", synced_spreadsheet)),
+    )
+    monkeypatch.setattr(
+        main,
+        "fetch_greenhouse_jobs",
+        lambda token, firm, company_type: events.append(("fetch", firm)) or [],
+    )
+
+    main.run()
+
+    assert events == [("sync", spreadsheet), ("fetch", "Acme")]
 
 
 def test_run_fails_after_updating_succeeded_boards(monkeypatch):

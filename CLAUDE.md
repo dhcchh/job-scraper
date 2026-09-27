@@ -54,21 +54,17 @@ use a small fake `Worksheet`.
 
 - Two GitHub Actions workflows write to the production sheet, sharing a
   `sheet-write` concurrency group so they queue rather than overlap (see
-  `.github/workflows/`). "Daily Scrape (Append)"
-  (`daily-scrape.yml`, cron + manual `workflow_dispatch`) runs
-  `jobscraper.main`: fetches every configured Greenhouse, Lever, Ashby,
-  SmartRecruiters, Eightfold, Workday, and Recruitee board, classifies postings into ten tabs
-  (five categories × `PAC`/`RoW`), appends jobs first seen this run, then
-  removes jobs confirmed closed. "Full Refresh (Rebuild)"
+  `.github/workflows/`). "Daily Scrape (Append)" (`daily-scrape.yml`, board
+  TOML pushes to `main` + cron + manual `workflow_dispatch`) runs
+  `jobscraper.main`. Every invocation first syncs and announces supported
+  companies, then fetches every configured Greenhouse, Lever, Ashby,
+  SmartRecruiters, Eightfold, Workday, and Recruitee board, classifies
+  postings into ten tabs (five categories × `PAC`/`RoW`), appends jobs first
+  seen this run, and removes jobs confirmed closed. This single workflow
+  updates the company reference tab and new-company job rows together without
+  a second sheet-writing workflow racing it. "Full Refresh (Rebuild)"
   (`full-refresh.yml`, manual `workflow_dispatch` only, no schedule) runs
-  `jobscraper.sheets.full_refresh` -- see its own bullet below. A third,
-  "Announce New Companies" (`announce-companies.yml`, pushes to `main` that
-  change a `company_toml/*_boards.toml` file + cron 14:00 UTC = 22:00 SGT +
-  manual `workflow_dispatch`), runs
-  `jobscraper.sheets.supported_companies` and only writes the "Supported
-  companies" tab, so it has its own `announce-companies` concurrency group
-  instead -- GitHub keeps one pending run per group, so joining
-  `sheet-write` could let it replace a queued scrape.
+  `jobscraper.sheets.full_refresh` -- see its own bullet below.
 - `config.py` is the only module that reads environment variables,
   `company_toml/greenhouse_boards.toml`, `company_toml/lever_boards.toml`,
   `company_toml/ashby_boards.toml`,
@@ -534,35 +530,30 @@ use a small fake `Worksheet`.
   deliberately NOT applied here, unlike every job tab -- it sorts the whole
   range as one set of rows, which would scramble the alignment between
   unrelated categories' columns since a row here isn't a record the way a
-  job posting's row is. Unlike `backfill.py`/`full_refresh.py`, this is NOT
-  manual-only: the "Announce New Companies" workflow runs whenever a change
-  to one of the seven TOML files lands on `main`, so a newly added firm shows
-  up there -- and is announced on Telegram -- immediately after that push.
-  A daily 22:00 SGT run also reconciles any missed updates.
-  `main.py`'s `run()` deliberately does NOT sync this tab: a firm is only
-  new to whichever sync lists it first, so a 07:00 scrape syncing it would
-  consume the announcement. Safe to run unattended because it reasons about nothing but current
-  config, not job/sheet state -- the whole tab is cleared and rewritten from
-  scratch each time (so a firm or category removed from every TOML file
-  disappears too), deduplicating a multi-token firm (e.g. Optiver) down to
-  one entry. The tab is matched by name case/whitespace-insensitively and
-  created if genuinely missing, since it's user-created rather than one of
-  the ten (category, region) job tabs `main.py` otherwise assumes already
-  exist. Also runnable by hand
-  (`uv run python -m jobscraper.sheets.supported_companies`) to populate or
-  refresh it immediately without waiting for 22:00 -- which announces
-  then, not at 22:00. Before
+  job posting's row is. `main.run()` calls `sync_and_announce` immediately
+  after opening the spreadsheet and before fetching boards, so every scraper
+  invocation reconciles this tab even if a later board fetch fails. The daily
+  workflow also runs on pushes to `main` that change one of the seven board
+  TOML files, updating both this tab and job postings immediately after the
+  config change. The sync is safe to run unattended because it reasons about
+  nothing but current config, not job/sheet state -- the whole tab is cleared
+  and rewritten from scratch each time (so a firm or category removed from
+  every TOML file disappears too), deduplicating a multi-token firm (e.g.
+  Optiver) down to one entry. The tab is matched by name
+  case/whitespace-insensitively and created if genuinely missing, since it's
+  user-created rather than one of the ten (category, region) job tabs
+  `main.py` otherwise assumes already exist. Also runnable by hand
+  (`uv run python -m jobscraper.sheets.supported_companies`) to sync and
+  announce without scraping jobs. Before
   clearing, `sync_supported_companies` reads which firms the tab already
   lists and returns the configured firms it didn't (firm -> company_type)
   -- the tab's own previous contents are the only "already announced"
   record, no separate state. A tab that listed no firms at all returns `{}`
   so first-time setup doesn't announce every firm. `sync_and_announce`
-  (what the module's `__main__`, and so the workflow, runs) passes that to
-  `telegram.send_new_companies` along with the firm count, recounted from
-  config on every call rather than stored, so it never needs bumping. A
-  renamed firm reads as new under its new name. A firm pushed between the
-  07:00 scrape and 22:00 is announced before its roles are in the sheet
-  (they land at the next 07:00) unless a scrape is run in between.
+  (what `main.run()` and the module's standalone `__main__` both call) passes
+  that to `telegram.send_new_companies` along with the firm count, recounted
+  from config on every call rather than stored, so it never needs bumping. A
+  renamed firm reads as new under its new name.
 - The scraper logs the spreadsheet title/URL and writes a GitHub Actions job
   summary. Workflow-level concurrency protects Action-triggered runs; it does
   not protect a local run pointed at the production sheet.
@@ -627,8 +618,9 @@ use a small fake `Worksheet`.
   those who already have access -- sent by the same
   bot to its own `TELEGRAM_COMPANIES_CHAT_ID`/`TELEGRAM_COMPANIES_THREAD_ID`
   topic (unset chat id disables just this). Same no-op/never-raises
-  contract as `send_digest`; sent from `sheets/supported_companies.py`'s
-  `__main__` (the push-triggered/daily workflow), not from `main.py`. `--check` also sends a test message
+  contract as `send_digest`; sent from `main.run()` on every scrape and from
+  `sheets.supported_companies.py` when that module is run directly. `--check`
+  also sends a test message
   there when `TELEGRAM_COMPANIES_CHAT_ID` is set.
 
 ## Open work

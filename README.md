@@ -70,11 +70,12 @@ integration later: add its vars here too.
    `TELEGRAM_COMPANIES_THREAD_ID` too, and the same bot posts a one-off
    "N new companies added to the job tracker" message, grouped by
    `company_type`, whenever a firm is added to a `company_toml/*_boards.toml`
-   file. It goes out at 22:00 Singapore time, from the "Announce New
-   Companies" workflow, which adds new firms to the "Supported companies"
-   tab and announces the ones that tab didn't list yet (a manual
-   `sheets.supported_companies` run does the same, immediately). `--check`
-   also tests this destination when it's set.
+   file. Every `jobscraper.main` run first updates the "Supported companies"
+   tab and announces firms that tab did not list yet; CI runs it immediately
+   when a board TOML change lands on `main`, as well as on the daily schedule.
+   A manual `sheets.supported_companies` run performs the same sync and
+   announcement without scraping jobs. `--check` also tests this destination
+   when it's set.
 
 ## Architecture
 
@@ -82,7 +83,7 @@ integration later: add its vars here too.
 company_toml/                          # *_boards.toml -- checked-in board configs, not secrets
 src/jobscraper/
 ├── config.py                          # only module reading env vars / company_toml/*_boards.toml
-├── main.py                            # entrypoint: fetch → classify → append/prune, per board
+├── main.py                            # entrypoint: sync firms → fetch → classify → append/prune
 ├── models.py                          # Job dataclass, FIELDS column order, to_row/date helpers
 ├── telegram.py                        # optional per-run Telegram digest (DA/BI, DS/ML/Algos, SWE/DE, PAC only) + new-company announcement
 ├── enrichment/
@@ -100,6 +101,7 @@ src/jobscraper/
 │   └── recruitee/client.py            # Recruitee Careers Site API fetch + retry
 └── sheets/
     ├── writer.py                      # append new rows, prune closed postings
+    ├── supported_companies.py         # sync configured firms and announce additions
     ├── backfill.py                    # re-apply current classifiers to existing rows
     └── full_refresh.py                # rebuild and re-route every existing row
 ```
@@ -368,21 +370,18 @@ runs and CI, no other config changes needed.
 
 ## Cron / CI
 
-Three GitHub Actions workflows. The scrape and the full refresh share
+Two GitHub Actions workflows. The scrape and the full refresh share
 `concurrency: { group: sheet-write, cancel-in-progress: false }` so they
 queue rather than run at the same time (both read-then-write every job tab):
 
 - **`.github/workflows/daily-scrape.yml`** ("Daily Scrape (Append)") runs
-  `jobscraper.main` at `0 23 * * *` UTC (7am Singapore time, next day), plus manual
-  `workflow_dispatch`. Appends newly seen jobs and prunes closed ones —
-  the routine, incremental run.
-- **`.github/workflows/announce-companies.yml`** ("Announce New Companies")
-  runs `jobscraper.sheets.supported_companies` whenever a board TOML change
-  lands on `main`, with a `0 14 * * *` UTC (10pm Singapore time) reconciliation
-  run and manual `workflow_dispatch` as fallbacks. It syncs the "Supported
-  companies" tab from `company_toml/` and posts the Telegram new-company
-  announcement for any firm it didn't list yet. Only touches that tab, so it
-  uses its own concurrency group rather than `sheet-write`.
+  `jobscraper.main` whenever a board TOML change lands on `main`, at
+  `0 23 * * *` UTC (7am Singapore time, next day), and on manual
+  `workflow_dispatch`. Every run first syncs the "Supported companies" tab
+  and announces newly listed firms, then fetches all configured boards,
+  appends newly seen jobs, and prunes closed ones. Triggering the same workflow
+  for a board-config push means both the company list and that company's jobs
+  are refreshed together.
 - **`.github/workflows/full-refresh.yml`** ("Full Refresh (Rebuild)") runs
   `jobscraper.sheets.full_refresh` on manual `workflow_dispatch` only, no
   schedule. Recomputes every column and re-routes rows across tabs — run
@@ -390,11 +389,10 @@ queue rather than run at the same time (both read-then-write every job tab):
   stale or misplaced rows to be worth a full rebuild (see
   `sheets/full_refresh.py`'s module docstring).
 
-All three need the same two repo secrets: `GOOGLE_SHEET_ID`,
+Both need the same two repo secrets: `GOOGLE_SHEET_ID` and
 `GOOGLE_SERVICE_ACCOUNT_JSON`. The daily scrape optionally also uses
-`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_THREAD_ID` for the
-Telegram digest, and the announcement workflow optionally uses
-`TELEGRAM_BOT_TOKEN`, `TELEGRAM_COMPANIES_CHAT_ID`,
-`TELEGRAM_COMPANIES_THREAD_ID` — omitted (left as unset repo secrets) keeps that feature
-disabled, same as leaving them unset in `.env` locally. The full refresh
-doesn't send a digest, so it doesn't use the Telegram secrets.
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `TELEGRAM_THREAD_ID` for the
+job digest, plus `TELEGRAM_COMPANIES_CHAT_ID` and
+`TELEGRAM_COMPANIES_THREAD_ID` for new-company announcements. Omitted secrets
+disable their respective Telegram feature, just like leaving them unset in
+`.env` locally. The full refresh does not send Telegram messages.
