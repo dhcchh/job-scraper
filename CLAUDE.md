@@ -496,7 +496,13 @@ use a small fake `Worksheet`.
   boards fetched successfully (and all tokens for a multi-token firm).
   Pruning uses an atomic Sheets batch of row deletions, but concurrent writers
   can still duplicate appends. Use `USER_ENTERED` values so Sheets preserves
-  dates and linkifies URLs. Pruning is two steps: `main.py` runs
+  dates and linkifies URLs. `get_spreadsheet` uses `_QuotaRetryingHTTPClient`,
+  which retries only HTTP 429 (Sheets' 60-writes-per-minute quota; a 429 was
+  never applied, so any write is safe to repeat) after 10/20/40/60s. A full
+  refresh makes ~7 writes per tab and hit that quota on 2026-09-27, failing
+  on the last tab's formatting. gspread's own `BackOffHTTPClient` is
+  deliberately not used: it also retries 5xx, and a 5xx append may already
+  have landed. Pruning is two steps: `main.py` runs
   `plan_prune` on every tab (after that tab's append) before `apply_prune`
   deletes anything, so `held_back_prunes` can judge each firm across all
   ten tabs. It holds back a firm whose board fetched without error but
@@ -559,7 +565,12 @@ use a small fake `Worksheet`.
   tab; it is still not one atomic transaction across the ten separate
   writes that follow (no distributed lock -- see Open Work below). A row
   whose title no longer matches any category at all stays on the tab it's
-  already on rather than being dropped. A `(board, job_id)` seen on more
+  already on rather than being dropped. After a change that re-routes existing rows, run it
+  *before* the next scheduled scrape. Otherwise the scrape does the move
+  itself -- pruning each row from its old tab and appending it to the new
+  one -- which resets its `scraped_date`, announces moved PAC rows in the
+  Telegram digest as new, and, for a big move like 2026-09-27's Barclays
+  India rows becoming excluded, can trip the prune guard. A `(board, job_id)` seen on more
   than one tab (shouldn't happen in normal operation) keeps its first
   occurrence and logs a warning for the rest, rather than writing the
   same posting into two tabs.
