@@ -383,3 +383,45 @@ def test_normalize_location_strips_office_codes_and_work_mode_wrappers(raw, expe
 )
 def test_normalize_location_resolves_alpha3_country_prefixes(raw, expected):
     assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Autodesk's Workday alpha-3 country suffixes
+        ("Singapore, SGP", "Singapore"),
+        ("Tokyo, JPN", "Tokyo, Japan"),
+        ("North Sydney, AUS", "North Sydney, Australia"),
+        ("Bengaluru, IND", "Bangalore, India"),
+        ("Toronto, ON, CAN", "Toronto, ON, Canada"),
+        ("Ontario, CAN - Remote", "Ontario, Canada"),
+        # an unlisted code is left to the usual rules
+        ("Istanbul, TUR", "Istanbul, TUR"),
+    ],
+)
+def test_normalize_location_resolves_alpha3_country_suffixes(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Autodesk's Workday detail site names
+        ("APAC - Korea - Seoul - ASEM Tower", "Seoul, South Korea"),
+        ("APAC - Australia - NSW - North Sydney - 1 Denison", "Australia"),
+        ("APAC - Hong Kong - The Executive Centre", "Hong Kong"),
+        ("APAC - Malaysia - Kuala Lumpur - Kuala Lumpur, Avenue 10", "Kuala Lumpur, Malaysia"),
+        ("AMER - Canada - Ontario - Offsite/Home", "Canada"),
+        # an unrecognized country is left to the usual rules
+        ("EMEA - Croatia - Offsite/Home", "EMEA - Croatia - Offsite/Home"),
+    ],
+)
+def test_normalize_location_resolves_region_prefixed_site_names(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+def test_normalize_location_maps_netflix_taipei_offices():
+    # Netflix's Eightfold board: the client keeps only the leading segment of
+    # "Taipei City,Taiwan" and "Xinyi District,Taipei City,Taiwan".
+    assert normalize_location("Taipei City") == "Taipei, Taiwan"
+    assert normalize_location("Xinyi District") == "Taipei, Taiwan"

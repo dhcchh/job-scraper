@@ -31,6 +31,8 @@ _OFFICE_CODE_SUFFIX_RE = re.compile(r"\s*\([A-Z]{2}-[A-Z]{2,3}-[A-Z0-9]+\)$")
 _WORK_MODE_WRAPPER_RE = re.compile(r"^(?:remote|hybrid)\s*\(([^()]+)\)$", re.IGNORECASE)
 
 _ALPHA3_PREFIX_RE = re.compile(r"^([A-Z]{3})\s+-\s+(.+)$")
+_ALPHA3_SUFFIX_RE = re.compile(r"^(.+),\s*([A-Z]{3})(?:\s+-\s+(?i:remote))?$")
+_REGION_SITE_RE = re.compile(r"^(?:APAC|AMER|EMEA|LATAM)\s+-\s+(.+)$")
 _ALPHA3_COUNTRIES = {
     "SGP": "Singapore", "HKG": "Hong Kong", "AUS": "Australia", "JPN": "Japan",
     "KOR": "South Korea", "CHN": "China", "TWN": "Taiwan", "NZL": "New Zealand",
@@ -42,6 +44,10 @@ _ALPHA3_COUNTRIES = {
     "ESP": "Spain", "SRB": "Serbia", "CRI": "Costa Rica", "POL": "Poland",
     "CHE": "Switzerland", "SWE": "Sweden", "ISR": "Israel", "BRA": "Brazil",
     "MEX": "Mexico", "ARE": "United Arab Emirates", "PHL": "Philippines",
+}
+_SITE_COUNTRIES = {
+    **{country.casefold(): country for country in _ALPHA3_COUNTRIES.values()},
+    "korea": "South Korea",
 }
 _TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)$")
 
@@ -112,6 +118,8 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "sydney": "Sydney, Australia",
     "sydney, new south wales, australia": "Sydney, Australia",
     "taipei": "Taipei, Taiwan",
+    "taipei city": "Taipei, Taiwan",
+    "xinyi district": "Taipei, Taiwan",
     "hsinchu": "Hsinchu, Taiwan",
     "tel aviv": "Tel Aviv, Israel",
     "apac": "Asia-Pacific",
@@ -252,11 +260,32 @@ def _alpha3_location(country: str, rest: str) -> str:
     return f"{normalized}, {country}"
 
 
+def _region_site_location(rest: str) -> str | None:
+    """Normalize a "<Country> - [<State> -] <City> - <Building>" site name."""
+    country_part, *parts = (part.strip() for part in rest.split(" - "))
+    country = _SITE_COUNTRIES.get(country_part.casefold())
+    if country is None:
+        return None
+    for part in parts:
+        normalized = normalize_location(part)
+        if normalized == country or normalized.endswith(f", {country}"):
+            return normalized
+    return country
+
+
 def normalize_location(raw: str) -> str:
     """Return a canonical location or a cleaned, unchanged fallback."""
     alpha3 = _ALPHA3_PREFIX_RE.match(raw.strip())
     if alpha3 and alpha3.group(1) in _ALPHA3_COUNTRIES:
         return _alpha3_location(_ALPHA3_COUNTRIES[alpha3.group(1)], alpha3.group(2))
+    alpha3 = _ALPHA3_SUFFIX_RE.match(raw.strip())
+    if alpha3 and alpha3.group(2) in _ALPHA3_COUNTRIES:
+        return _alpha3_location(_ALPHA3_COUNTRIES[alpha3.group(2)], alpha3.group(1))
+    region_site = _REGION_SITE_RE.match(raw.strip())
+    if region_site:
+        location = _region_site_location(region_site.group(1))
+        if location:
+            return location
     cleaned = _OFFICE_SUFFIX_RE.sub("", raw.strip()).strip()
     cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _OFFICE_CODE_SUFFIX_RE.sub("", cleaned).strip()

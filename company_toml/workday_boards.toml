@@ -51,3 +51,8 @@ company_type = "Commodities Trading"
 token = "trafigura.wd3/trafiguracareersite"
 firm = "Trafigura"
 company_type = "Commodities Trading"
+
+[[boards]]
+token = "autodesk.wd1/Ext"
+firm = "Autodesk"
+company_type = "Enterprise/Productivity Software"

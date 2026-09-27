@@ -249,16 +249,23 @@ use a small fake `Worksheet`.
   repeats an id instead of coming back shorter than the page size --
   unconfirmed either way, since only varying `num` at a fixed `start` has
   been tested. Most Eightfold tenants
-  block this query pattern outright -- confirmed, not just suspected: of 7
+  block this query pattern outright -- confirmed, not just suspected: of 9
   real, verified Eightfold-hosted firms tried (found via each one's own
-  actual careers page, not a guessed subdomain), only Millennium and
-  Albemarle were reachable this way; Morgan Stanley, Micron, Eaton, and
-  Vodafone all returned the same 403 `{"message": "Not authorized for
-  ..."}` even from their own live subdomain. Each Eightfold tenant clearly
+  actual careers page, not a guessed subdomain), only Millennium,
+  Albemarle, and Netflix were reachable this way; Morgan Stanley, Micron,
+  Eaton, and Vodafone all returned the same 403 `{"message": "Not
+  authorized for ..."}` even from their own live subdomain, and Microsoft
+  and Qualcomm 403 too, from both `<slug>.eightfold.ai` and their own
+  careers domains (Micron's Workday board, `micron.wd1/External`, is
+  reachable instead). Each Eightfold tenant clearly
   configures its own WAF/bot-protection independently, so a new Eightfold
   firm needs its own dry-run before being added, same as every other board
-  type's "Adding a board" workflow -- expect roughly 2 in 7 to actually
-  work, not an assumption it'll work because Millennium's does.
+  type's "Adding a board" workflow -- expect roughly 1 in 3 to actually
+  work, not an assumption it'll work because Millennium's does. Netflix
+  (~480 postings, ~49 requests) also rate-limits intermittently: one of
+  six full local fetches on 2026-09-27 hit a 429 around page 20 that
+  outlasted the retries, while the other five completed in ~40s -- if that happens
+  in CI the board is just skipped (not pruned) for that run.
   Unlike Lever/Ashby/SmartRecruiters, Eightfold gives a genuine `t_update`
   separate from `t_create` (both Unix epoch seconds, confirmed differing on
   real Millennium postings), so both `first_published` and `updated_at` are
@@ -382,7 +389,15 @@ use a small fake `Worksheet`.
   Remote"`, `"IND - Bengaluru"` -- resolves through `_ALPHA3_COUNTRIES`: the
   rest via the table, else `"<place>, <country>"`, or just the country for a
   remote office, so the region is right even for an unmapped city. Only
-  codes listed there are touched. The lookup
+  codes listed there are touched. The same codes as a trailing suffix
+  (seeded from Autodesk's Workday board) -- `"Singapore, SGP"`, `"Bengaluru,
+  IND"`, `"Ontario, CAN - Remote"` -- resolve the same way; unhandled, every
+  Autodesk Singapore/Tokyo/Seoul role went to RoW and its India/Malaysia/
+  Indonesia/Vietnam roles escaped `is_excluded`. Autodesk's multi-office
+  detail entries are site names like `"APAC - Korea - Seoul - ASEM
+  Tower"`: when the segment after the region is a country in
+  `_SITE_COUNTRIES`, they resolve to the first later segment that maps to a
+  known location in that country, else just the country. The lookup
   table itself also carries whole-string entries (seeded from Millennium's
   live Eightfold board) for a "City, Region, Country" triple neither the
   bare-city nor "City, Country" conventions above cover (e.g. "Tokyo,

@@ -158,10 +158,10 @@ src/jobscraper/
   title matches a category (see `job_boards/workday/client.py`). Unlike
   Greenhouse/Lever/Ashby/SmartRecruiters, Eightfold's API is not documented/
   public at all — confirmed unreachable this way for most real Eightfold
-  tenants tried, not just Millennium: of 7 real, verified Eightfold-hosted
-  companies tried, only 2 (Millennium and Albemarle) were actually
-  reachable; Morgan Stanley, Micron, Eaton, and Vodafone all 403'd even
-  from their own live subdomain — see `job_boards/eightfold/client.py`'s
+  tenants tried, not just Millennium: of 9 real, verified Eightfold-hosted
+  companies tried, only 3 (Millennium, Albemarle, and Netflix) were actually
+  reachable; Morgan Stanley, Micron, Eaton, Vodafone, Microsoft, and
+  Qualcomm all 403'd even from their own live subdomain — see `job_boards/eightfold/client.py`'s
   module docstring.
 - **Job description**: kept in the sheet (`description` column), but only
   for a firm in `models.FIRMS_NEEDING_DESCRIPTION` (currently QRT and
@@ -239,8 +239,8 @@ See `CLAUDE.md` for design rationale and edge-case invariants.
 ## Scale limits
 
 This design — one GitHub Actions run, boards fetched one at a time, a
-Google Sheet as the datastore — works fine at today's ~110 boards (61
-Greenhouse, 6 Lever, 27 Ashby, 4 SmartRecruiters, 1 Eightfold, 10 Workday,
+Google Sheet as the datastore — works fine at today's ~112 boards (61
+Greenhouse, 6 Lever, 27 Ashby, 4 SmartRecruiters, 2 Eightfold, 11 Workday,
 1 Recruitee). Realistic
 ceiling: **somewhere around 2,000-5,000 companies**, not the 10,000+ the
 raw minutes math alone would suggest:
@@ -385,6 +385,8 @@ can fetch them. Until then, they do not appear in "Supported companies":
 | Amazon | Build and verify a client for Amazon Jobs. |
 | Google | Build and verify a client for Google Careers. |
 | The Trade Desk | Build and verify a client for its first-party careers search. |
+| Apple | Build and verify a client for jobs.apple.com. |
+| Atlassian | Its careers page lists jobs from its own endpoint, not a supported ATS; relevant for Sydney (PAC). |
 
 X is not on this backlog: its public SmartRecruiters company identifier is
 `X`, so it is configured in `smartrecruiters_boards.toml` and follows the
