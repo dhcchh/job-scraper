@@ -8,7 +8,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_COMPANY_TOML_DIR = Path(__file__).resolve().parents[2] / "company_toml"
+_PACKAGE_BOARD_DIR = Path(__file__).resolve().parent / "company_toml"
+_COMPANY_TOML_DIR = (
+    _PACKAGE_BOARD_DIR
+    if _PACKAGE_BOARD_DIR.is_dir()
+    else Path(__file__).resolve().parents[2] / "company_toml"
+)
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
 
 
@@ -66,3 +71,8 @@ def _optional_set(name: str) -> frozenset[str]:
 # Firms whose prune guard (sheets.writer.held_back_prunes) is bypassed for
 # this run, after confirming their closures are real.
 FORCE_PRUNE_FIRMS: frozenset[str] = _optional_set("FORCE_PRUNE_FIRMS")
+
+# When non-empty, only fetch and append jobs for these firms (all others are
+# skipped). Used by the daily-scrape workflow on TOML pushes to run only the
+# newly added firms rather than the full board list.
+ONLY_FIRMS: frozenset[str] = _optional_set("ONLY_FIRMS")

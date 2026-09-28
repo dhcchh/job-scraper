@@ -50,6 +50,17 @@ jobs:
       - name: Run tests before writing
         run: uv run pytest
 
+      - name: Detect new firms (push only)
+        id: new_firms
+        if: github.event_name == 'push'
+        run: |
+          NEW=$(git diff HEAD^ HEAD -- company_toml/*_boards.toml \
+            | grep '^+firm = ' \
+            | sed 's/^+firm = "//' \
+            | sed 's/"//' \
+            | paste -sd ',' -)
+          echo "firms=$NEW" >> $GITHUB_OUTPUT
+
       - name: Run scraper
         env:
           GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}
@@ -66,6 +77,9 @@ jobs:
           TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
           # Empty on schedule/push runs, which have no inputs.
           FORCE_PRUNE_FIRMS: ${{ inputs.force_prune_firms }}
+          # On a TOML push, only fetch the newly added firms. Empty on cron/
+          # workflow_dispatch so the full board list runs as normal.
+          ONLY_FIRMS: ${{ steps.new_firms.outputs.firms }}
         run: uv run python -m jobscraper.main
 
       - name: Audit sheet data quality

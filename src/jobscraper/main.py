@@ -45,14 +45,19 @@ def run() -> None:
     )
     sync_and_announce(spreadsheet)
 
+    def _filter(boards: list[dict]) -> list[dict]:
+        if not config.ONLY_FIRMS:
+            return boards
+        return [b for b in boards if b["firm"] in config.ONLY_FIRMS]
+
     board_sources = (
-        ("greenhouse", config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),
-        ("lever", config.LEVER_BOARDS, fetch_lever_jobs),
-        ("ashby", config.ASHBY_BOARDS, fetch_ashby_jobs),
-        ("smartrecruiters", config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
-        ("eightfold", config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
-        ("workday", config.WORKDAY_BOARDS, fetch_workday_jobs),
-        ("recruitee", config.RECRUITEE_BOARDS, fetch_recruitee_jobs),
+        ("greenhouse", _filter(config.GREENHOUSE_BOARDS), fetch_greenhouse_jobs),
+        ("lever", _filter(config.LEVER_BOARDS), fetch_lever_jobs),
+        ("ashby", _filter(config.ASHBY_BOARDS), fetch_ashby_jobs),
+        ("smartrecruiters", _filter(config.SMARTRECRUITERS_BOARDS), fetch_smartrecruiters_jobs),
+        ("eightfold", _filter(config.EIGHTFOLD_BOARDS), fetch_eightfold_jobs),
+        ("workday", _filter(config.WORKDAY_BOARDS), fetch_workday_jobs),
+        ("recruitee", _filter(config.RECRUITEE_BOARDS), fetch_recruitee_jobs),
     )
 
     all_jobs: list[Job] = []
