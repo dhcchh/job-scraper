@@ -27,3 +27,8 @@ company_type = "Government/Defense Tech"
 token = "belvederetrading"
 firm = "Belvedere Trading"
 company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "wintermute-trading"
+firm = "Wintermute"
+company_type = "Prop Trading/Hedge Fund"
