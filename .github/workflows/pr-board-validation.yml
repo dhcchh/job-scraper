@@ -1,0 +1,47 @@
+name: Validate New Boards (PR)
+
+# On any PR that touches a board TOML, fetch only the newly added firms to
+# confirm their tokens are reachable before the PR merges. A typo in a slug
+# or a board that blocks this project's fetch pattern fails here rather than
+# silently on the first daily scrape after merge.
+on:
+  pull_request:
+    paths:
+      - "company_toml/*_boards.toml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Detect new firms
+        id: new_firms
+        run: |
+          NEW=$(git diff origin/${{ github.base_ref }}...HEAD -- company_toml/*_boards.toml \
+            | grep '^+firm = ' \
+            | sed 's/^+firm = "//' \
+            | sed 's/"//' \
+            | paste -sd ',' -)
+          echo "firms=$NEW" >> $GITHUB_OUTPUT
+
+      - name: Validate new boards
+        if: steps.new_firms.outputs.firms != ''
+        env:
+          ONLY_FIRMS: ${{ steps.new_firms.outputs.firms }}
+        run: uv run python -m jobscraper.board_health
+
+      - name: No new firms detected
+        if: steps.new_firms.outputs.firms == ''
+        run: echo "No new firms in this TOML change -- skipping board fetch."

@@ -1,0 +1,62 @@
+name: Backfill (Refresh Existing Rows)
+
+# Manual only -- run after changing FIELDS, classification metadata, location
+# normalization, first_published, or models.FIRMS_NEEDING_DESCRIPTION to
+# refresh those columns in existing sheet rows without re-routing them between
+# tabs. See sheets/backfill.py's module docstring for exactly what this
+# recomputes. For changes that also re-route rows between tabs, use
+# Full Refresh (Rebuild) instead.
+on:
+  workflow_dispatch: {}
+
+# Shared concurrency group with daily-scrape.yml and full-refresh.yml.
+concurrency:
+  group: sheet-write
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests before writing
+        run: uv run pytest
+
+      - name: Run backfill
+        env:
+          GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+          TELEGRAM_COMPANIES_CHAT_ID: ${{ secrets.TELEGRAM_COMPANIES_CHAT_ID }}
+          TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
+        run: uv run python -m jobscraper.sheets.backfill
+
+      - name: Audit sheet data quality
+        if: ${{ !cancelled() }}
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: uv run python -m jobscraper.sheets.audit
+
+      - name: Upload data quality report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-quality
+          path: data-quality.json
+          if-no-files-found: warn
+          retention-days: 14

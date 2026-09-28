@@ -1,0 +1,29 @@
+name: Board Health Check
+
+# Weekly canary: fetch every configured board without writing to the sheet and
+# fail the run if any board is unreachable. Surfaces broken tokens, WAF
+# changes, or API shape changes before the next daily scrape silently skips
+# them. Also runnable on demand via workflow_dispatch.
+on:
+  schedule:
+    # Sundays at 12:00 UTC -- well outside the daily scrape window (23:00 UTC).
+    - cron: "0 12 * * 0"
+  workflow_dispatch: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Check board health
+        run: uv run python -m jobscraper.board_health
