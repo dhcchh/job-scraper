@@ -298,3 +298,13 @@ def test_fetch_greenhouse_jobs_reads_seniority_from_employment_type_metadata(mon
     assert experienced.seniority == "Unspecified"
     assert null_value.seniority == "Unspecified"
     assert no_metadata.seniority == "Unspecified"
+
+
+@pytest.mark.parametrize("job_id", [None, "", "  ", False, [], {}])
+def test_fetch_rejects_invalid_id(monkeypatch, job_id):
+    monkeypatch.setattr(
+        _http.requests, "get",
+        lambda *a, **k: _FakeResponse({"jobs": [{"id": job_id}]}),
+    )
+    with pytest.raises(ValueError, match="job_id"):
+        client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")

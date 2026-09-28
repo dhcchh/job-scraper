@@ -4,7 +4,7 @@ import datetime
 import logging
 
 from jobscraper.job_boards._http import paginate_with_retries
-from jobscraper.models import Job, normalize_date
+from jobscraper.models import Job, normalize_job_id, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_location
 
@@ -71,7 +71,7 @@ def _to_job(
     department = _department(raw)
     return Job(
         board=firm,
-        job_id=str(raw["id"]),
+        job_id=normalize_job_id(raw["id"]),
         title=title,
         department=department,
         location=_location(raw),

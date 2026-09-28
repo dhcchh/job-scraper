@@ -32,8 +32,29 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Run tests before writing
+        run: uv run pytest
+
       - name: Run full refresh
         env:
+          GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: uv run python -m jobscraper.sheets.full_refresh
+
+      - name: Audit sheet data quality
+        if: ${{ !cancelled() }}
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: uv run python -m jobscraper.sheets.audit
+
+      - name: Upload data quality report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-quality
+          path: data-quality.json
+          if-no-files-found: warn
+          retention-days: 14

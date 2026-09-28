@@ -227,11 +227,11 @@ def test_read_tab_rows_header_only_returns_nothing():
 def test_write_tab_grows_the_grid_when_more_rows_than_before():
     worksheet = _FakeWorksheet(row_count=1)  # header only, currently 0 data rows
 
-    full_refresh._write_tab(worksheet, [["a"], ["b"]])
+    full_refresh._write_tab(worksheet, [_row(job_id="a"), _row(job_id="b")])
 
     assert worksheet.resized_to == 3
     assert worksheet.updated_with[0] == list(FIELDS)
-    assert worksheet.updated_with[1:] == [["a"], ["b"]]
+    assert worksheet.updated_with[1:] == [_row(job_id="a"), _row(job_id="b")]
 
 
 def test_write_tab_shrinks_the_grid_when_fewer_rows_than_before():
@@ -246,10 +246,10 @@ def test_write_tab_shrinks_the_grid_when_fewer_rows_than_before():
 def test_write_tab_skips_resize_when_row_count_already_matches():
     worksheet = _FakeWorksheet(row_count=2)  # header + 1 data row already
 
-    full_refresh._write_tab(worksheet, [["a"]])
+    full_refresh._write_tab(worksheet, [_row(job_id="a")])
 
     assert worksheet.resized_to is None
-    assert worksheet.updated_with == [list(FIELDS), ["a"]]
+    assert worksheet.updated_with == [list(FIELDS), _row(job_id="a")]
 
 
 def test_refresh_all_moves_a_row_between_tabs(monkeypatch):

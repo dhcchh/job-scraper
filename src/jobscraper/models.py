@@ -97,6 +97,24 @@ def normalize_date(value: str | datetime.date | datetime.datetime | None) -> str
     return str(value)
 
 
+def _validate_identity(value: object, field: str) -> None:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value.strip().lower() in {"none", "null"}
+    ):
+        raise ValueError(f"{field} must be a non-empty, non-null string")
+
+
+def normalize_job_id(value: object) -> str:
+    """Accept API string/integer IDs without stringifying nulls or containers."""
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise ValueError("job_id must be a string or integer, not null")
+    result = str(value)
+    _validate_identity(result, "job_id")
+    return result
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class Job:
     """A job posting normalized across supported board providers."""
@@ -115,6 +133,10 @@ class Job:
     source: str = ""
     description: str = ""
     salary: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_identity(self.board, "board")
+        _validate_identity(self.job_id, "job_id")
 
     def to_row(self) -> list[str]:
         """Render the job in `FIELDS` order for Google Sheets."""

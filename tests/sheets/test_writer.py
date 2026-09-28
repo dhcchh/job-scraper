@@ -576,3 +576,17 @@ def test_quota_client_never_retries_other_errors(monkeypatch, code):
         client.request("post", "url")
     assert len(calls) == 1
     assert sleeps == []
+
+
+def test_append_jobs_deduplicates_incoming_batch():
+    worksheet = _FakeWorksheet()
+    job = _job('Acme', '123')
+    assert writer.append_jobs(worksheet, [job, job]) == [job]
+    assert worksheet.appended == [job.to_row()]
+
+
+def test_append_jobs_rejects_invalid_key_before_write():
+    worksheet = _FakeWorksheet()
+    with pytest.raises(ValueError, match='data quality'):
+        writer.append_jobs(worksheet, [_job('Acme', ' 123')])
+    assert worksheet.appended is None

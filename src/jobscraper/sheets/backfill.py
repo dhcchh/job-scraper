@@ -3,6 +3,8 @@
 import logging
 import re
 
+from jobscraper.quality import validate_rows
+
 import gspread
 from gspread.utils import rowcol_to_a1
 
@@ -255,6 +257,7 @@ def refresh_worksheet(
 
         new_rows.append([values[name] for name in FIELDS])
 
+    validate_rows(new_rows)
     worksheet.update(
         range_name="A1",
         values=[HEADER] + new_rows,

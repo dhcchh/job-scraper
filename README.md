@@ -201,6 +201,11 @@ src/jobscraper/
   Eightfold's are numeric, Lever's and Ashby's are UUIDs, Workday's is the
   requisition id from the posting's URL, e.g. `R-287924-1`, Recruitee's is
   its numeric offer id).
+- **Identity validation**: `board` and `job_id` must be non-empty strings;
+  null values and the strings `None`/`null` are rejected. API IDs must be
+  strings or integers before conversion. Invalid IDs fail the board fetch,
+  protecting that firm from pruning; records with an absent ID field retain
+  the existing skip-and-log behavior.
 - **Dedup/pruning**: keyed on that same `(board, job_id)` pair — a run
   appends a row the first time it sees one, never re-appends it while
   still open, and deletes it once it's gone from that board's feed, via one
@@ -473,3 +478,34 @@ job digest, plus `TELEGRAM_COMPANIES_CHAT_ID` and
 `TELEGRAM_COMPANIES_THREAD_ID` for new-company announcements. Omitted secrets
 disable their respective Telegram feature, just like leaving them unset in
 `.env` locally. The full refresh does not send Telegram messages.
+
+
+### Data quality checks
+
+Both sheet-writing GitHub Actions workflows run the test suite before writing,
+then run a read-only audit even if the scrape/refresh fails. The audit checks
+all ten job tabs, fails the workflow for missing/mismatched headers, invalid
+`(board, job_id)` keys (including whitespace around keys), or duplicate keys
+within a tab. Blank fields are advisory: the job summary counts blanks by
+column, and the `data-quality` JSON artifact includes tab and row references.
+Artifacts are retained for 14 days. Cross-tab duplicate keys are advisory
+because a posting can move between categories/regions pending a refresh.
+
+Append, backfill, and full-refresh writes validate keys before each write.
+Repeated keys within an incoming append batch are only appended once.
+Optional metadata such as salary, department, description, and publication or
+update dates remains allowed to be blank. Blank titles, URLs, and locations
+are also reported rather than rejected under this initial permissive policy.
+This checks structural quality, not whether a job's content or dates are
+factually correct. The audit detects pre-existing problems without repairing
+them or rolling back a partially completed scrape.
+
+Run the audit independently without modifying the sheet:
+
+```bash
+uv run python -m jobscraper.sheets.audit --output data-quality.json
+```
+
+It uses a read-only Google Sheets scope and supports the same optional
+`GOOGLE_SHEET_TITLE` check as the writer. The audit module can run locally
+without running any scraper, refresh, or Telegram announcement.

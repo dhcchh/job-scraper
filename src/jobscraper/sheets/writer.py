@@ -13,6 +13,7 @@ from gspread.exceptions import APIError
 
 from jobscraper import config
 from jobscraper.models import DATE_FIELDS, FIELDS, Job
+from jobscraper.quality import validate_rows
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,12 @@ def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> list[Job]:
         return []
 
     existing = _existing_keys(worksheet)
-    new_jobs = [job for job in jobs if (job.board, job.job_id) not in existing]
+    new_jobs = []
+    for job in jobs:
+        key = (job.board, job.job_id)
+        if key not in existing:
+            new_jobs.append(job)
+            existing.add(key)
     skipped = len(jobs) - len(new_jobs)
 
     if not new_jobs:
@@ -188,6 +194,7 @@ def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> list[Job]:
         return []
 
     rows = [job.to_row() for job in new_jobs]
+    validate_rows(rows)
     worksheet.append_rows(rows, value_input_option="USER_ENTERED")
     set_basic_filter(worksheet)
     logger.info(

@@ -4,7 +4,7 @@ import datetime
 import logging
 
 from jobscraper.job_boards._http import get_with_retries
-from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_date, strip_html
+from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date, strip_html
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
     normalize_location,
@@ -56,7 +56,7 @@ def _to_job(
     department = _department(categories)
     return Job(
         board=firm,
-        job_id=str(raw["id"]),
+        job_id=normalize_job_id(raw["id"]),
         title=title,
         department=department,
         location=_location(categories),

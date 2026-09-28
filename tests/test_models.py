@@ -1,6 +1,8 @@
 import datetime
 
-from jobscraper.models import FIELDS, Job, hyperlink_formula, normalize_date, strip_html
+import pytest
+
+from jobscraper.models import FIELDS, Job, normalize_job_id, hyperlink_formula, normalize_date, strip_html
 
 
 def test_normalize_date():
@@ -83,3 +85,24 @@ def test_strip_html_converts_list_items_to_bullet_lines():
 def test_strip_html_collapses_excess_blank_lines():
     raw = "<p>First.</p><p></p><p></p><p>Second.</p>"
     assert strip_html(raw) == "First.\n\nSecond."
+
+
+@pytest.mark.parametrize("field", ["board", "job_id"])
+@pytest.mark.parametrize("value", [None, "", "  ", "\t\n", "None", "null", 123, False])
+def test_job_rejects_invalid_identity(field, value):
+    values = dict(board="Acme", job_id="123", title="Engineer", department="",
+                  location="", url="", updated_at="", scraped_date=datetime.date.today())
+    values[field] = value
+    with pytest.raises(ValueError, match=field):
+        Job(**values)
+
+
+@pytest.mark.parametrize("value", [None, "", " ", "None", "null", True, 1.2, [], {}])
+def test_normalize_job_id_rejects_invalid_api_values(value):
+    with pytest.raises(ValueError, match="job_id"):
+        normalize_job_id(value)
+
+
+@pytest.mark.parametrize("value, expected", [(123, "123"), (0, "0"), ("001", "001"), ("R-1", "R-1")])
+def test_normalize_job_id_preserves_valid_ids(value, expected):
+    assert normalize_job_id(value) == expected

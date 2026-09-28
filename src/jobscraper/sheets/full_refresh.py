@@ -3,6 +3,8 @@
 import datetime
 import logging
 
+from jobscraper.quality import validate_rows
+
 import gspread
 
 from jobscraper.enrichment.classify_region import (
@@ -95,6 +97,7 @@ def _read_tab_rows(
 
 def _write_tab(worksheet: gspread.Worksheet, rows: list[list[str]]) -> None:
     """Rewrite a tab, shrinking its grid only after the update succeeds."""
+    validate_rows(rows)
     values = [HEADER] + rows
     worksheet.update(
         range_name="A1",
