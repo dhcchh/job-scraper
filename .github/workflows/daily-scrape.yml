@@ -38,6 +38,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history so "Detect new firms" can diff against the push's
+          # own base commit; a depth-1 clone has no parent to diff against.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -53,9 +57,13 @@ jobs:
       - name: Detect new firms (push only)
         id: new_firms
         if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
-          NEW=$(git diff HEAD^ HEAD -- company_toml/*_boards.toml \
-            | grep '^+firm = ' \
+          # Diff to a file first so a git failure fails the step instead of
+          # silently yielding no firms (and a full scrape) through the pipe.
+          git diff "$BEFORE" "$GITHUB_SHA" -- company_toml/*_boards.toml > boards.diff
+          NEW=$(grep '^+firm = ' boards.diff \
             | sed 's/^+firm = "//' \
             | sed 's/"//' \
             | paste -sd ',' -)
