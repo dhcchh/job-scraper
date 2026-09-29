@@ -134,3 +134,8 @@ company_type = "Fintech"
 token = "lovable"
 firm = "Lovable"
 company_type = "Applied AI Products"
+
+[[boards]]
+token = "typesafe-ai"
+firm = "Typesafe AI"
+company_type = "Applied AI Products"
