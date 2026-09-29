@@ -161,6 +161,14 @@ def test_classify_job_does_not_veto_recruiting_as_a_leading_qualifier():
     ) == "SWE/DE"
 
 
+def test_classify_job_vetoes_legal_engineer_titles():
+    # Confirmed on Harvey's live Ashby board: a legal engineer is a lawyer in
+    # a customer-facing solutions role; this one matched "engineering manager".
+    assert classify_job(_job("Legal Engineering Manager, APAC")) is None
+    assert classify_job(_job("Head of Legal Engineering, EMEA")) is None
+    assert classify_job(_job("Legal Engineer, Product Specialist")) is None
+
+
 def test_classify_job_vetoes_solutions_architect_even_with_a_real_keyword():
     # Confirmed on Cloudflare's live Greenhouse board: both titles matched
     # SWE/DE's bare "developer" keyword via their own trailing "(Developer

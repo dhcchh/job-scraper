@@ -115,6 +115,11 @@ _RECRUITER_RE = re.compile(r"\brecruiter\b", re.IGNORECASE)
 
 _SOLUTIONS_ARCHITECT_RE = re.compile(r"\bsolutions architect", re.IGNORECASE)
 
+# A "legal engineer" (Harvey's term) is a lawyer in a customer-facing
+# solutions role, not an engineer -- "Legal Engineering Manager, APAC" was
+# landing in SWE/DE via "engineering manager".
+_LEGAL_ENGINEER_RE = re.compile(r"\blegal engineer", re.IGNORECASE)
+
 # On a product/program manager or pre-sales title, a data-engineering keyword
 # names the team, not the job ("Sr. Product Manager, Data Engineering") --
 # DE is meant for proper data-engineering roles only.
@@ -133,7 +138,7 @@ def classify_job(job: Job) -> str | None:
     text = job.title
     if _RECRUITER_RE.search(text):
         return None
-    if _SOLUTIONS_ARCHITECT_RE.search(text):
+    if _SOLUTIONS_ARCHITECT_RE.search(text) or _LEGAL_ENGINEER_RE.search(text):
         return None
     skipped = _DE_KEYWORDS if _NOT_AN_ENGINEERING_ROLE_RE.search(text) else ()
     for category, keywords in CATEGORIES:
