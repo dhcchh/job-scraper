@@ -3,7 +3,7 @@
 import datetime
 import logging
 
-from jobscraper.job_boards._http import get_with_retries
+from jobscraper.job_boards._http import get_with_retries, require_job_list
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date, strip_html
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
@@ -30,7 +30,7 @@ def fetch_lever_jobs(
     url = f"{BASE_URL}/{board_slug}"
     response = get_with_retries("lever", board_slug, url, params={"mode": "json"})
 
-    raw_jobs = response.json()
+    raw_jobs = require_job_list(response.json(), "lever", board_slug)
 
     jobs = []
     skipped = 0

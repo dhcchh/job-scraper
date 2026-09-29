@@ -6,13 +6,19 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 
+from requests.exceptions import HTTPError
+
 from jobscraper.enrichment.classify_roles import classify_job
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
     normalize_location,
     normalize_locations,
 )
-from jobscraper.job_boards._http import get_with_retries, paginate_with_retries
+from jobscraper.job_boards._http import (
+    IncompleteBoardResponse,
+    get_with_retries,
+    paginate_with_retries,
+)
 from jobscraper.models import Job, normalize_date
 
 logger = logging.getLogger(__name__)
@@ -128,7 +134,7 @@ def _location_in_scope(location: str, scope: str) -> bool:
 
 
 def _fetch_details(token: str, api: str, paths: list[str]) -> dict[str, dict | None]:
-    """Fetch posting details, dropping only individual failed detail requests."""
+    """Fetch details; only confirmed 404/410 postings may be omitted."""
     if not paths:
         return {}
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
@@ -138,21 +144,37 @@ def _fetch_details(token: str, api: str, paths: list[str]) -> dict[str, dict | N
         if info is None:
             info, error = _fetch_detail(token, api, path)
             if info is None:
-                logger.warning(
-                    "workday[%s]: couldn't fetch detail for %s (%s), skipping "
-                    "it this run",
-                    token,
-                    path,
-                    error,
+                if not _posting_is_gone(error):
+                    raise RuntimeError(
+                        f"workday[{token}]: detail for {path} failed; "
+                        "board snapshot is unsafe to prune"
+                    ) from error
+                logger.info(
+                    "workday[%s]: posting %s closed before detail fetch", token, path
                 )
         details[path] = info
     return details
 
 
+def _posting_is_gone(error: Exception | None) -> bool:
+    """Only a missing posting is safe to omit from an otherwise valid board."""
+    return (
+        isinstance(error, HTTPError)
+        and error.response is not None
+        and error.response.status_code in (404, 410)
+    )
+
+
 def _fetch_detail(token: str, api: str, path: str) -> tuple[dict | None, Exception | None]:
     try:
         response = get_with_retries("workday", token, f"{api}{path}")
-        return response.json().get("jobPostingInfo") or {}, None
+        payload = response.json()
+        info = payload.get("jobPostingInfo") if isinstance(payload, dict) else None
+        if not isinstance(info, dict) or not info:
+            raise IncompleteBoardResponse(
+                f"workday[{token}]: missing jobPostingInfo for {path}"
+            )
+        return info, None
     except Exception as exc:
         return None, exc
 

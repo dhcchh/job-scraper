@@ -13,6 +13,23 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = 2.0
 
 
+class IncompleteBoardResponse(ValueError):
+    """A successful HTTP response did not contain a complete jobs snapshot."""
+
+
+def require_job_list(
+    payload: object, source: str, identifier: str, *, key: str | None = None
+) -> list[dict]:
+    """Reject a changed or malformed API response instead of treating it as empty."""
+    if key is not None:
+        if not isinstance(payload, dict) or key not in payload:
+            raise IncompleteBoardResponse(f"{source}[{identifier}]: missing {key!r}")
+        payload = payload[key]
+    if not isinstance(payload, list) or any(not isinstance(item, dict) for item in payload):
+        raise IncompleteBoardResponse(f"{source}[{identifier}]: invalid jobs list")
+    return payload
+
+
 def get_with_retries(
     source: str, identifier: str, url: str, *, params: dict | None = None
 ) -> requests.Response:
@@ -109,7 +126,28 @@ def paginate_with_retries(
                 source,
                 identifier,
             )
-    return _paginate_sequentially(fetch_page, total_key, items_key)
+    for attempt in range(2):
+        try:
+            return _paginate_sequentially(fetch_page, total_key, items_key)
+        except IncompleteBoardResponse:
+            if attempt:
+                raise
+            logger.warning(
+                "%s[%s]: incomplete sequential page fetch, retrying the "
+                "whole board once",
+                source,
+                identifier,
+            )
+    raise AssertionError("unreachable")
+
+
+def _page_total(payload: object, total_key: str) -> int:
+    if not isinstance(payload, dict):
+        raise IncompleteBoardResponse("pagination response is not an object")
+    total = payload.get(total_key)
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        raise IncompleteBoardResponse(f"missing or invalid {total_key!r} total")
+    return total
 
 
 def _paginate_sequentially(
@@ -121,12 +159,24 @@ def _paginate_sequentially(
     total: int | None = None
     while total is None or cursor < total:
         payload = fetch_page(cursor)
-        total = payload.get(total_key) or total or 0
-        page = payload.get(items_key, [])
+        page_total = _page_total(payload, total_key)
+        if total is None:
+            total = page_total
+        elif page_total not in (0, total):
+            raise IncompleteBoardResponse("pagination total changed during fetch")
+        page = require_job_list(payload, "pagination", str(cursor), key=items_key)
         if not page:
+            if cursor < total:
+                raise IncompleteBoardResponse(
+                    f"empty page at offset {cursor} before total {total}"
+                )
             break
         items.extend(page)
         cursor += len(page)
+        if cursor > total:
+            raise IncompleteBoardResponse(
+                f"received {cursor} items, more than reported total {total}"
+            )
     return items
 
 
@@ -135,15 +185,20 @@ def _paginate_in_parallel(
 ) -> list[dict] | None:
     """Fetch remaining pages concurrently when the total is known."""
     first = fetch_page(0)
-    total = first.get(total_key) or 0
-    items = list(first.get(items_key, []))
-    if not items or len(items) >= total:
+    total = _page_total(first, total_key)
+    items = list(require_job_list(first, "pagination", "0", key=items_key))
+    if len(items) == total:
         return items
+    if not items or len(items) > total:
+        return None
     stride = len(items)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         payloads = list(pool.map(fetch_page, range(stride, total, stride)))
     for payload in payloads:
-        items.extend(payload.get(items_key, []))
+        page_total = _page_total(payload, total_key)
+        if page_total not in (0, total):
+            return None
+        items.extend(require_job_list(payload, "pagination", str(len(items)), key=items_key))
     return items if len(items) == total else None
 
 

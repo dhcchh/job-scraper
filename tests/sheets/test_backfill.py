@@ -127,6 +127,19 @@ def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
     ]
 
 
+def test_refresh_escapes_legacy_formula_like_text():
+    worksheet = _FakeWorksheet(
+        [_OLD_HEADER, _old_row(title="=SUM(1,2)", department="+Finance")]
+    )
+
+    backfill.refresh_worksheet(worksheet)
+
+    row = dict(zip(backfill.HEADER, worksheet.updated_with[1]))
+    assert row["title"] == "'=SUM(1,2)"
+    assert row["department"] == "'+Finance"
+    assert row["url"] == '=HYPERLINK("https://x/101", "Apply")'
+
+
 def test_refresh_recomputes_company_type_from_current_config(monkeypatch):
     monkeypatch.setattr(
         backfill.config,

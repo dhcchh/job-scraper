@@ -37,6 +37,8 @@ integration later: add its vars here too.
    `company_toml/eightfold_boards.toml`,
    `company_toml/workday_boards.toml`, or
    `company_toml/recruitee_boards.toml` (checked in — see "Adding a board").
+   Wheels bundle these files; rebuild the wheel after changing a board list
+   for an installed copy.
 2. **Google Sheets access** — in Google Cloud Console: enable the Sheets
    API, create a service account + JSON key, then **Share** your target
    sheet with that key's `client_email` as **Editor**. Collapse the key to
@@ -141,7 +143,10 @@ src/jobscraper/
   seven retry connection
   errors/timeouts/5xx/429 up to 3 times total (2s/4s backoff); other 4xx
   raise immediately. `main.py` logs and skips a board that still fails,
-  rather than letting it trigger false pruning elsewhere. Neither Lever's,
+  rather than letting it trigger false pruning elsewhere. Missing or malformed
+  job lists also fail the board. Paginated feeds retry an incomplete snapshot
+  once, then fail the board if the reported total still cannot be fetched.
+  Neither Lever's,
   Ashby's, nor SmartRecruiters' API exposes an edited-at timestamp, so
   `updated_at` is always `""` for a job from any of them —
   `first_published` comes from Lever's `createdAt`/Ashby's
@@ -155,7 +160,10 @@ src/jobscraper/
   Ago" — and `updated_at` is
   always `""`; a multi-office posting only shows "2 Locations" in the list,
   so its client makes one extra detail request for it, but only when its
-  title matches a category (see `job_boards/workday/client.py`). Unlike
+  title matches a category (see `job_boards/workday/client.py`).
+  A Workday detail request that still fails after retries fails the board;
+  a 404 or 410 for an individual posting means it closed before the detail
+  fetch and only that posting is omitted. Unlike
   Greenhouse/Lever/Ashby/SmartRecruiters, Eightfold's API is not documented/
   public at all — confirmed unreachable this way for most real Eightfold
   tenants tried, not just Millennium: of 9 real, verified Eightfold-hosted
@@ -217,6 +225,9 @@ src/jobscraper/
   rather than pruned -- that looks more like a broken fetch than real
   closures -- and fails the run so someone looks. Appending or pruning
   also refuses any tab whose header doesn't start with `FIELDS`.
+- **Sheet text**: fields from board responses are written as literal text
+  even when they start with formula characters. The `url` column keeps its
+  intentional `HYPERLINK` formula.
 - **Backfill**: `sheets/backfill.py` re-applies current classifiers,
   location normalization, and column order to every existing row — run it
   after changing `FIELDS`, keyword lists, the location lookup table, or

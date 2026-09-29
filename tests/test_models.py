@@ -2,7 +2,15 @@ import datetime
 
 import pytest
 
-from jobscraper.models import FIELDS, Job, normalize_job_id, hyperlink_formula, normalize_date, strip_html
+from jobscraper.models import (
+    FIELDS,
+    Job,
+    escape_sheet_text,
+    hyperlink_formula,
+    normalize_job_id,
+    normalize_date,
+    strip_html,
+)
 
 
 def test_normalize_date():
@@ -45,6 +53,31 @@ def test_job_to_row_matches_fields_order():
         "",  # source defaults when not passed explicitly
         "",  # description defaults when not passed explicitly
     ]
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["=IMPORTXML(\"https://example.com\")", "+1+1", "-1+1", "@SUM(1,2)", " \t=1+1"],
+)
+def test_escape_sheet_text_keeps_formula_like_input_literal(value):
+    assert escape_sheet_text(value) == "'" + value
+
+
+def test_job_to_row_escapes_external_text_but_keeps_the_url_formula():
+    job = Job(
+        board="Acme", job_id="=1+1", title="=SUM(1,2)",
+        department="+Finance", location="Singapore",
+        url="https://example.com/1", updated_at="=1+1",
+        scraped_date=datetime.date(2026, 9, 12), description="\t=1+1",
+    )
+
+    row = dict(zip(FIELDS, job.to_row()))
+    assert row["job_id"] == "'=1+1"
+    assert row["title"] == "'=SUM(1,2)"
+    assert row["department"] == "'+Finance"
+    assert row["updated_at"] == "'=1+1"
+    assert row["description"] == "'\t=1+1"
+    assert row["url"] == '=HYPERLINK("https://example.com/1", "Apply")'
 
 
 def test_hyperlink_formula_wraps_url_with_default_label():

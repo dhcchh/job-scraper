@@ -8,7 +8,7 @@ from jobscraper.enrichment.normalize_location import (
     normalize_location,
     normalize_locations,
 )
-from jobscraper.job_boards._http import get_with_retries
+from jobscraper.job_boards._http import get_with_retries, require_job_list
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date, strip_html
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def fetch_recruitee_jobs(
     url = URL_TEMPLATE.format(subdomain=subdomain)
     response = get_with_retries("recruitee", subdomain, url)
 
-    raw_jobs = response.json().get("offers", [])
+    raw_jobs = require_job_list(response.json(), "recruitee", subdomain, key="offers")
 
     jobs = []
     skipped = 0

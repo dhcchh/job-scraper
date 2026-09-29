@@ -415,6 +415,44 @@ def test_fetch_workday_jobs_retries_a_failed_detail_call_once_more_before_droppi
     assert len(attempts) == _http.MAX_ATTEMPTS + 1
 
 
+def test_fetch_workday_jobs_fails_board_on_persistent_detail_server_error(monkeypatch):
+    path = "/job/x/Software-Engineer_R-7"
+
+    class _Unavailable:
+        status_code = 503
+
+        def raise_for_status(self):
+            error = _http.requests.HTTPError("503")
+            error.response = self
+            raise error
+
+    _posts, gets = _serve(
+        monkeypatch,
+        [_posting(path, locations_text="2 Locations")],
+        details={path: _Unavailable()},
+    )
+    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(RuntimeError, match="unsafe to prune"):
+        client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
+
+    assert len(gets) == 2 * _http.MAX_ATTEMPTS
+
+
+def test_fetch_workday_jobs_fails_board_on_missing_detail_payload(monkeypatch):
+    path = "/job/x/Software-Engineer_R-7"
+    _posts, gets = _serve(
+        monkeypatch,
+        [_posting(path, locations_text="2 Locations")],
+        details={path: _FakeResponse({})},
+    )
+
+    with pytest.raises(RuntimeError, match="unsafe to prune"):
+        client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
+
+    assert len(gets) == 2
+
+
 def test_fetch_workday_jobs_skips_a_missing_or_duplicate_external_path(monkeypatch):
     _serve(
         monkeypatch,

@@ -127,9 +127,8 @@ def test_fetch_smartrecruiters_jobs_paginates_until_total_found_is_reached(
     ]
 
 
-def test_fetch_smartrecruiters_jobs_stops_on_an_empty_page(monkeypatch):
-    # A totalFound higher than what's actually returned must not loop
-    # forever -- an empty content page ends pagination regardless.
+def test_fetch_smartrecruiters_jobs_rejects_an_empty_page_before_total(monkeypatch):
+    # A partial snapshot must fail so main does not prune missing postings.
     page1 = _page(
         [{"id": "1", "name": "Job 1", "company": {"identifier": "Acme"}}],
         offset=0,
@@ -144,10 +143,10 @@ def test_fetch_smartrecruiters_jobs_stops_on_an_empty_page(monkeypatch):
 
     monkeypatch.setattr(_http.requests, "get", fake_get)
 
-    jobs = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
+    with pytest.raises(_http.IncompleteBoardResponse, match="empty page"):
+        client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
-    assert len(jobs) == 1
-    assert len(calls) == 2
+    assert [call["offset"] for call in calls] == [0, 1, 0, 1]
 
 
 def test_fetch_smartrecruiters_jobs_skips_a_job_missing_id_instead_of_raising(

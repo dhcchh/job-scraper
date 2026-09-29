@@ -3,7 +3,7 @@
 import datetime
 import logging
 
-from jobscraper.job_boards._http import get_with_retries
+from jobscraper.job_boards._http import get_with_retries, require_job_list
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date, strip_html
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
@@ -33,7 +33,7 @@ def fetch_greenhouse_jobs(
     response = get_with_retries("greenhouse", board_token, url, params={"content": "true"})
 
     payload = response.json()
-    raw_jobs = payload.get("jobs", [])
+    raw_jobs = require_job_list(payload, "greenhouse", board_token, key="jobs")
 
     jobs = []
     skipped = 0

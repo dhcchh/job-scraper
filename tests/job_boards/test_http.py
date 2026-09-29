@@ -41,6 +41,16 @@ class _RespondingWith:
         raise error
 
 
+@pytest.mark.parametrize("payload", [{}, {"jobs": None}, {"jobs": ["bad"]}])
+def test_require_job_list_rejects_malformed_board_payload(payload):
+    with pytest.raises(_http.IncompleteBoardResponse):
+        _http.require_job_list(payload, "greenhouse", "acme", key="jobs")
+
+
+def test_require_job_list_accepts_a_confirmed_empty_board():
+    assert _http.require_job_list({"jobs": []}, "greenhouse", "acme", key="jobs") == []
+
+
 def test_get_with_retries_returns_response_on_first_success(monkeypatch):
     captured = {}
 
@@ -389,3 +399,36 @@ def test_paginate_with_retries_in_parallel_stops_after_a_single_full_page(monkey
 
     assert [item["n"] for item in items] == [0, 1]
     assert calls == {0: 1}
+
+
+def test_paginate_with_retries_retries_an_incomplete_sequential_snapshot(monkeypatch):
+    def page_for_call(offset, nth):
+        if offset == 2 and nth == 1:
+            return {"total": 5, "jobPostings": []}
+        return _full_page(offset)
+
+    calls = _post_pages(monkeypatch, page_for_call)
+    items = _http.paginate_with_retries(
+        "workday", "visa.wd5/Visa", "https://x/jobs", method="POST",
+        cursor_param="offset", page_size_param="limit", page_size=2,
+        total_key="total", items_key="jobPostings",
+    )
+
+    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert calls == {0: 2, 2: 2, 4: 1}
+
+
+def test_paginate_with_retries_rejects_a_missing_total(monkeypatch):
+    calls = _post_pages(
+        monkeypatch,
+        lambda offset, nth: {"jobPostings": [{"n": 0}]},
+    )
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="total"):
+        _http.paginate_with_retries(
+            "workday", "visa.wd5/Visa", "https://x/jobs", method="POST",
+            cursor_param="offset", page_size_param="limit", page_size=2,
+            total_key="total", items_key="jobPostings",
+        )
+
+    assert calls == {0: 2}

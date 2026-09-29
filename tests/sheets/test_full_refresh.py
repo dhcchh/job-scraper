@@ -115,6 +115,21 @@ def test_classify_returns_category_for_a_normal_title():
     assert full_refresh._classify(values) == "SWE/DE"
 
 
+def test_write_tab_escapes_formula_like_text():
+    worksheet = _FakeWorksheet(row_count=1)
+    row = _row(
+        title="=SUM(1,2)", description="\t=1+1",
+        url='=HYPERLINK("https://x/1", "Apply")',
+    )
+
+    full_refresh._write_tab(worksheet, [row])
+
+    written = dict(zip(FIELDS, worksheet.updated_with[1]))
+    assert written["title"] == "'=SUM(1,2)"
+    assert written["description"] == "'\t=1+1"
+    assert written["url"] == '=HYPERLINK("https://x/1", "Apply")'
+
+
 def test_classify_returns_none_for_a_recruiter_title():
     values = {
         "board": "Acme",

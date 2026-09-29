@@ -14,7 +14,7 @@ from jobscraper.enrichment.classify_region import (
     tab_name,
 )
 from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
-from jobscraper.models import FIELDS, Job
+from jobscraper.models import FIELDS, Job, escape_sheet_row
 from jobscraper.sheets.backfill import (
     _config_lookup_tables,
     _fetch_overrides,
@@ -98,7 +98,7 @@ def _read_tab_rows(
 def _write_tab(worksheet: gspread.Worksheet, rows: list[list[str]]) -> None:
     """Rewrite a tab, shrinking its grid only after the update succeeds."""
     validate_rows(rows)
-    values = [HEADER] + rows
+    values = [HEADER] + [escape_sheet_row(row) for row in rows]
     worksheet.update(
         range_name="A1",
         values=values,

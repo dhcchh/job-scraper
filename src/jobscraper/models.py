@@ -34,6 +34,21 @@ FIRMS_NEEDING_DESCRIPTION: frozenset[str] = frozenset({"QRT", "Squarepoint"})
 LINK_LABEL = "Apply"
 
 
+def escape_sheet_text(value: str) -> str:
+    """Keep external text literal when Sheets parses USER_ENTERED values."""
+    if value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
+def escape_sheet_row(row: list[str]) -> list[str]:
+    """Escape data cells while preserving our intentional URL formula."""
+    return [
+        value if FIELDS[index] == "url" else escape_sheet_text(value)
+        for index, value in enumerate(row)
+    ]
+
+
 def hyperlink_formula(url: str, label: str = LINK_LABEL) -> str:
     """Return a Sheets hyperlink formula, escaping formula string literals."""
     if not url:
@@ -140,7 +155,7 @@ class Job:
 
     def to_row(self) -> list[str]:
         """Render the job in `FIELDS` order for Google Sheets."""
-        return [
+        return escape_sheet_row([
             normalize_date(self.first_published),
             normalize_date(self.updated_at),
             self.board,
@@ -155,4 +170,4 @@ class Job:
             normalize_date(self.scraped_date),
             self.source,
             self.description,
-        ]
+        ])

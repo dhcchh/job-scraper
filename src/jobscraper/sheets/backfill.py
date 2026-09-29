@@ -26,6 +26,7 @@ from jobscraper.models import (
     FIELDS,
     FIRMS_NEEDING_DESCRIPTION,
     Job,
+    escape_sheet_row,
     hyperlink_formula,
     normalize_date,
 )
@@ -260,7 +261,7 @@ def refresh_worksheet(
     validate_rows(new_rows)
     worksheet.update(
         range_name="A1",
-        values=[HEADER] + new_rows,
+        values=[HEADER] + [escape_sheet_row(row) for row in new_rows],
         value_input_option="USER_ENTERED",
     )
     format_tab(worksheet)
