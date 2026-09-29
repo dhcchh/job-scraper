@@ -155,7 +155,7 @@ def test_sync_supported_companies_writes_wide_grid_to_existing_tab(monkeypatch):
     new_firms = supported_companies.sync_supported_companies(spreadsheet)
 
     assert new_firms == {}  # the tab listed nothing before -- see the bootstrap test below
-    assert worksheet.cleared is True
+    assert worksheet.cleared is False
     assert worksheet.updated_with == [
         ["ai_lab", "consumer_media_entertainment"],
         ["Anthropic", "Spotify"],
@@ -168,6 +168,15 @@ def test_sync_supported_companies_writes_wide_grid_to_existing_tab(monkeypatch):
     assert spreadsheet.added is None  # reused the existing tab, didn't create a new one
 
 
+def test_sync_supported_companies_escapes_formula_like_firm_names(monkeypatch):
+    _set_boards(monkeypatch, greenhouse=[_board("bad", "=1+1", "Big Tech")])
+    worksheet = _FakeWorksheet("Supported companies")
+
+    supported_companies.sync_supported_companies(_FakeSpreadsheet([worksheet]))
+
+    assert worksheet.updated_with == [["big_tech"], ["'=1+1"]]
+
+
 def test_sync_supported_companies_matches_tab_name_case_and_whitespace_insensitively(monkeypatch):
     _set_boards(monkeypatch, greenhouse=[_board("anthropic", "Anthropic", "AI Lab")])
     worksheet = _FakeWorksheet(" supported companies ")
@@ -175,7 +184,7 @@ def test_sync_supported_companies_matches_tab_name_case_and_whitespace_insensiti
 
     supported_companies.sync_supported_companies(spreadsheet)
 
-    assert worksheet.cleared is True
+    assert worksheet.updated_with == [["ai_lab"], ["Anthropic"]]
     assert spreadsheet.added is None
 
 
@@ -187,7 +196,7 @@ def test_sync_supported_companies_creates_the_tab_when_missing(monkeypatch):
 
     assert spreadsheet.added is not None
     assert spreadsheet.added.title == "Supported companies"
-    assert spreadsheet.added.cleared is True
+    assert spreadsheet.added.values == [["ai_lab"], ["Anthropic"]]
 
 
 def test_sync_supported_companies_handles_no_configured_firms(monkeypatch):
@@ -198,8 +207,53 @@ def test_sync_supported_companies_handles_no_configured_firms(monkeypatch):
     new_firms = supported_companies.sync_supported_companies(spreadsheet)
 
     assert new_firms == {}
-    assert worksheet.cleared is True
-    assert worksheet.updated_with is None  # nothing to write -- clear() alone is enough
+    assert worksheet.cleared is False
+    assert worksheet.updated_with is None  # nothing to write
+
+
+def test_sync_supported_companies_keeps_firms_missing_from_config(monkeypatch):
+    # A run whose config lists only some firms (e.g. filtered to one new
+    # firm) must add to the tab, never wipe the others.
+    _set_boards(monkeypatch, lever=[_board("wintermute", "Wintermute", "Prop Trading/Hedge Fund")])
+    worksheet = _FakeWorksheet(
+        "Supported companies",
+        [["ai_lab", "prop_trading_hedge_fund"], ["Anthropic", "Optiver"], ["Cohere", ""]],
+    )
+
+    new_firms = supported_companies.sync_supported_companies(_FakeSpreadsheet([worksheet]))
+
+    assert new_firms == {"Wintermute": "Prop Trading/Hedge Fund"}
+    assert worksheet.cleared is False
+    assert worksheet.values == [
+        ["ai_lab", "prop_trading_hedge_fund"],
+        ["Anthropic", "Optiver"],
+        ["Cohere", "Wintermute"],
+    ]
+
+
+def test_sync_supported_companies_moves_a_recategorized_firm_and_blanks_stale_cells(monkeypatch):
+    _set_boards(monkeypatch, greenhouse=[_board("stripe", "Stripe", "Fintech")])
+    worksheet = _FakeWorksheet(
+        "Supported companies",
+        [["big_tech", "fintech"], ["Google", ""], ["Stripe", ""]],
+    )
+
+    supported_companies.sync_supported_companies(_FakeSpreadsheet([worksheet]))
+
+    assert worksheet.values == [
+        ["big_tech", "fintech"],
+        ["Google", "Stripe"],
+        ["", ""],  # Stripe's old cell, blanked rather than left behind
+    ]
+
+
+def test_sync_supported_companies_skips_the_write_when_nothing_changed(monkeypatch):
+    _set_boards(monkeypatch, greenhouse=[_board("anthropic", "Anthropic", "AI Lab")])
+    worksheet = _FakeWorksheet("Supported companies", [["ai_lab"], ["Anthropic"]])
+
+    supported_companies.sync_supported_companies(_FakeSpreadsheet([worksheet]))
+
+    assert worksheet.updated_with is None
 
 
 def test_sync_supported_companies_returns_firms_the_tab_did_not_list_yet(monkeypatch):

@@ -8,7 +8,7 @@ name: Sync Supported Companies
 on:
   workflow_dispatch: {}
 
-# Writes to the sheet (clears and rewrites the supported companies tab).
+# Writes to the sheet (adds any missing firms to the supported companies tab).
 concurrency:
   group: sheet-write
   cancel-in-progress: false

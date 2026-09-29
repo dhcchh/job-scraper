@@ -606,16 +606,20 @@ use a small fake `Worksheet`.
   workflow also runs on pushes to `main` that change one of the seven board
   TOML files, updating both this tab and job postings immediately after the
   config change. The sync is safe to run unattended because it reasons about
-  nothing but current config, not job/sheet state -- the whole tab is cleared
-  and rewritten from scratch each time (so a firm or category removed from
-  every TOML file disappears too), deduplicating a multi-token firm (e.g.
-  Optiver) down to one entry. The tab is matched by name
+  nothing but current config and the tab itself, not job state. It is
+  additive: it never clears the tab, only adds configured firms it doesn't
+  list yet (moving a firm whose category changed), deduplicating a
+  multi-token firm (e.g. Optiver) down to one entry. A firm removed from
+  every TOML file stays listed until deleted from the tab by hand. It used
+  to clear and rewrite the tab from config; by 2026-09-29 the tab held only
+  Wintermute (the one firm a TOML-push run had been scoped to), so a run
+  with a partial config must never be able to wipe it. The tab is matched by name
   case/whitespace-insensitively and created if genuinely missing, since it's
   user-created rather than one of the ten (category, region) job tabs
   `main.py` otherwise assumes already exist. Also runnable by hand
   (`uv run python -m jobscraper.sheets.supported_companies`) to sync and
   announce without scraping jobs. Before
-  clearing, `sync_supported_companies` reads which firms the tab already
+  writing, `sync_supported_companies` reads which firms the tab already
   lists and returns the configured firms it didn't (firm -> company_type)
   -- the tab's own previous contents are the only "already announced"
   record, no separate state. A tab that listed no firms at all returns `{}`
