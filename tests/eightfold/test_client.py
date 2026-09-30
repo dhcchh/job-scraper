@@ -56,7 +56,7 @@ def test_fetch_eightfold_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return _FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(_http.requests, "get", fake_get)
+    monkeypatch.setattr(_http._session, "get", fake_get)
 
     jobs = client.fetch_eightfold_jobs(
         "mlp", "Millennium", "Prop Trading/Hedge Fund", scraped_date=datetime.date(2026, 9, 16)
@@ -155,16 +155,15 @@ def test_fetch_eightfold_jobs_pages_in_fixed_strides_regardless_of_count(monkeyp
             return _FakeResponse(page2)
         return _FakeResponse(page3)
 
-    monkeypatch.setattr(_http.requests, "get", fake_get)
+    monkeypatch.setattr(_http._session, "get", fake_get)
 
     jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
     assert len(jobs) == 25
-    assert calls == [
-        {"start": 0, "num": client._PAGE_SIZE},
-        {"start": 10, "num": client._PAGE_SIZE},
-        {"start": 20, "num": client._PAGE_SIZE},
-    ]
+    # The first page sets the stride; the rest may arrive in any order.
+    assert calls[0] == {"start": 0, "num": client._PAGE_SIZE}
+    assert sorted(call["start"] for call in calls[1:]) == [10, 20]
+    assert all(call["num"] == client._PAGE_SIZE for call in calls)
 
 
 def test_fetch_eightfold_jobs_rejects_an_empty_page_before_total(monkeypatch):
@@ -177,12 +176,16 @@ def test_fetch_eightfold_jobs_rejects_an_empty_page_before_total(monkeypatch):
         calls.append(dict(params))
         return _FakeResponse(page1 if params["start"] == 0 else empty_page)
 
-    monkeypatch.setattr(_http.requests, "get", fake_get)
+    monkeypatch.setattr(_http._session, "get", fake_get)
 
     with pytest.raises(_http.IncompleteBoardResponse, match="empty page"):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
-    assert [call["start"] for call in calls] == [0, 1, 0, 1]
+    # A short parallel fetch falls back to paging one at a time, twice.
+    starts = [call["start"] for call in calls]
+    assert starts[0] == 0
+    assert sorted(starts[1:5]) == [1, 2, 3, 4]
+    assert starts[5:] == [0, 1, 0, 1]
 
 
 def test_fetch_eightfold_jobs_rejects_a_job_missing_id(monkeypatch):
@@ -192,7 +195,7 @@ def test_fetch_eightfold_jobs_rejects_a_job_missing_id(monkeypatch):
             {"id": "real-id", "name": "Software Engineer", "t_create": 0, "t_update": 0},
         ]
     )
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
 
     with pytest.raises(_http.IncompleteBoardResponse):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
@@ -212,7 +215,7 @@ def test_fetch_eightfold_jobs_rejects_a_duplicate_id_across_pages(monkeypatch):
         calls["n"] += 1
         return _FakeResponse(page1 if calls["n"] == 1 else page2)
 
-    monkeypatch.setattr(_http.requests, "get", fake_get)
+    monkeypatch.setattr(_http._session, "get", fake_get)
 
     with pytest.raises(_http.IncompleteBoardResponse):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
@@ -239,7 +242,7 @@ def test_fetch_eightfold_jobs_raises_on_http_error(monkeypatch):
         def raise_for_status(self):
             raise _http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
 
     with pytest.raises(_http.requests.HTTPError):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")

@@ -13,13 +13,13 @@ _SCRAPED = datetime.date(2026, 9, 26)
 @pytest.fixture(autouse=True)
 def _no_real_http(monkeypatch):
     """Fail any test that reaches the network without mocking it first --
-    each test's own monkeypatch of _http.requests.get/post replaces these."""
+    each test's own monkeypatch of _http._session.get/post replaces these."""
 
     def fail(*args, **kwargs):
         pytest.fail(f"unmocked HTTP call: {args!r}")
 
-    monkeypatch.setattr(_http.requests, "get", fail)
-    monkeypatch.setattr(_http.requests, "post", fail)
+    monkeypatch.setattr(_http._session, "get", fail)
+    monkeypatch.setattr(_http._session, "post", fail)
 _API = "https://visa.wd5.myworkdayjobs.com/wday/cxs/visa/Visa"
 
 
@@ -75,8 +75,8 @@ def _serve(monkeypatch, postings, details=None, calibrate=False):
             return detail
         return _FakeResponse({"jobPostingInfo": detail})
 
-    monkeypatch.setattr(_http.requests, "post", fake_post)
-    monkeypatch.setattr(_http.requests, "get", fake_get)
+    monkeypatch.setattr(_http._session, "post", fake_post)
+    monkeypatch.setattr(_http._session, "get", fake_get)
     return posts, gets
 
 
@@ -276,7 +276,7 @@ def test_fetch_workday_jobs_keeps_paging_past_a_zero_total(monkeypatch):
         return _FakeResponse(pages[json["offset"]])
 
     monkeypatch.setattr(client, "_PAGE_SIZE", 2)
-    monkeypatch.setattr(_http.requests, "post", fake_post)
+    monkeypatch.setattr(_http._session, "post", fake_post)
     monkeypatch.setattr(client, "_workday_today", lambda token, api, raw_jobs: None)
 
     jobs = client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
@@ -398,7 +398,7 @@ def test_fetch_workday_jobs_retries_a_failed_detail_call_once_more_before_droppi
         return _FakeResponse({"jobPostingInfo": {"location": "SG - Singapore"}})
 
     _serve(monkeypatch, [_posting(path, locations_text="2 Locations")])
-    monkeypatch.setattr(_http.requests, "get", lambda url, params=None, timeout=None: detail(url))
+    monkeypatch.setattr(_http._session, "get", lambda url, params=None, timeout=None: detail(url))
     monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
 
     [job] = client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
@@ -468,7 +468,7 @@ def test_fetch_workday_jobs_raises_on_http_error(monkeypatch):
         def raise_for_status(self):
             raise _http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http.requests, "post", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(_http._session, "post", lambda *a, **k: _FailingResponse())
 
     with pytest.raises(_http.requests.HTTPError):
         client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech")

@@ -79,21 +79,17 @@ def _tab_rows_for_refresh(
 def _fetch_overrides() -> dict[tuple[str, str], Job]:
     """Fetch open jobs keyed by `(board, job_id)` for refresh overrides."""
     overrides: dict[tuple[str, str], Job] = {}
-    for source, board_list, fetch in fetchers.board_sources():
-        for board in board_list:
-            firm = board["firm"]
-            try:
-                jobs = fetchers.fetch_board(source, board, fetch)
-            except Exception:
-                logger.warning(
-                    "refresh: couldn't re-fetch %s for location/first_published"
-                    "/description overrides, its rows keep whatever they "
-                    "already have",
-                    firm,
-                )
-                continue
-            for job in jobs:
-                overrides[(job.board, job.job_id)] = job
+    for result in fetchers.fetch_boards(fetchers.board_sources()):
+        if result.error is not None:
+            logger.warning(
+                "refresh: couldn't re-fetch %s for location/first_published"
+                "/description overrides, its rows keep whatever they "
+                "already have",
+                result.board["firm"],
+            )
+            continue
+        for job in result.jobs:
+            overrides[(job.board, job.job_id)] = job
     return overrides
 
 

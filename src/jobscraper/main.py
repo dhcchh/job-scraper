@@ -52,23 +52,21 @@ def run() -> None:
     succeeded_firms: set[str] = set()
     failed_firms: set[str] = set()
     succeeded_entries = 0
-    for source, boards, fetch in board_sources:
-        for board in boards:
-            firm = board["firm"]
-            try:
-                jobs = fetchers.fetch_board(source, board, fetch)
-            except Exception:
-                logger.exception(
-                    "%s[%s]: failed to fetch after retries, skipping this "
-                    "board for the rest of the run",
-                    source,
-                    firm,
-                )
-                failed_firms.add(firm)
-                continue
-            all_jobs.extend(jobs)
-            succeeded_firms.add(firm)
-            succeeded_entries += 1
+    for result in fetchers.fetch_boards(board_sources):
+        firm = result.board["firm"]
+        if result.error is not None:
+            logger.error(
+                "%s[%s]: failed to fetch after retries, skipping this "
+                "board for the rest of the run",
+                result.source,
+                firm,
+                exc_info=result.error,
+            )
+            failed_firms.add(firm)
+            continue
+        all_jobs.extend(result.jobs)
+        succeeded_firms.add(firm)
+        succeeded_entries += 1
 
     total_boards = sum(len(boards) for _source, boards, _fetch in board_sources)
 

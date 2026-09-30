@@ -64,7 +64,7 @@ def test_fetch_recruitee_jobs_parses_response(monkeypatch):
         captured["url"] = url
         return _FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(_http.requests, "get", fake_get)
+    monkeypatch.setattr(_http._session, "get", fake_get)
 
     jobs = client.fetch_recruitee_jobs(
         "opengovernmentproducts",
@@ -93,7 +93,7 @@ def test_fetch_recruitee_jobs_parses_response(monkeypatch):
 
 def test_fetch_recruitee_jobs_joins_and_dedupes_every_office(monkeypatch):
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
+        _http._session, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
     )
 
     jobs = client.fetch_recruitee_jobs("x", "X", "Big Tech")
@@ -110,7 +110,7 @@ def test_fetch_recruitee_jobs_falls_back_to_top_level_city(monkeypatch):
             {"id": 1, "title": "Engineer", "city": "Singapore", "locations": []}
         ]
     }
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
 
     (job,) = client.fetch_recruitee_jobs("x", "X", "Big Tech")
 
@@ -119,7 +119,7 @@ def test_fetch_recruitee_jobs_falls_back_to_top_level_city(monkeypatch):
 
 def test_fetch_recruitee_jobs_fills_description_only_for_listed_firms(monkeypatch):
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
+        _http._session, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
     )
     monkeypatch.setattr(client, "FIRMS_NEEDING_DESCRIPTION", frozenset({"OGP"}))
 
@@ -132,7 +132,7 @@ def test_fetch_recruitee_jobs_fills_description_only_for_listed_firms(monkeypatc
 
 def test_fetch_recruitee_jobs_rejects_a_record_without_an_id(monkeypatch):
     response = {"offers": [{"title": "No id"}, {"id": 7, "title": "Engineer"}]}
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
 
     with pytest.raises(_http.IncompleteBoardResponse):
         client.fetch_recruitee_jobs("x", "X", "Big Tech")
@@ -147,7 +147,7 @@ def test_fetch_recruitee_jobs_raises_on_http_error(monkeypatch):
         def raise_for_status(self):
             raise _http.requests.HTTPError("boom", response=self)
 
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
 
     with pytest.raises(_http.requests.HTTPError):
         client.fetch_recruitee_jobs("x", "X", "Big Tech")

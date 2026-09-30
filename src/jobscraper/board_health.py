@@ -16,18 +16,21 @@ def check() -> bool:
     passed: list[tuple[str, int]] = []
     failed: list[tuple[str, str]] = []
 
-    for source, boards, fetch in fetchers.board_sources():
-        for board in boards:
-            firm = board["firm"]
-            if config.ONLY_FIRMS and firm not in config.ONLY_FIRMS:
-                continue
-            try:
-                jobs = fetchers.fetch_board(source, board, fetch)
-                passed.append((firm, len(jobs)))
-                logger.info("%s: %d jobs", firm, len(jobs))
-            except Exception as exc:
-                failed.append((firm, str(exc)))
-                logger.error("%s: FAILED -- %s", firm, exc)
+    sources = [
+        (source, [
+            board for board in boards
+            if not config.ONLY_FIRMS or board["firm"] in config.ONLY_FIRMS
+        ], fetch)
+        for source, boards, fetch in fetchers.board_sources()
+    ]
+    for result in fetchers.fetch_boards(sources):
+        firm = result.board["firm"]
+        if result.error is not None:
+            failed.append((firm, str(result.error)))
+            logger.error("%s: FAILED -- %s", firm, result.error)
+        else:
+            passed.append((firm, len(result.jobs)))
+            logger.info("%s: %d jobs", firm, len(result.jobs))
 
     _write_summary(passed, failed)
     logger.info("%d/%d boards healthy", len(passed), len(passed) + len(failed))

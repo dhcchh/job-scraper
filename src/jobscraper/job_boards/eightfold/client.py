@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 10
 
+_WORKERS = 8
+
 
 def fetch_eightfold_jobs(
     board_slug: str,
@@ -46,6 +48,7 @@ def _fetch_all_pages(board_slug: str, url: str) -> list[dict]:
         page_size=_PAGE_SIZE,
         total_key="count",
         items_key="positions",
+        workers=_WORKERS,
     )
 
 

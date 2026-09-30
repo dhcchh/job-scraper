@@ -49,7 +49,7 @@ def test_fetch_greenhouse_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return _FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(_http.requests, "get", fake_get)
+    monkeypatch.setattr(_http._session, "get", fake_get)
 
     jobs = client.fetch_greenhouse_jobs(
         "acme", "Acme Corp", "Big Tech", scraped_date=datetime.date(2026, 9, 12)
@@ -94,7 +94,7 @@ def test_fetch_greenhouse_jobs_populates_description_only_for_a_firm_needing_it(
             }
         ]
     }
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
 
     (needed,) = client.fetch_greenhouse_jobs("qrt", "QRT", "Prop Trading/Hedge Fund")
     (not_needed,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -127,7 +127,7 @@ def test_fetch_greenhouse_jobs_rejects_a_job_missing_id(monkeypatch):
         ]
     }
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: _FakeResponse(response)
     )
 
     with pytest.raises(_http.IncompleteBoardResponse):
@@ -157,7 +157,7 @@ def test_fetch_greenhouse_jobs_builds_location_from_offices_not_the_raw_location
         ]
     }
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: _FakeResponse(response)
     )
 
     (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -180,7 +180,7 @@ def test_fetch_greenhouse_jobs_falls_back_to_location_name_when_offices_missing(
         ]
     }
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: _FakeResponse(response)
     )
 
     (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -209,7 +209,7 @@ def test_fetch_greenhouse_jobs_reads_location_name_for_a_board_whose_offices_are
     # city is only in location.name. Without this its postings' location was
     # "MOE HQ | SingPass" and they all landed in RoW.
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(_team_offices_response())
+        _http._session, "get", lambda *a, **k: _FakeResponse(_team_offices_response())
     )
 
     (job,) = client.fetch_greenhouse_jobs("govtech", "GovTech", "Government/Defense Tech")
@@ -221,7 +221,7 @@ def test_fetch_greenhouse_jobs_still_uses_offices_for_every_other_board(monkeypa
     # Opt-in per board only: location.name is free text that often
     # disagrees with offices on other boards, so they keep using offices.
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(_team_offices_response())
+        _http._session, "get", lambda *a, **k: _FakeResponse(_team_offices_response())
     )
 
     (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -238,7 +238,7 @@ def test_fetch_greenhouse_jobs_raises_on_http_error(monkeypatch):
         def raise_for_status(self):
             raise _http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
 
     with pytest.raises(_http.requests.HTTPError):
         client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -282,7 +282,7 @@ _METADATA_RESPONSE = {
 
 def test_fetch_greenhouse_jobs_reads_seniority_from_employment_type_metadata(monkeypatch):
     monkeypatch.setattr(
-        _http.requests,
+        _http._session,
         "get",
         lambda url, params=None, timeout=None: _FakeResponse(_METADATA_RESPONSE),
     )
@@ -301,7 +301,7 @@ def test_fetch_greenhouse_jobs_reads_seniority_from_employment_type_metadata(mon
 @pytest.mark.parametrize("job_id", [None, "", "  ", False, [], {}])
 def test_fetch_rejects_invalid_id(monkeypatch, job_id):
     monkeypatch.setattr(
-        _http.requests, "get",
+        _http._session, "get",
         lambda *a, **k: _FakeResponse({"jobs": [{"id": job_id}]}),
     )
     with pytest.raises(ValueError, match="job_id"):

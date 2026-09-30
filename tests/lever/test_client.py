@@ -55,7 +55,7 @@ def test_fetch_lever_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return _FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(_http.requests, "get", fake_get)
+    monkeypatch.setattr(_http._session, "get", fake_get)
 
     jobs = client.fetch_lever_jobs(
         "acme", "Acme Corp", "Big Tech", scraped_date=datetime.date(2026, 9, 12)
@@ -101,7 +101,7 @@ def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
             "openingPlain": "Do the thing.",
         }
     ]
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
 
     (needed,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
     (not_needed,) = client.fetch_lever_jobs("beta", "Beta Inc", "Big Tech")
@@ -125,7 +125,7 @@ def test_fetch_lever_jobs_rejects_a_job_missing_id(monkeypatch):
         },
     ]
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: _FakeResponse(response)
     )
 
     with pytest.raises(_http.IncompleteBoardResponse):
@@ -145,7 +145,7 @@ def test_fetch_lever_jobs_builds_location_from_all_locations_and_dedupes(monkeyp
         }
     ]
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: _FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
@@ -165,7 +165,7 @@ def test_fetch_lever_jobs_falls_back_to_categories_location_when_all_locations_m
         }
     ]
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: _FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
@@ -185,7 +185,7 @@ def test_fetch_lever_jobs_falls_back_to_team_when_department_is_missing(monkeypa
         }
     ]
     monkeypatch.setattr(
-        _http.requests, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: _FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
@@ -202,7 +202,7 @@ def test_fetch_lever_jobs_raises_on_http_error(monkeypatch):
         def raise_for_status(self):
             raise _http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
 
     with pytest.raises(_http.requests.HTTPError):
         client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")

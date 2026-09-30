@@ -1,11 +1,13 @@
 """Shared retry and pagination helpers for job-board HTTP clients."""
 
 import logging
+import math
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from jobscraper.models import normalize_job_id
 
@@ -13,6 +15,23 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = 2.0
+# Cap on an honored Retry-After, so one throttled board cannot stall a run.
+MAX_RETRY_AFTER_SECONDS = 60.0
+
+USER_AGENT = "latest-job-scraper/0.1"
+
+
+def _new_session() -> requests.Session:
+    """Share keep-alive connections across boards, pages and worker threads."""
+    session = requests.Session()
+    adapter = HTTPAdapter(pool_connections=32, pool_maxsize=16)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers["User-Agent"] = USER_AGENT
+    return session
+
+
+_session = _new_session()
 
 
 class IncompleteBoardResponse(ValueError):
@@ -53,7 +72,7 @@ def get_with_retries(
 ) -> requests.Response:
     """GET a URL using the shared transient-error retry policy."""
     return _send_with_retries(
-        source, identifier, lambda: requests.get(url, params=params, timeout=30)
+        source, identifier, lambda: _session.get(url, params=params, timeout=30)
     )
 
 
@@ -62,7 +81,7 @@ def post_with_retries(
 ) -> requests.Response:
     """POST JSON using the shared transient-error retry policy."""
     return _send_with_retries(
-        source, identifier, lambda: requests.post(url, json=json, timeout=30)
+        source, identifier, lambda: _session.post(url, json=json, timeout=30)
     )
 
 
@@ -83,7 +102,7 @@ def _send_with_retries(
         ) as exc:
             if attempt >= MAX_ATTEMPTS or not _is_retryable(exc):
                 raise
-            delay = BACKOFF_SECONDS * (2 ** (attempt - 1))
+            delay = _retry_after(exc) or BACKOFF_SECONDS * (2 ** (attempt - 1))
             logger.warning(
                 "%s[%s]: attempt %d/%d failed (%s), retrying in %.0fs",
                 source,
@@ -226,6 +245,20 @@ def _paginate_in_parallel(
         ))
     _validate_ids(items, id_key)
     return items if len(items) == total else None
+
+
+def _retry_after(exc: Exception) -> float | None:
+    """Read a 429 response's Retry-After seconds, capped; ignore HTTP dates."""
+    response = getattr(exc, "response", None)
+    if response is None or response.status_code != 429:
+        return None
+    try:
+        seconds = float((getattr(response, "headers", None) or {}).get("Retry-After", ""))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(seconds) or seconds <= 0:
+        return None
+    return min(seconds, MAX_RETRY_AFTER_SECONDS)
 
 
 def _is_retryable(exc: Exception) -> bool:

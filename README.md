@@ -88,11 +88,14 @@ integration settings, disable dotenv loading, and block unmocked HTTP requests.
 ## Failures and pruning
 
 Board requests retry connection failures, timeouts, HTTP 429 and 5xx up to
-three attempts, with 2s/4s backoff. Other HTTP errors fail immediately.
+three attempts, with 2s/4s backoff, or a 429's `Retry-After` seconds (capped
+at 60s). Other HTTP errors fail immediately.
 Missing or malformed job lists, invalid/missing IDs, and repeated IDs fail
 the board. Paginated snapshots must reach the reported total with unique
-identities; an incomplete snapshot is retried before rejection. Workday
-fetches pages and required detail records with up to eight workers.
+identities; an incomplete snapshot is retried before rejection. Boards are
+fetched concurrently (eight at a time, with Workday boards in a separate
+pool of four) over shared keep-alive connections. Workday and Eightfold
+fetch pages, and Workday required detail records, with up to eight workers.
 
 A failed board is excluded from pruning. All configured tokens for a firm
 must succeed before its rows can be removed. A failed Workday detail request
