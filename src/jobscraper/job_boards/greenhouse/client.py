@@ -88,7 +88,6 @@ def _to_job(
             else ""
         ),
         salary=None,
-        jd_raw=raw.get("content") or "",
     )
 
 

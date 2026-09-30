@@ -721,26 +721,22 @@ use a small fake `Worksheet`.
   there when `TELEGRAM_COMPANIES_CHAT_ID` is set.
 - `alerts.py` DMs the operator (`TELEGRAM_DM_CHAT_ID`, their numeric
   Telegram user id -- they must press Start on the bot once, since a bot
-  can't open a private chat) one message per newly appended posting that is
-  a data-engineering role with an office in Singapore or Hong Kong: title,
-  firm, location, seniority, salary, posted date, apply link and the full
-  JD (capped at 10k chars). The title rule (`is_alert_match`) is data/ETL/
-  analytics engineer, or any engineer/developer title naming "data"
-  ("Software Engineer, Data Platform"), minus PM/recruiter/data-centre
-  titles. `main.py` passes it every new PAC row, not just SWE/DE's, since
-  "ML Data Engineer" lands on DS/ML/Algos. Only rows `append_jobs` returned
-  are considered, so nothing is DMed twice; at most `MAX_ALERTS_PER_RUN`
-  (15) per run, then one "+N more" message -- a newly added firm's first
-  run appends its whole backlog. The JD comes from `Job.jd_raw`, which
-  Greenhouse/Lever/Ashby/Recruitee's clients fill for EVERY firm from the
-  list response they already fetch; it is `compare=False`, not in `FIELDS`,
-  and never reaches the sheet, so it is independent of
-  `FIRMS_NEEDING_DESCRIPTION` and needs no backfill. Workday and
-  SmartRecruiters have no JD in their list responses, so `fetch_jd` makes
-  one detail GET per matched posting, deriving the endpoint from `Job.url`
-  (confirmed live against Visa and Grab on 2026-09-30); Eightfold has none,
-  so its DM says to see the link. Same never-raises/no-op-when-unset
-  contract as `send_digest`; `telegram --check` also tests the DM when set.
+  can't open a private chat) one short message per newly appended posting
+  that is a data-engineering role with an office in Singapore or Hong Kong:
+  title, firm, location, seniority, salary, posted date and apply link.
+  The JD is added (capped at 10k chars) only for a firm in
+  `FIRMS_NEEDING_DESCRIPTION`, whose own apply page doesn't show it --
+  it's the `description` those firms already carry; for every other firm
+  the link is enough, and the full JD made the DM too long. The title rule
+  (`is_alert_match`) is data/ETL/analytics engineer, or any
+  engineer/developer title naming "data" ("Software Engineer, Data
+  Platform"), minus PM/recruiter/data-centre titles. `main.py` passes it
+  every new PAC row, not just SWE/DE's, since "ML Data Engineer" lands on
+  DS/ML/Algos. Only rows `append_jobs` returned are considered, so nothing
+  is DMed twice; at most `MAX_ALERTS_PER_RUN` (15) per run, then one "+N
+  more" message -- a newly added firm's first run appends its whole
+  backlog. Same never-raises/no-op-when-unset contract as `send_digest`;
+  `telegram --check` also tests the DM when set.
   `uv run python -m jobscraper.alerts --check` DMs only this chat (a test
   message plus one live OKX sample alert) and reports failures; the manual
   "Telegram DM Check" workflow (`telegram-dm-check.yml`) runs it with the

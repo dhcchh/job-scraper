@@ -95,7 +95,6 @@ def test_fetch_recruitee_jobs_parses_response(monkeypatch):
     assert job.source == "Recruitee"
     assert job.salary is None
     assert job.description == ""  # OGP isn't in FIRMS_NEEDING_DESCRIPTION
-    assert job.jd_raw  # alerts.py still gets the JD, outside the sheet
 
 
 def test_fetch_recruitee_jobs_joins_and_dedupes_every_office(monkeypatch):

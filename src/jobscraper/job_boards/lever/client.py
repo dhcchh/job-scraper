@@ -69,7 +69,6 @@ def _to_job(
         source="Lever",
         description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
         salary=_salary(raw),
-        jd_raw=_description(raw),
     )
 
 

@@ -68,7 +68,6 @@ def _to_job(
         source="Recruitee",
         description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
         salary=None,
-        jd_raw="\n".join(raw.get(field) or "" for field in ("description", "requirements")),
     )
 
 

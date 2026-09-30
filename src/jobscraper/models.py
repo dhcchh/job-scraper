@@ -148,9 +148,6 @@ class Job:
     source: str = ""
     description: str = ""
     salary: str | None = None
-    # The board's own JD (HTML or plain text) for every firm, unlike
-    # `description`. Never written to the sheet; read by alerts.py.
-    jd_raw: str = dataclasses.field(default="", compare=False, repr=False)
 
     def __post_init__(self) -> None:
         _validate_identity(self.board, "board")

@@ -72,7 +72,6 @@ def _to_job(
             else ""
         ),
         salary=_salary(raw),
-        jd_raw=raw.get("descriptionHtml") or raw.get("descriptionPlain") or "",
     )
 
 
