@@ -11,6 +11,9 @@ dependencies = [
     "requests>=2.34.2",
 ]
 
+[project.scripts]
+jobscraper-validate-boards = "jobscraper.validate_boards:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",

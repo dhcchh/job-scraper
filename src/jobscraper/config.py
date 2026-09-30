@@ -1,20 +1,20 @@
 """Load environment variables and job-board configuration."""
 
 import os
-import tomllib
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+from jobscraper.board_config import (
+    DEFAULT_BOARD_DIR,
+    BoardConfig,
+    load_all_boards,
+    load_boards,
+)
+
 load_dotenv()
 
-_PACKAGE_BOARD_DIR = Path(__file__).resolve().parent / "company_toml"
-_COMPANY_TOML_DIR = (
-    _PACKAGE_BOARD_DIR
-    if _PACKAGE_BOARD_DIR.is_dir()
-    else Path(__file__).resolve().parents[2] / "company_toml"
-)
-_REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
+_COMPANY_TOML_DIR = DEFAULT_BOARD_DIR
 PROVIDERS = (
     ("greenhouse", "Greenhouse"),
     ("lever", "Lever"),
@@ -26,37 +26,21 @@ PROVIDERS = (
 )
 
 
-def _load_boards(path: Path) -> list[dict]:
-    with open(path, "rb") as f:
-        boards = tomllib.load(f)["boards"]
-    for index, board in enumerate(boards, start=1):
-        missing = [
-            field for field in _REQUIRED_BOARD_FIELDS
-            if not isinstance(board.get(field), str) or not board[field].strip()
-        ]
-        if missing:
-            identifier = board.get("firm") or board.get("token") or f"#{index}"
-            raise ValueError(
-                f"{path.name}: [[boards]] entry {identifier!r} is missing "
-                f"required field(s): {', '.join(missing)}"
-            )
-        for field in _REQUIRED_BOARD_FIELDS:
-            if board[field] != board[field].strip():
-                raise ValueError(f"{path.name}: {field} contains surrounding whitespace")
-    return boards
+def _load_boards(path: Path) -> list[BoardConfig]:
+    """Compatibility wrapper for callers loading one provider fixture."""
+    return load_boards(path)
 
 
-def _boards(name: str) -> list[dict]:
-    return _load_boards(_COMPANY_TOML_DIR / f"{name}_boards.toml")
+_BOARDS = load_all_boards(_COMPANY_TOML_DIR)
 
 
-GREENHOUSE_BOARDS = _boards("greenhouse")
-LEVER_BOARDS = _boards("lever")
-ASHBY_BOARDS = _boards("ashby")
-SMARTRECRUITERS_BOARDS = _boards("smartrecruiters")
-EIGHTFOLD_BOARDS = _boards("eightfold")
-WORKDAY_BOARDS = _boards("workday")
-RECRUITEE_BOARDS = _boards("recruitee")
+GREENHOUSE_BOARDS = _BOARDS["greenhouse"]
+LEVER_BOARDS = _BOARDS["lever"]
+ASHBY_BOARDS = _BOARDS["ashby"]
+SMARTRECRUITERS_BOARDS = _BOARDS["smartrecruiters"]
+EIGHTFOLD_BOARDS = _BOARDS["eightfold"]
+WORKDAY_BOARDS = _BOARDS["workday"]
+RECRUITEE_BOARDS = _BOARDS["recruitee"]
 
 
 def board_sources() -> list[tuple[str, str, list[dict]]]:

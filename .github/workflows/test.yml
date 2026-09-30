@@ -20,5 +20,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Validate board configuration
+        run: uv run jobscraper-validate-boards
+
       - name: Run tests
         run: uv run pytest

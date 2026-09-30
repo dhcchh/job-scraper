@@ -1,1 +1,1 @@
-"""Daily job-board scraper."""
+"""Fetch and classify jobs from supported recruiting platforms."""

@@ -5,6 +5,7 @@
 ```bash
 uv sync --locked
 uv run pytest
+uv run jobscraper-validate-boards
 uv run python -m jobscraper.board_health
 uv run python -m jobscraper.main
 uv run python -m jobscraper.sheets.backfill
@@ -34,8 +35,11 @@ notifications for moved rows. Repository tests do not require live writes.
 
 ## Code map
 
-- `config.py`: application settings, TOML loading, provider names and labels.
-  Sheet credentials are required when opening a sheet, not at import time.
+- `board_config.py`: environment-independent TOML loading and static checks.
+- `config.py`: application settings, validated boards, provider names and
+  labels. Sheet credentials are required when opening a sheet, not at import
+  time.
+- `validate_boards.py`: static configuration and optional live endpoint checks.
 - `job_boards/fetchers.py`: shared provider registry and per-board invocation.
 - `job_boards/_http.py`: retries, response validation and pagination.
 - `job_boards/*/client.py`: provider payloads to `Job` objects.

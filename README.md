@@ -38,6 +38,7 @@ Credentials belong in `.env` or GitHub Actions secrets.
 
 ```bash
 uv run pytest
+uv run jobscraper-validate-boards                     # validate static board configuration
 uv run python -m jobscraper.board_health             # fetch boards; no sheet credentials needed
 uv run python -m jobscraper.main                     # append new jobs and prune closures
 uv run python -m jobscraper.sheets.backfill          # refresh existing rows in place
@@ -177,8 +178,16 @@ search and retain only matching offices. Eightfold and Workday use
 undocumented endpoints; validate each tenant before relying on it.
 
 ```bash
+uv run jobscraper-validate-boards
+uv run jobscraper-validate-boards --live --provider greenhouse --firm Example
 ONLY_FIRMS=Example uv run python -m jobscraper.board_health
 ```
+
+Static validation rejects missing or unknown fields, surrounding whitespace,
+malformed provider tokens, duplicate tokens, and inconsistent metadata for a
+firm configured more than once. `--live` also verifies endpoint access and
+unique job IDs; an empty result fails unless `--allow-empty` is explicit.
+The board-health command remains the concurrent operational check used by CI.
 
 `ONLY_FIRMS` scopes health checks and daily job fetching. It does not scope
 the Supported companies reference tab. Wheels bundle the board files and
