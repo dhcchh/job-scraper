@@ -740,7 +740,11 @@ use a small fake `Worksheet`.
   one detail GET per matched posting, deriving the endpoint from `Job.url`
   (confirmed live against Visa and Grab on 2026-09-30); Eightfold has none,
   so its DM says to see the link. Same never-raises/no-op-when-unset
-  contract as `send_digest`; `--check` also tests the DM when set.
+  contract as `send_digest`; `telegram --check` also tests the DM when set.
+  `uv run python -m jobscraper.alerts --check` DMs only this chat (a test
+  message plus one live OKX sample alert) and reports failures; the manual
+  "Telegram DM Check" workflow (`telegram-dm-check.yml`) runs it with the
+  repo's secret bot token, which no local `.env` has to hold.
 
 ## Open work
 
