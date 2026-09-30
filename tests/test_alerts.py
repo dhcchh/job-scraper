@@ -220,3 +220,22 @@ def _respond(urls, payload):
         return _Response()
 
     return fake_get
+
+
+def test_check_dm_reports_not_configured(monkeypatch, capsys):
+    monkeypatch.setattr(alerts.config, "TELEGRAM_BOT_TOKEN", None)
+    monkeypatch.setattr(telegram.requests, "post", _fail)
+    assert alerts.check_dm() is False
+    assert "Not configured" in capsys.readouterr().out
+
+
+def test_check_dm_reports_a_send_failure(monkeypatch, capsys):
+    monkeypatch.setattr(alerts.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(alerts.config, "TELEGRAM_DM_CHAT_ID", 42)
+
+    def boom(url, json, timeout):
+        raise ConnectionError("chat not found")
+
+    monkeypatch.setattr(telegram.requests, "post", boom)
+    assert alerts.check_dm() is False
+    assert "pressed Start" in capsys.readouterr().out

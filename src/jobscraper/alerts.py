@@ -163,3 +163,55 @@ def send_alerts(jobs: list[Job], spreadsheet_url: str) -> None:
             None,
             label="alerts",
         )
+
+
+def check_dm(sample_board: str = "okx") -> bool:
+    """DM a test message plus one real sample alert; report, don't swallow."""
+    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_DM_CHAT_ID:
+        print("Not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_DM_CHAT_ID")
+        return False
+    if not send_chunks(
+        "✅ job-scraper: test DM from `alerts --check`. Role alerts will arrive here.",
+        config.TELEGRAM_DM_CHAT_ID,
+        None,
+        label="alerts check",
+    ):
+        print(f"Failed to DM chat {config.TELEGRAM_DM_CHAT_ID} -- has it pressed Start?")
+        return False
+    print(f"Sent OK to chat {config.TELEGRAM_DM_CHAT_ID}.")
+
+    from jobscraper.job_boards.fetchers import fetch_greenhouse_jobs
+
+    board = next(b for b in config.GREENHOUSE_BOARDS if b["token"] == sample_board)
+    jobs = fetch_greenhouse_jobs(board["token"], board["firm"], board["company_type"])
+    job = next((job for job in jobs if is_alert_match(job)), None)
+    if job is None:
+        print(f"No live {board['firm']} posting matches today; skipped the sample.")
+        return True
+    sent = send_chunks(
+        "[sample] " + build_alert_text(job, fetch_jd(job)),
+        config.TELEGRAM_DM_CHAT_ID,
+        None,
+        label="alerts check",
+    )
+    print(f"Sample alert ({job.title}): {'sent' if sent else 'FAILED'}")
+    return sent
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    parser = argparse.ArgumentParser(description="Per-role Telegram DM alerts.")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="DM a test message and one live sample alert to TELEGRAM_DM_CHAT_ID only.",
+    )
+    if not parser.parse_args().check:
+        parser.print_help()
+        sys.exit(1)
+    sys.exit(0 if check_dm() else 1)
