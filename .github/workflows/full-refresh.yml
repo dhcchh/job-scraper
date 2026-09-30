@@ -1,18 +1,10 @@
 name: Full Refresh (Rebuild)
 
-# Manual only -- run after a change to classify_roles.classify_job's
-# category keywords, classify_region.classify_region's PAC country list,
-# FIELDS, location normalization, first_published, or
-# models.FIRMS_NEEDING_DESCRIPTION has piled up enough stale/misplaced rows
-# to be worth a full rebuild. See sheets/full_refresh.py's module docstring
-# for exactly what this recomputes and re-routes.
+# Recompute and reroute existing rows after schema or classifier changes.
 on:
   workflow_dispatch: {}
 
-# Shared with daily-scrape.yml: both read-then-write every tab, so they must
-# never run at the same time -- concurrent runs could both read the same
-# existing keys before either writes, then create duplicate or clobbered
-# rows. Queue rather than cancel: each run gets a complete read/write cycle.
+# Serialize the four workflows that write to the production sheet.
 concurrency:
   group: sheet-write
   cancel-in-progress: false

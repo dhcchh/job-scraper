@@ -1,11 +1,9 @@
-"""Tests for sheets.full_refresh -- no live gspread/Google call.
+"""Tests for sheets.full_refresh using fake integrations."""
 
-Same self-contained fake-worksheet approach as test_writer.py/test_backfill.py
-(see CLAUDE.md's Architecture section on why sheets tests do this instead of
-sharing one fixture).
-"""
-
+import datetime
 import logging
+
+import pytest
 
 from jobscraper.models import FIELDS
 from jobscraper.sheets import full_refresh
@@ -13,6 +11,8 @@ from jobscraper.sheets import full_refresh
 
 class _FakeWorksheet:
     def __init__(self, rows=None, row_count=None):
+        self.id = 0
+        self.col_count = len(FIELDS)
         self._rows = rows or []
         self.row_count = row_count if row_count is not None else len(self._rows)
         self.updated_with = None
@@ -80,14 +80,44 @@ def _empty_boards(monkeypatch):
 
 
 class _FakeSpreadsheet:
-    pass
+    def __init__(self, worksheets):
+        self.worksheets = worksheets
+        self.batches = []
+        self.fail = False
+
+    def batch_update(self, body):
+        self.batches.append(body)
+        if self.fail:
+            raise RuntimeError("batch rejected")
+        by_id = {ws.id: ws for ws in self.worksheets.values()}
+        for request in body["requests"]:
+            if "updateSheetProperties" in request:
+                props = request["updateSheetProperties"]["properties"]
+                by_id[props["sheetId"]].resize(rows=props["gridProperties"]["rowCount"])
+            elif "updateCells" in request:
+                update = request["updateCells"]
+                rows = []
+                for row in update["rows"]:
+                    values = []
+                    for cell in row["values"]:
+                        value = cell["userEnteredValue"]
+                        if "numberValue" in value:
+                            values.append((datetime.date(1899, 12, 30) + datetime.timedelta(days=value["numberValue"])).isoformat())
+                        else:
+                            values.append(value.get("stringValue", value.get("formulaValue")))
+                    rows.append(values)
+                by_id[update["start"]["sheetId"]].updated_with = rows
 
 
 def _patch_tabs(monkeypatch, worksheets):
-    monkeypatch.setattr(full_refresh, "get_spreadsheet", lambda: _FakeSpreadsheet())
+    for index, worksheet in enumerate(worksheets.values()):
+        worksheet.id = index
+    spreadsheet = _FakeSpreadsheet(worksheets)
+    monkeypatch.setattr(full_refresh, "get_spreadsheet", lambda: spreadsheet)
     monkeypatch.setattr(
         full_refresh, "get_worksheet", lambda spreadsheet, name: worksheets[name]
     )
+    return spreadsheet
 
 
 def _all_tab_worksheets(overrides=None):
@@ -115,19 +145,18 @@ def test_classify_returns_category_for_a_normal_title():
     assert full_refresh._classify(values) == "SWE/DE"
 
 
-def test_write_tab_escapes_formula_like_text():
+def test_rewrite_requests_preserve_literal_text_and_url_formulas():
     worksheet = _FakeWorksheet(row_count=1)
     row = _row(
         title="=SUM(1,2)", description="\t=1+1",
         url='=HYPERLINK("https://x/1", "Apply")',
     )
 
-    full_refresh._write_tab(worksheet, [row])
-
-    written = dict(zip(FIELDS, worksheet.updated_with[1]))
-    assert written["title"] == "'=SUM(1,2)"
-    assert written["description"] == "'\t=1+1"
-    assert written["url"] == '=HYPERLINK("https://x/1", "Apply")'
+    requests = full_refresh._rewrite_requests(worksheet, [row])
+    written = dict(zip(FIELDS, requests[1]["updateCells"]["rows"][1]["values"]))
+    assert written["title"]["userEnteredValue"] == {"stringValue": "=SUM(1,2)"}
+    assert written["description"]["userEnteredValue"] == {"stringValue": "\t=1+1"}
+    assert written["url"]["userEnteredValue"] == {"formulaValue": '=HYPERLINK("https://x/1", "Apply")'}
 
 
 def test_classify_returns_none_for_a_recruiter_title():
@@ -239,32 +268,12 @@ def test_read_tab_rows_header_only_returns_nothing():
     assert full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC") == ([], 0)
 
 
-def test_write_tab_grows_the_grid_when_more_rows_than_before():
-    worksheet = _FakeWorksheet(row_count=1)  # header only, currently 0 data rows
-
-    full_refresh._write_tab(worksheet, [_row(job_id="a"), _row(job_id="b")])
-
-    assert worksheet.resized_to == 3
-    assert worksheet.updated_with[0] == list(FIELDS)
-    assert worksheet.updated_with[1:] == [_row(job_id="a"), _row(job_id="b")]
-
-
-def test_write_tab_shrinks_the_grid_when_fewer_rows_than_before():
-    worksheet = _FakeWorksheet(row_count=5)  # header + 4 old data rows
-
-    full_refresh._write_tab(worksheet, [])
-
-    assert worksheet.resized_to == 1
-    assert worksheet.updated_with == [list(FIELDS)]
-
-
-def test_write_tab_skips_resize_when_row_count_already_matches():
-    worksheet = _FakeWorksheet(row_count=2)  # header + 1 data row already
-
-    full_refresh._write_tab(worksheet, [_row(job_id="a")])
-
-    assert worksheet.resized_to is None
-    assert worksheet.updated_with == [list(FIELDS), _row(job_id="a")]
+@pytest.mark.parametrize("old_count, jobs", [(1, 2), (5, 0), (2, 1)])
+def test_rewrite_requests_resize_and_write_in_the_same_batch(old_count, jobs):
+    worksheet = _FakeWorksheet(row_count=old_count)
+    requests = full_refresh._rewrite_requests(worksheet, [_row(job_id=str(i)) for i in range(jobs)])
+    assert requests[0]["updateSheetProperties"]["properties"]["gridProperties"]["rowCount"] == jobs + 1
+    assert len(requests[1]["updateCells"]["rows"]) == jobs + 1
 
 
 def test_refresh_all_moves_a_row_between_tabs(monkeypatch):
@@ -337,3 +346,52 @@ def test_refresh_all_drops_a_row_wholly_in_an_excluded_country(monkeypatch, capl
     )
     assert total_rows_written == 0
     assert "excluded country" in caplog.text
+
+
+def test_rejected_atomic_refresh_keeps_source_and_destination_unchanged(monkeypatch):
+    _empty_boards(monkeypatch)
+    monkeypatch.setattr(full_refresh, "_config_lookup_tables", lambda: ({}, {}))
+    source = _FakeWorksheet([list(FIELDS), _row(location="London, United Kingdom")])
+    destination = _FakeWorksheet([list(FIELDS)])
+    worksheets = _all_tab_worksheets({"SWE/DE - PAC": source, "SWE/DE - RoW": destination})
+    spreadsheet = _patch_tabs(monkeypatch, worksheets)
+    spreadsheet.fail = True
+    with pytest.raises(RuntimeError, match="batch rejected"):
+        full_refresh.refresh_all()
+    assert len(spreadsheet.batches) == 1
+    written_ids = {
+        request["updateCells"]["start"]["sheetId"]
+        for request in spreadsheet.batches[0]["requests"] if "updateCells" in request
+    }
+    assert written_ids == {ws.id for ws in worksheets.values()}
+    assert source.updated_with is None
+    assert destination.updated_with is None
+    assert len(source._rows) == 2
+
+
+def test_invalid_row_in_later_tab_prevents_every_write(monkeypatch):
+    _empty_boards(monkeypatch)
+    monkeypatch.setattr(full_refresh, "_config_lookup_tables", lambda: ({}, {}))
+    worksheets = _all_tab_worksheets({
+        "SWE/DE - PAC": _FakeWorksheet([list(FIELDS), _row()]),
+        "SRE/DevOps - RoW": _FakeWorksheet([list(FIELDS), _row(job_id="")]),
+    })
+    spreadsheet = _patch_tabs(monkeypatch, worksheets)
+    with pytest.raises(ValueError, match="job_id"):
+        full_refresh.refresh_all()
+    assert spreadsheet.batches == []
+
+
+def test_atomic_cell_values_preserve_dates_and_text_ids():
+    assert full_refresh._cell_value("scraped_date", "2026-09-30") == {
+        "numberValue": (datetime.date(2026, 9, 30) - datetime.date(1899, 12, 30)).days
+    }
+    assert full_refresh._cell_value("job_id", "000123") == {"stringValue": "000123"}
+    assert full_refresh._cell_value("title", "=1+1") == {"stringValue": "=1+1"}
+
+
+def test_excluded_country_is_dropped_even_when_title_is_unmatched():
+    worksheet = _FakeWorksheet([list(FIELDS), _row(title="Recruiter", location="Noida, India")])
+    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
+    assert rows == []
+    assert dropped == 1

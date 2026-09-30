@@ -1,7 +1,7 @@
 [project]
 name = "latest-job-scraper"
 version = "0.1.0"
-description = "Daily Greenhouse job-board scraper that writes results into a Google Sheet."
+description = "Daily job-board scraper with Google Sheets tracking and optional Telegram alerts."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

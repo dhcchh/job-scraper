@@ -28,24 +28,8 @@ def fetch_eightfold_jobs(
     raw_jobs = _fetch_all_pages(board_slug, url)
 
     jobs = []
-    skipped = 0
-    seen_ids: set[str] = set()
     for raw in raw_jobs:
-        if "id" not in raw:
-            skipped += 1
-            continue
-        job_id = normalize_job_id(raw["id"])
-        if job_id in seen_ids:
-            skipped += 1
-            continue
-        seen_ids.add(job_id)
         jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    if skipped:
-        logger.warning(
-            "eightfold[%s]: skipped %d job(s) missing or duplicating an id",
-            board_slug,
-            skipped,
-        )
     logger.info("eightfold[%s]: fetched %d jobs", board_slug, len(jobs))
 
     return jobs
@@ -95,9 +79,7 @@ def _to_job(
 def _location(raw: dict) -> str:
     """Normalize and join every listed office."""
     entries = raw.get("locations") or ([raw["location"]] if raw.get("location") else [])
-    return normalize_locations(
-        [(entry or "").split(",", 1)[0].strip() for entry in entries]
-    )
+    return normalize_locations(entries)
 
 
 def _epoch_date(epoch_seconds: int | str | None) -> str:

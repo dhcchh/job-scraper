@@ -23,15 +23,9 @@ def _slugify(label: str) -> str:
 
 def _category_by_firm() -> dict[str, str]:
     """Map each configured firm to its company type."""
-    all_boards = (
-        config.GREENHOUSE_BOARDS
-        + config.LEVER_BOARDS
-        + config.ASHBY_BOARDS
-        + config.SMARTRECRUITERS_BOARDS
-        + config.EIGHTFOLD_BOARDS
-        + config.WORKDAY_BOARDS
-        + config.RECRUITEE_BOARDS
-    )
+    all_boards = [
+        board for _name, _label, boards in config.board_sources() for board in boards
+    ]
     category_by_firm: dict[str, str] = {}
     for board in all_boards:
         category_by_firm.setdefault(board["firm"], board["company_type"])

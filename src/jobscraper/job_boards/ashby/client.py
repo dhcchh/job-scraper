@@ -33,16 +33,8 @@ def fetch_ashby_jobs(
     raw_jobs = require_job_list(payload, "ashby", board_slug, key="jobs")
 
     jobs = []
-    skipped = 0
     for raw in raw_jobs:
-        if "id" not in raw:
-            skipped += 1
-            continue
         jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    if skipped:
-        logger.warning(
-            "ashby[%s]: skipped %d job(s) missing an id", board_slug, skipped
-        )
     logger.info("ashby[%s]: fetched %d jobs", board_slug, len(jobs))
 
     return jobs

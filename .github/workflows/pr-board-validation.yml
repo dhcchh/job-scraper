@@ -1,9 +1,6 @@
-name: Validate New Boards (PR)
+name: Validate Changed Boards (PR)
 
-# On any PR that touches a board TOML, fetch only the newly added firms to
-# confirm their tokens are reachable before the PR merges. A typo in a slug
-# or a board that blocks this project's fetch pattern fails here rather than
-# silently on the first daily scrape after merge.
+# Validate added or modified board entries before merge.
 on:
   pull_request:
     paths:
@@ -26,22 +23,22 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
-      - name: Detect new firms
-        id: new_firms
-        run: |
-          NEW=$(git diff origin/${{ github.base_ref }}...HEAD -- company_toml/*_boards.toml \
-            | grep '^+firm = ' \
-            | sed 's/^+firm = "//' \
-            | sed 's/"//' \
-            | paste -sd ',' -)
-          echo "firms=$NEW" >> $GITHUB_OUTPUT
-
-      - name: Validate new boards
-        if: steps.new_firms.outputs.firms != ''
+      - name: Detect changed boards
+        id: changed_boards
         env:
-          ONLY_FIRMS: ${{ steps.new_firms.outputs.firms }}
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          uv run python -m jobscraper.changed_boards
+          --base "$BASE_REF" --head "$HEAD_REF" --merge-base
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate changed boards
+        if: steps.changed_boards.outputs.firms != ''
+        env:
+          ONLY_FIRMS: ${{ steps.changed_boards.outputs.firms }}
         run: uv run python -m jobscraper.board_health
 
-      - name: No new firms detected
-        if: steps.new_firms.outputs.firms == ''
-        run: echo "No new firms in this TOML change -- skipping board fetch."
+      - name: No changed boards detected
+        if: steps.changed_boards.outputs.firms == ''
+        run: echo "No added or modified boards -- skipping board fetch."

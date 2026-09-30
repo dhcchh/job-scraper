@@ -1,10 +1,4 @@
-"""Tests for lever.client -- JSON-to-Job parsing, no real HTTP calls.
-
-Mirrors tests/greenhouse/test_client.py's structure, adapted to Lever's
-response shape: a bare JSON array (not {"jobs": [...]}), `text`/`hostedUrl`
-instead of `title`/`absolute_url`, and `categories.{department,team,
-location,allLocations}` instead of `departments`/`location`/`offices`.
-"""
+"""Tests for lever.client using fake integrations."""
 
 import datetime
 
@@ -116,7 +110,7 @@ def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
     assert not_needed.description == ""  # not in FIRMS_NEEDING_DESCRIPTION
 
 
-def test_fetch_lever_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):
+def test_fetch_lever_jobs_rejects_a_job_missing_id(monkeypatch):
     response = [
         {
             "text": "No id field",
@@ -134,10 +128,8 @@ def test_fetch_lever_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch)
         _http.requests, "get", lambda *a, **k: _FakeResponse(response)
     )
 
-    jobs = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
-
-    assert len(jobs) == 1
-    assert jobs[0].job_id == "real-id"
+    with pytest.raises(_http.IncompleteBoardResponse):
+        client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
 
 
 def test_fetch_lever_jobs_builds_location_from_all_locations_and_dedupes(monkeypatch):

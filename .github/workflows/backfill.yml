@@ -1,15 +1,10 @@
 name: Backfill (Refresh Existing Rows)
 
-# Manual only -- run after changing FIELDS, classification metadata, location
-# normalization, first_published, or models.FIRMS_NEEDING_DESCRIPTION to
-# refresh those columns in existing sheet rows without re-routing them between
-# tabs. See sheets/backfill.py's module docstring for exactly what this
-# recomputes. For changes that also re-route rows between tabs, use
-# Full Refresh (Rebuild) instead.
+# Refresh existing rows in place. Use Full Refresh for routing changes.
 on:
   workflow_dispatch: {}
 
-# Shared concurrency group with daily-scrape.yml and full-refresh.yml.
+# Serialize the four workflows that write to the production sheet.
 concurrency:
   group: sheet-write
   cancel-in-progress: false
@@ -37,11 +32,6 @@ jobs:
           GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
-          TELEGRAM_COMPANIES_CHAT_ID: ${{ secrets.TELEGRAM_COMPANIES_CHAT_ID }}
-          TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
         run: uv run python -m jobscraper.sheets.backfill
 
       - name: Audit sheet data quality

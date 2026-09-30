@@ -69,7 +69,7 @@ def test_fetch_greenhouse_jobs_parses_response(monkeypatch):
     assert first.company_type == "Big Tech"
     assert first.first_published == "2026-06-15"
     assert first.updated_at == "2026-09-01"
-    assert first.salary is None  # Greenhouse has no structured pay field at all
+    assert first.salary is None  # salary extraction is not implemented for this client
 
     # Missing department/location degrade to "", not a crash.
     assert second.department == ""
@@ -103,7 +103,7 @@ def test_fetch_greenhouse_jobs_populates_description_only_for_a_firm_needing_it(
     assert not_needed.description == ""  # not in FIRMS_NEEDING_DESCRIPTION
 
 
-def test_fetch_greenhouse_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):
+def test_fetch_greenhouse_jobs_rejects_a_job_missing_id(monkeypatch):
     # A malformed record with no id at all must not cost the whole board's
     # otherwise-good postings for the day -- main.py treats any exception
     # from fetch_greenhouse_jobs as this entire board having failed to fetch.
@@ -130,10 +130,8 @@ def test_fetch_greenhouse_jobs_skips_a_job_missing_id_instead_of_raising(monkeyp
         _http.requests, "get", lambda *a, **k: _FakeResponse(response)
     )
 
-    jobs = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
-
-    assert len(jobs) == 1
-    assert jobs[0].job_id == "99"
+    with pytest.raises(_http.IncompleteBoardResponse):
+        client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
 
 
 def test_fetch_greenhouse_jobs_builds_location_from_offices_not_the_raw_location_string(monkeypatch):

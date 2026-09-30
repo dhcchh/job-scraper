@@ -5,7 +5,7 @@ import logging
 
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
-    normalize_location,
+    normalize_office,
     normalize_locations,
 )
 from jobscraper.job_boards._http import get_with_retries, require_job_list
@@ -33,16 +33,8 @@ def fetch_recruitee_jobs(
     raw_jobs = require_job_list(response.json(), "recruitee", subdomain, key="offers")
 
     jobs = []
-    skipped = 0
     for raw in raw_jobs:
-        if "id" not in raw:
-            skipped += 1
-            continue
         jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    if skipped:
-        logger.warning(
-            "recruitee[%s]: skipped %d job(s) missing an id", subdomain, skipped
-        )
     logger.info("recruitee[%s]: fetched %d jobs", subdomain, len(jobs))
 
     return jobs
@@ -80,6 +72,7 @@ def _description(raw: dict) -> str:
 def _location(raw: dict) -> str:
     """Normalize and join every listed office."""
     location = normalize_locations(
-        [entry.get("city") for entry in raw.get("locations") or []]
+        [normalize_office(entry.get("city") or "", entry.get("country") or "")
+         for entry in raw.get("locations") or []]
     )
-    return location or normalize_location(raw.get("city") or "")
+    return location or normalize_office(raw.get("city") or "", raw.get("country") or "")

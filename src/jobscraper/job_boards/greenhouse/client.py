@@ -36,11 +36,7 @@ def fetch_greenhouse_jobs(
     raw_jobs = require_job_list(payload, "greenhouse", board_token, key="jobs")
 
     jobs = []
-    skipped = 0
     for raw in raw_jobs:
-        if "id" not in raw:
-            skipped += 1
-            continue
         jobs.append(
             _to_job(
                 raw,
@@ -49,10 +45,6 @@ def fetch_greenhouse_jobs(
                 scraped_date,
                 use_location_name=board_token in _OFFICES_ARE_TEAMS,
             )
-        )
-    if skipped:
-        logger.warning(
-            "greenhouse[%s]: skipped %d job(s) missing an id", board_token, skipped
         )
     logger.info("greenhouse[%s]: fetched %d jobs", board_token, len(jobs))
 

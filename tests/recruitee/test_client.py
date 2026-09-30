@@ -1,10 +1,4 @@
-"""Tests for recruitee.client -- JSON-to-Job parsing, no real HTTP calls.
-
-Same structure as tests/ashby/test_client.py, adapted to Recruitee's
-response shape: {"offers": [...]}, `careers_url`, both `published_at` and
-`updated_at`, and a pre-split `locations[]` list with its own `city` per
-office. Field values mirror OGP's live board.
-"""
+"""Tests for recruitee.client using fake integrations."""
 
 import datetime
 
@@ -104,7 +98,7 @@ def test_fetch_recruitee_jobs_joins_and_dedupes_every_office(monkeypatch):
 
     jobs = client.fetch_recruitee_jobs("x", "X", "Big Tech")
 
-    assert jobs[1].location == "Ghent | Singapore"
+    assert jobs[1].location == "Ghent, Belgium | Singapore"
     assert jobs[1].department == ""
     assert jobs[1].first_published == ""
     assert jobs[1].updated_at == ""
@@ -136,13 +130,12 @@ def test_fetch_recruitee_jobs_fills_description_only_for_listed_firms(monkeypatc
     assert "<" not in job.description
 
 
-def test_fetch_recruitee_jobs_skips_a_record_without_an_id(monkeypatch):
+def test_fetch_recruitee_jobs_rejects_a_record_without_an_id(monkeypatch):
     response = {"offers": [{"title": "No id"}, {"id": 7, "title": "Engineer"}]}
     monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
 
-    jobs = client.fetch_recruitee_jobs("x", "X", "Big Tech")
-
-    assert [job.job_id for job in jobs] == ["7"]
+    with pytest.raises(_http.IncompleteBoardResponse):
+        client.fetch_recruitee_jobs("x", "X", "Big Tech")
 
 
 def test_fetch_recruitee_jobs_raises_on_http_error(monkeypatch):
@@ -158,3 +151,11 @@ def test_fetch_recruitee_jobs_raises_on_http_error(monkeypatch):
 
     with pytest.raises(_http.requests.HTTPError):
         client.fetch_recruitee_jobs("x", "X", "Big Tech")
+
+
+def test_recruitee_retains_country_for_an_unmapped_city():
+    from jobscraper.enrichment.classify_region import is_excluded
+
+    location = client._location({"locations": [{"city": "Noida", "country": "India"}]})
+    assert location == "Noida, India"
+    assert is_excluded(location)

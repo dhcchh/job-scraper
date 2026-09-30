@@ -1,9 +1,6 @@
 name: Board Health Check
 
-# Weekly canary: fetch every configured board without writing to the sheet and
-# fail the run if any board is unreachable. Surfaces broken tokens, WAF
-# changes, or API shape changes before the next daily scrape silently skips
-# them. Also runnable on demand via workflow_dispatch.
+# Fetch boards without sheet access; report provider or configuration failures.
 on:
   schedule:
     # Sundays at 12:00 UTC -- well outside the daily scrape window (23:00 UTC).

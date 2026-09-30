@@ -1,7 +1,4 @@
-"""Tests for config._load_boards -- against a temp fixture file, not the
-real company_toml/greenhouse_boards.toml, so this doesn't churn every time
-a firm is added or removed.
-"""
+"""Tests for config using fake integrations."""
 
 import pytest
 
@@ -89,3 +86,13 @@ def test_optional_set_splits_and_trims(monkeypatch):
 def test_optional_set_empty_when_unset(monkeypatch):
     monkeypatch.delenv("SOME_SET", raising=False)
     assert _optional_set("SOME_SET") == frozenset()
+
+
+def test_missing_sheet_credentials_fail_only_when_opening_a_sheet(monkeypatch):
+    from jobscraper import config
+    from jobscraper.sheets import writer
+
+    monkeypatch.setattr(config, "GOOGLE_SHEET_ID", "")
+    monkeypatch.setattr(config, "GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    with pytest.raises(ValueError, match="Missing required sheet settings"):
+        writer.get_spreadsheet()

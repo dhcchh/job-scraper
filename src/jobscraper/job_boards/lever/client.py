@@ -33,16 +33,8 @@ def fetch_lever_jobs(
     raw_jobs = require_job_list(response.json(), "lever", board_slug)
 
     jobs = []
-    skipped = 0
     for raw in raw_jobs:
-        if "id" not in raw:
-            skipped += 1
-            continue
         jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    if skipped:
-        logger.warning(
-            "lever[%s]: skipped %d job(s) missing an id", board_slug, skipped
-        )
     logger.info("lever[%s]: fetched %d jobs", board_slug, len(jobs))
 
     return jobs

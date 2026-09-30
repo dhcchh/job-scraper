@@ -375,3 +375,23 @@ def normalize_locations(locations: list[str | None]) -> str:
     """Normalize, deduplicate, and pipe-join locations in input order."""
     normalized = (normalize_location(location or "") for location in locations)
     return " | ".join(dict.fromkeys(filter(None, normalized)))
+
+
+def normalize_office(city: str, country: str) -> str:
+    """Preserve a provider's country even when its city is absent from the table."""
+    if not country:
+        return normalize_location(city)
+    code = country.strip().upper()
+    country = (
+        _ALPHA2_COUNTRIES.get(code)
+        or _ALPHA3_COUNTRIES.get(code)
+        or {"US": "United States", "CA": "Canada", "GB": "United Kingdom"}.get(code)
+        or _SITE_COUNTRIES.get(country.casefold())
+        or country.strip()
+    )
+    if not city or city.strip().casefold() == country.casefold():
+        return country
+    normalized = normalize_location(city)
+    if normalized == country or normalized.endswith(f", {country}"):
+        return normalized
+    return normalize_location(f"{city.strip()}, {country}")

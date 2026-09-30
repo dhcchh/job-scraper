@@ -6,7 +6,7 @@ import logging
 from jobscraper.job_boards._http import paginate_with_retries
 from jobscraper.models import Job, normalize_job_id, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
-from jobscraper.enrichment.normalize_location import normalize_location
+from jobscraper.enrichment.normalize_location import normalize_office
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +31,8 @@ def fetch_smartrecruiters_jobs(
     raw_jobs = _fetch_all_pages(company_identifier, url)
 
     jobs = []
-    skipped = 0
     for raw in raw_jobs:
-        if "id" not in raw:
-            skipped += 1
-            continue
         jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    if skipped:
-        logger.warning(
-            "smartrecruiters[%s]: skipped %d job(s) missing an id",
-            company_identifier,
-            skipped,
-        )
     logger.info(
         "smartrecruiters[%s]: fetched %d jobs", company_identifier, len(jobs)
     )
@@ -94,7 +84,8 @@ def _department(raw: dict) -> str:
 
 def _location(raw: dict) -> str:
     """Normalize the posting's single office."""
-    return normalize_location((raw.get("location") or {}).get("city") or "")
+    location = raw.get("location") or {}
+    return normalize_office(location.get("city") or "", location.get("country") or "")
 
 
 def _posting_url(raw: dict) -> str:

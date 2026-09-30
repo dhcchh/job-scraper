@@ -1,7 +1,4 @@
-"""Tests for telegram.py -- pure formatting/grouping/chunking logic plus
-send_digest's config-gating and best-effort error handling. No real network
-call: requests is monkeypatched, never exercised for real.
-"""
+"""Tests for telegram using fake integrations."""
 
 import datetime
 
@@ -61,7 +58,7 @@ def test_build_digest_text_groups_by_category_firm_and_location():
     assert "Wise x1 (Singapore)" in text
     # One shared "SWE/DE" header for all three groups, not repeated per line.
     assert text.count("SWE/DE") == 1
-    # Individual job titles are never shown -- see module docstring.
+    # Individual job titles are never shown.
     assert "Backend Engineer" not in text
     assert "Frontend Engineer" not in text
 

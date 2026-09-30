@@ -15,19 +15,34 @@ _COMPANY_TOML_DIR = (
     else Path(__file__).resolve().parents[2] / "company_toml"
 )
 _REQUIRED_BOARD_FIELDS = ("token", "firm", "company_type")
+PROVIDERS = (
+    ("greenhouse", "Greenhouse"),
+    ("lever", "Lever"),
+    ("ashby", "Ashby"),
+    ("smartrecruiters", "SmartRecruiters"),
+    ("eightfold", "Eightfold"),
+    ("workday", "Workday"),
+    ("recruitee", "Recruitee"),
+)
 
 
 def _load_boards(path: Path) -> list[dict]:
     with open(path, "rb") as f:
         boards = tomllib.load(f)["boards"]
     for index, board in enumerate(boards, start=1):
-        missing = [field for field in _REQUIRED_BOARD_FIELDS if not board.get(field)]
+        missing = [
+            field for field in _REQUIRED_BOARD_FIELDS
+            if not isinstance(board.get(field), str) or not board[field].strip()
+        ]
         if missing:
             identifier = board.get("firm") or board.get("token") or f"#{index}"
             raise ValueError(
                 f"{path.name}: [[boards]] entry {identifier!r} is missing "
                 f"required field(s): {', '.join(missing)}"
             )
+        for field in _REQUIRED_BOARD_FIELDS:
+            if board[field] != board[field].strip():
+                raise ValueError(f"{path.name}: {field} contains surrounding whitespace")
     return boards
 
 
@@ -43,9 +58,28 @@ EIGHTFOLD_BOARDS = _boards("eightfold")
 WORKDAY_BOARDS = _boards("workday")
 RECRUITEE_BOARDS = _boards("recruitee")
 
-GOOGLE_SHEET_ID: str = os.environ["GOOGLE_SHEET_ID"]
+
+def board_sources() -> list[tuple[str, str, list[dict]]]:
+    """Read the configured provider lists, including runtime overrides."""
+    return [
+        (name, label, globals()[f"{name.upper()}_BOARDS"])
+        for name, label in PROVIDERS
+    ]
+
+
+def require_sheet_credentials() -> None:
+    """Validate sheet settings only for commands that actually open a sheet."""
+    missing = [
+        name for name in ("GOOGLE_SHEET_ID", "GOOGLE_SERVICE_ACCOUNT_JSON")
+        if not globals()[name]
+    ]
+    if missing:
+        raise ValueError("Missing required sheet settings: " + ", ".join(missing))
+
+
+GOOGLE_SHEET_ID: str = os.environ.get("GOOGLE_SHEET_ID", "")
 GOOGLE_SHEET_TITLE: str | None = os.environ.get("GOOGLE_SHEET_TITLE") or None
-GOOGLE_SERVICE_ACCOUNT_JSON: str = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+GOOGLE_SERVICE_ACCOUNT_JSON: str = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
 
 def _optional_int(name: str) -> int | None:
@@ -78,5 +112,5 @@ FORCE_PRUNE_FIRMS: frozenset[str] = _optional_set("FORCE_PRUNE_FIRMS")
 
 # When non-empty, only fetch and append jobs for these firms (all others are
 # skipped). Used by the daily-scrape workflow on TOML pushes to run only the
-# newly added firms rather than the full board list.
+# firms with added or modified board entries.
 ONLY_FIRMS: frozenset[str] = _optional_set("ONLY_FIRMS")

@@ -45,14 +45,7 @@ _QUOTA_RETRY_WAITS = (10, 20, 40, 60)
 
 
 class _QuotaRetryingHTTPClient(gspread.HTTPClient):
-    """Retry a request Sheets rejected with HTTP 429 (per-minute quota).
-
-    A 429 means the request wasn't applied, so retrying is safe even for an
-    append. A full refresh makes ~7 writes per tab, which exceeded the
-    60-writes-per-minute quota on 2026-09-27. Unlike gspread's own
-    BackOffHTTPClient, 5xx errors are not retried: a failed append may
-    already have landed, and repeating it would duplicate rows.
-    """
+    """Retry quota rejections. Do not retry ambiguous 5xx append outcomes."""
 
     def request(self, *args, **kwargs):
         for wait in _QUOTA_RETRY_WAITS:
@@ -68,6 +61,7 @@ class _QuotaRetryingHTTPClient(gspread.HTTPClient):
 
 def get_spreadsheet() -> gspread.Spreadsheet:
     """Open and validate the configured spreadsheet."""
+    config.require_sheet_credentials()
     info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
     credentials = Credentials.from_service_account_info(info, scopes=_SCOPES)
     client = gspread.authorize(credentials, http_client=_QuotaRetryingHTTPClient)
@@ -140,8 +134,10 @@ def _filter_requests(worksheet: gspread.Worksheet) -> list[dict]:
         "startColumnIndex": 0,
         "endColumnIndex": len(FIELDS),
     }
+    metadata = _sheet_metadata(worksheet)
+    basic_filter = {**metadata.get("basicFilter", {}), "range": grid_range}
     return [
-        {"setBasicFilter": {"filter": {"range": grid_range}}},
+        {"setBasicFilter": {"filter": basic_filter}},
         *(
             {
                 "updateFilterView": {
@@ -149,29 +145,20 @@ def _filter_requests(worksheet: gspread.Worksheet) -> list[dict]:
                     "fields": "range",
                 }
             }
-            for view_id in _saved_filter_view_ids(worksheet)
+            for view_id in (view["filterViewId"] for view in metadata.get("filterViews", []))
         ),
     ]
 
 
-def _saved_filter_view_ids(worksheet: gspread.Worksheet) -> list[int]:
-    """Ids of the tab's saved filter views, or none if they can't be read."""
-    try:
-        metadata = worksheet.client.fetch_sheet_metadata(
-            worksheet.spreadsheet_id, params={"includeGridData": "false"}
-        )
-        sheet = next(
-            item
-            for item in metadata["sheets"]
-            if item["properties"]["sheetId"] == worksheet.id
-        )
-    except Exception:
-        logger.warning(
-            "couldn't read saved filter views for sheet id %s", worksheet.id,
-            exc_info=True,
-        )
-        return []
-    return [view["filterViewId"] for view in sheet.get("filterViews", [])]
+def _sheet_metadata(worksheet: gspread.Worksheet) -> dict:
+    """Read existing filters; fail before replacing settings we could not read."""
+    metadata = worksheet.client.fetch_sheet_metadata(
+        worksheet.spreadsheet_id, params={"includeGridData": "false"}
+    )
+    return next(
+        item for item in metadata["sheets"]
+        if item["properties"]["sheetId"] == worksheet.id
+    )
 
 
 def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> list[Job]:
@@ -207,7 +194,7 @@ def _existing_keys(worksheet: gspread.Worksheet) -> set[tuple[str, str]]:
     """(board, job_id) of every row already in the sheet."""
     all_values = worksheet.get_all_values()
     if not all_values:
-        return set()
+        _check_header(worksheet, [])
 
     header, *data_rows = all_values
     _check_header(worksheet, header)
@@ -238,7 +225,7 @@ def plan_prune(
     tracked_counts: Counter[str] = Counter()
     all_values = worksheet.get_all_values()
     if not all_values:
-        return PrunePlan(worksheet, closed_rows, tracked_counts)
+        _check_header(worksheet, [])
 
     header, *data_rows = all_values
     _check_header(worksheet, header)
@@ -257,13 +244,11 @@ def plan_prune(
 def held_back_prunes(
     plans: Iterable[PrunePlan],
     fetched_counts: Mapping[str, int],
-    appended_counts: Mapping[str, int],
 ) -> dict[str, str]:
     """Return firm -> reason for each firm whose prune looks like a broken fetch.
 
-    Counts are summed across every tab. Rows appended this run are left out
-    of a firm's tracked total, so a job_id format change (every old row
-    closed, every posting re-appended under a new id) still reads as 100%.
+    Plans must be collected before appending. Held-back firms are not
+    appended either, so retrying cannot inflate their tracked baseline.
     """
     closed: Counter[str] = Counter()
     tracked: Counter[str] = Counter()
@@ -274,7 +259,7 @@ def held_back_prunes(
 
     held_back = {}
     for firm, closed_count in sorted(closed.items()):
-        previously_tracked = tracked[firm] - appended_counts.get(firm, 0)
+        previously_tracked = tracked[firm]
         if fetched_counts.get(firm, 0) == 0:
             held_back[firm] = (
                 f"board returned 0 postings; would prune all {closed_count} "
@@ -326,13 +311,7 @@ def apply_prune(plan: PrunePlan, held_back: Iterable[str] = ()) -> int:
 
 
 def _check_header(worksheet: gspread.Worksheet, header: list[str]) -> None:
-    """Refuse a tab whose header disagrees with this code's `FIELDS`.
-
-    Rows are written and read by position, so a tab migrated by code this
-    checkout doesn't have would get shifted rows -- the 2026-09-21 incident
-    corrupted job_id this way, and prune then deleted the corrupted rows.
-    Extra columns after `FIELDS` are left alone and tolerated.
-    """
+    """Require managed columns in FIELDS order; tolerate extra trailing columns."""
     if header[: len(HEADER)] != HEADER:
         raise RuntimeError(
             f"{worksheet.title!r}: sheet header {header!r} doesn't start with "

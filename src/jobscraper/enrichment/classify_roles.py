@@ -2,6 +2,8 @@
 
 import re
 
+from jobscraper.enrichment._keywords import contains_keyword
+
 from jobscraper.models import Job
 
 # First matching category wins, so this order is significant.
@@ -143,14 +145,9 @@ def classify_job(job: Job) -> str | None:
     skipped = _DE_KEYWORDS if _NOT_AN_ENGINEERING_ROLE_RE.search(text) else ()
     for category, keywords in CATEGORIES:
         if any(
-            _contains_keyword(text, keyword)
+            contains_keyword(text, keyword)
             for keyword in keywords
             if keyword not in skipped
         ):
             return category
     return None
-
-
-def _contains_keyword(text: str, keyword: str) -> bool:
-    pattern = r"\b" + re.escape(keyword) + r"\b"
-    return re.search(pattern, text, re.IGNORECASE) is not None

@@ -1,12 +1,4 @@
-"""Tests for smartrecruiters.client -- JSON-to-Job parsing, no real HTTP
-calls.
-
-Mirrors tests/ashby/test_client.py's structure, adapted to SmartRecruiters'
-response shape: paginated ({"offset", "limit", "totalFound", "content":
-[...]}), `name`/constructed url (not `title`/a URL field), a single
-`location` object (not a pre-split per-office array), and `function.label`
-standing in for department.
-"""
+"""Tests for smartrecruiters.client using fake integrations."""
 
 import datetime
 
@@ -88,7 +80,7 @@ def test_fetch_smartrecruiters_jobs_parses_response(monkeypatch):
     assert first.updated_at == ""  # no edited-at timestamp at all
     assert first.source == "SmartRecruiters"
     assert first.description == ""
-    assert first.salary is None  # no compensation field anywhere in this API
+    assert first.salary is None  # salary extraction is not implemented for this client
 
     # Missing function/location/releasedDate degrade to "", not a crash.
     assert second.department == ""
@@ -149,7 +141,7 @@ def test_fetch_smartrecruiters_jobs_rejects_an_empty_page_before_total(monkeypat
     assert [call["offset"] for call in calls] == [0, 1, 0, 1]
 
 
-def test_fetch_smartrecruiters_jobs_skips_a_job_missing_id_instead_of_raising(
+def test_fetch_smartrecruiters_jobs_rejects_a_job_missing_id(
     monkeypatch,
 ):
     response = _page(
@@ -160,10 +152,8 @@ def test_fetch_smartrecruiters_jobs_skips_a_job_missing_id_instead_of_raising(
     )
     monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
 
-    jobs = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
-
-    assert len(jobs) == 1
-    assert jobs[0].job_id == "real-id"
+    with pytest.raises(_http.IncompleteBoardResponse):
+        client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
 
 def test_fetch_smartrecruiters_jobs_falls_back_to_empty_department_when_function_is_missing(
@@ -193,3 +183,17 @@ def test_fetch_smartrecruiters_jobs_raises_on_http_error(monkeypatch):
 
     with pytest.raises(_http.requests.HTTPError):
         client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
+
+
+@pytest.mark.parametrize("city, country, region, excluded", [
+    ("Shenzhen", "cn", "PAC", False),
+    ("Noida", "in", "RoW", True),
+    ("Melbourne", "us", "RoW", False),
+    ("", "sg", "PAC", False),
+])
+def test_location_uses_provider_country(city, country, region, excluded):
+    from jobscraper.enrichment.classify_region import classify_region, is_excluded
+
+    location = client._location({"location": {"city": city, "country": country}})
+    assert classify_region(location) == region
+    assert is_excluded(location) == excluded

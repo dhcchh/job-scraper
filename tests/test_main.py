@@ -1,27 +1,4 @@
-"""Tests for main.run()'s per-board error handling, startup spreadsheet-id
-logging, and end-of-run job summary.
-
-fetch_greenhouse_jobs/fetch_lever_jobs/fetch_ashby_jobs/
-fetch_smartrecruiters_jobs/fetch_eightfold_jobs, get_spreadsheet,
-get_worksheet, append_jobs, plan_prune and
-apply_prune are all monkeypatched here -- this exercises only
-run()'s own orchestration (which boards it treats as "fetched" for pruning
-purposes), not gspread or the network. GITHUB_STEP_SUMMARY is explicitly
-unset in _patch_sheet_functions so these orchestration tests can't
-accidentally write into a real one if pytest is ever run inside a GitHub
-Actions job itself; the summary-writing tests below set it to a tmp_path
-file instead.
-
-sync_and_announce and send_digest are also mocked to no-ops by default in
-_patch_sheet_functions --
-belt-and-suspenders alongside conftest.py forcing TELEGRAM_BOT_TOKEN/
-TELEGRAM_CHAT_ID to "" (which already makes the real send_digest a no-op):
-a test here shouldn't depend on global env state to stay off the network,
-since a real `.env` with real Telegram credentials previously let several of
-these tests' fake job data (e.g. "Acme", "GoodCo") actually get posted to a
-real chat. The two digest-specific tests below override this default to
-capture what main.run() actually passed send_digest.
-"""
+"""Tests for main using fake integrations."""
 
 import datetime
 from collections import Counter
@@ -63,7 +40,7 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     # Keep orchestration tests isolated from gspread and Telegram unless a
     # test explicitly replaces this mock to inspect the call.
     monkeypatch.setattr(main, "sync_and_announce", lambda spreadsheet: None)
-    # No-op by default -- see module docstring. A test that wants to inspect
+    # No-op by default. A test that wants to inspect
     # what main.run() passed send_digest overrides this itself, after
     # calling _patch_sheet_functions.
     monkeypatch.setattr(main, "send_digest", lambda new_jobs, spreadsheet_url: None)
@@ -102,7 +79,7 @@ def test_run_syncs_supported_companies_before_fetching_jobs(monkeypatch):
         lambda synced_spreadsheet: events.append(("sync", synced_spreadsheet)),
     )
     monkeypatch.setattr(
-        main,
+        main.fetchers,
         "fetch_greenhouse_jobs",
         lambda token, firm, company_type: events.append(("fetch", firm)) or [],
     )
@@ -126,7 +103,7 @@ def test_run_fails_after_updating_succeeded_boards(monkeypatch):
             raise RuntimeError("greenhouse down")
         return [good_job]
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
 
     prune_calls: list[set[str]] = []
     append_calls: list[tuple] = []
@@ -153,7 +130,7 @@ def test_run_routes_jobs_to_category_and_region_tabs(monkeypatch):
     row_job = _job("Acme", "2", location="London, United Kingdom")
 
     monkeypatch.setattr(
-        main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [pac_job, row_job]
+        main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [pac_job, row_job]
     )
 
     prune_calls: list[set[str]] = []
@@ -180,7 +157,7 @@ def test_run_drops_a_job_wholly_in_an_excluded_country(monkeypatch):
     kept_job = _job("Acme", "2", location="Singapore")
 
     monkeypatch.setattr(
-        main,
+        main.fetchers,
         "fetch_greenhouse_jobs",
         lambda token, firm, company_type: [excluded_job, kept_job],
     )
@@ -207,7 +184,7 @@ def test_run_keeps_a_multi_location_job_pairing_an_excluded_country_with_pac(
     mixed_job = _job("Acme", "1", location="Hanoi, Vietnam | Singapore")
 
     monkeypatch.setattr(
-        main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [mixed_job]
+        main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [mixed_job]
     )
 
     prune_calls: list[set[str]] = []
@@ -232,9 +209,9 @@ def test_run_fetches_and_merges_lever_boards_alongside_greenhouse(monkeypatch):
     gh_job = _job("Acme", "1", location="Singapore")
     lever_job = _job("Palantir", "2", location="London, United Kingdom")
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     monkeypatch.setattr(
-        main, "fetch_lever_jobs", lambda token, firm, company_type: [lever_job]
+        main.fetchers, "fetch_lever_jobs", lambda token, firm, company_type: [lever_job]
     )
 
     prune_calls: list[set[str]] = []
@@ -271,9 +248,9 @@ def test_run_fetches_and_merges_ashby_boards_alongside_greenhouse(monkeypatch):
     gh_job = _job("Acme", "1", location="Singapore")
     ashby_job = _job("OpenAI", "2", location="London, United Kingdom")
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     monkeypatch.setattr(
-        main, "fetch_ashby_jobs", lambda token, firm, company_type: [ashby_job]
+        main.fetchers, "fetch_ashby_jobs", lambda token, firm, company_type: [ashby_job]
     )
 
     prune_calls: list[set[str]] = []
@@ -312,9 +289,9 @@ def test_run_fetches_and_merges_smartrecruiters_boards_alongside_greenhouse(
     gh_job = _job("Acme", "1", location="Singapore")
     sr_job = _job("Grab", "2", location="London, United Kingdom")
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     monkeypatch.setattr(
-        main, "fetch_smartrecruiters_jobs", lambda token, firm, company_type: [sr_job]
+        main.fetchers, "fetch_smartrecruiters_jobs", lambda token, firm, company_type: [sr_job]
     )
 
     prune_calls: list[set[str]] = []
@@ -349,7 +326,7 @@ def test_run_treats_a_failed_smartrecruiters_board_like_a_failed_greenhouse_boar
     def fake_fetch_smartrecruiters_jobs(token, firm, company_type):
         raise RuntimeError("smartrecruiters down")
 
-    monkeypatch.setattr(main, "fetch_smartrecruiters_jobs", fake_fetch_smartrecruiters_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_smartrecruiters_jobs", fake_fetch_smartrecruiters_jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -379,9 +356,9 @@ def test_run_fetches_and_merges_eightfold_boards_alongside_greenhouse(monkeypatc
     gh_job = _job("Acme", "1", location="Singapore")
     ef_job = _job("Millennium", "2", location="London, United Kingdom")
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     monkeypatch.setattr(
-        main, "fetch_eightfold_jobs", lambda token, firm, company_type: [ef_job]
+        main.fetchers, "fetch_eightfold_jobs", lambda token, firm, company_type: [ef_job]
     )
 
     prune_calls: list[set[str]] = []
@@ -414,7 +391,7 @@ def test_run_treats_a_failed_eightfold_board_like_a_failed_greenhouse_board(monk
     def fake_fetch_eightfold_jobs(token, firm, company_type):
         raise RuntimeError("eightfold down")
 
-    monkeypatch.setattr(main, "fetch_eightfold_jobs", fake_fetch_eightfold_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_eightfold_jobs", fake_fetch_eightfold_jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -443,14 +420,14 @@ def test_run_fetches_and_merges_workday_boards_alongside_greenhouse(monkeypatch)
     gh_job = _job("Acme", "1", location="London, United Kingdom")
     wd_job = _job("Visa", "REF1", location="Singapore")
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     workday_calls = []
 
     def fake_fetch_workday_jobs(token, firm, company_type, *, location_scope=None):
         workday_calls.append((token, firm, company_type, location_scope))
         return [wd_job]
 
-    monkeypatch.setattr(main, "fetch_workday_jobs", fake_fetch_workday_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_workday_jobs", fake_fetch_workday_jobs)
 
     prune_calls: list[set[str]] = []
     append_calls: list[tuple] = []
@@ -492,7 +469,7 @@ def test_run_treats_a_failed_workday_board_like_a_failed_greenhouse_board(monkey
     def fake_fetch_workday_jobs(token, firm, company_type):
         raise RuntimeError("workday down")
 
-    monkeypatch.setattr(main, "fetch_workday_jobs", fake_fetch_workday_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_workday_jobs", fake_fetch_workday_jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -517,7 +494,7 @@ def test_run_treats_a_failed_ashby_board_like_a_failed_greenhouse_board(monkeypa
     def fake_fetch_ashby_jobs(token, firm, company_type):
         raise RuntimeError("ashby down")
 
-    monkeypatch.setattr(main, "fetch_ashby_jobs", fake_fetch_ashby_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_ashby_jobs", fake_fetch_ashby_jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -542,7 +519,7 @@ def test_run_treats_a_failed_lever_board_like_a_failed_greenhouse_board(monkeypa
     def fake_fetch_lever_jobs(token, firm, company_type):
         raise RuntimeError("lever down")
 
-    monkeypatch.setattr(main, "fetch_lever_jobs", fake_fetch_lever_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_lever_jobs", fake_fetch_lever_jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -576,7 +553,7 @@ def test_run_excludes_firm_from_prune_if_any_of_its_boards_failed(monkeypatch):
             raise RuntimeError("greenhouse down")
         return [_job("Optiver", "1")]
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -595,7 +572,7 @@ def test_run_completes_when_every_board_fails(monkeypatch):
     def fake_fetch_greenhouse_jobs(token, firm, company_type):
         raise RuntimeError("greenhouse down")
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -634,7 +611,7 @@ def _patch_stale_rows(monkeypatch, firm, row_count):
 def test_run_holds_back_prune_for_a_board_that_returned_nothing(monkeypatch, tmp_path):
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -659,7 +636,7 @@ def test_run_holds_back_prune_for_a_board_that_returned_nothing(monkeypatch, tmp
 def test_run_prunes_a_held_back_firm_when_forced(monkeypatch):
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -677,7 +654,7 @@ def test_run_logs_spreadsheet_identity_at_startup(monkeypatch, caplog):
     # visible.
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -693,7 +670,7 @@ def test_run_writes_job_summary_when_github_step_summary_is_set(monkeypatch, tmp
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
     job = _job("Acme", "1", location="Singapore")
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [job])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [job])
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -718,7 +695,7 @@ def test_run_reports_unplaced_locations_and_titles_in_summary(monkeypatch, tmp_p
         _job("Acme", "2", title="Sales Engineer"),  # noise
         _job("Acme", "3", title="Account Executive"),  # noise, no watched word
     ]
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -745,7 +722,7 @@ def test_run_writes_partial_summary_before_failing(monkeypatch, tmp_path):
             raise RuntimeError("greenhouse down")
         return [_job("GoodCo", "1", location="Singapore")]
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
 
@@ -763,7 +740,7 @@ def test_run_writes_partial_summary_before_failing(monkeypatch, tmp_path):
 def test_run_skips_job_summary_without_github_step_summary(monkeypatch):
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [])
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -775,7 +752,7 @@ def test_build_summary_markdown_reports_failure_and_per_tab_counts():
     markdown = main._build_summary_markdown(
         spreadsheet_title="Test Sheet",
         spreadsheet_url="https://example.com/sheet",
-        succeeded_firms={"GoodCo"},
+        succeeded_entries=1,
         failed_firms={"BadCo"},
         total_boards=2,
         total_jobs=10,
@@ -798,7 +775,7 @@ def test_build_summary_markdown_lists_held_back_prunes():
     markdown = main._build_summary_markdown(
         spreadsheet_title="Test Sheet",
         spreadsheet_url="https://example.com/sheet",
-        succeeded_firms={"GoodCo"},
+        succeeded_entries=1,
         failed_firms=set(),
         total_boards=1,
         total_jobs=1,
@@ -819,7 +796,7 @@ def test_build_summary_markdown_reports_success_when_nothing_failed():
     markdown = main._build_summary_markdown(
         spreadsheet_title="Test Sheet",
         spreadsheet_url="https://example.com/sheet",
-        succeeded_firms={"GoodCo"},
+        succeeded_entries=1,
         failed_firms=set(),
         total_boards=1,
         total_jobs=1,
@@ -859,7 +836,7 @@ def test_run_sends_telegram_digest_with_newly_appended_pac_jobs(monkeypatch):
         "Acme", "2", title="Software Engineer", location="London, United Kingdom"
     )
     monkeypatch.setattr(
-        main,
+        main.fetchers,
         "fetch_greenhouse_jobs",
         lambda token, firm, company_type: [da_bi_job, swe_row_job],
     )
@@ -891,7 +868,7 @@ def test_run_passes_every_new_pac_row_to_send_alerts(monkeypatch):
     swe_de = _job("Acme", "2", title="Data Engineer", location="Hong Kong")
     row_de = _job("Acme", "3", title="Data Engineer", location="London, United Kingdom")
     monkeypatch.setattr(
-        main,
+        main.fetchers,
         "fetch_greenhouse_jobs",
         lambda token, firm, company_type: [ml_de, swe_de, row_de],
     )
@@ -922,7 +899,7 @@ def test_run_excludes_deliberately_excluded_countries_from_pac_digest(monkeypatc
         "Acme", "2", title="Software Engineer", location="Kuala Lumpur, Malaysia"
     )
     monkeypatch.setattr(
-        main,
+        main.fetchers,
         "fetch_greenhouse_jobs",
         lambda token, firm, company_type: [vietnam_job, malaysia_job],
     )
@@ -961,7 +938,7 @@ def test_run_sends_telegram_digest_even_on_partial_failure(monkeypatch):
             raise RuntimeError("greenhouse down")
         return [good_job]
 
-    monkeypatch.setattr(main, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
 
     prune_calls: list[set[str]] = []
     _patch_sheet_functions(monkeypatch, prune_calls)
@@ -978,3 +955,53 @@ def test_run_sends_telegram_digest_even_on_partial_failure(monkeypatch):
 
     (new_jobs,) = digest_calls
     assert new_jobs["DA/BI"] == [good_job]
+
+
+def test_repeated_held_back_runs_do_not_append_replacement_ids(monkeypatch):
+    from jobscraper.models import FIELDS
+    from jobscraper.sheets import writer
+
+    class Worksheet:
+        def __init__(self, title, jobs=()):
+            self.title = title
+            self.rows = [list(FIELDS)] + [job.to_row() for job in jobs]
+
+        def get_all_values(self):
+            return self.rows
+
+        def append_rows(self, rows, **kwargs):
+            self.rows.extend(rows)
+
+    _patch_sheet_functions(monkeypatch, [])
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [
+        {"token": "acme", "firm": "Acme", "company_type": "Tech"}
+    ])
+    old = [_job("Acme", f"old-{i}", title="Software Engineer", location="Singapore") for i in range(6)]
+    new = [_job("Acme", f"new-{i}", title="Software Engineer", location="Singapore") for i in range(6)]
+    worksheets = {
+        main.tab_name(category, region): Worksheet(main.tab_name(category, region))
+        for category, _ in main.CATEGORIES for region in main.REGIONS
+    }
+    worksheets["SWE/DE - PAC"] = Worksheet("SWE/DE - PAC", old)
+    monkeypatch.setattr(main, "get_worksheet", lambda _, name: worksheets[name])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda *a: new)
+    monkeypatch.setattr(main, "append_jobs", writer.append_jobs)
+    monkeypatch.setattr(main, "plan_prune", writer.plan_prune)
+    monkeypatch.setattr(main, "apply_prune", writer.apply_prune)
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="prune held back for: Acme"):
+            main.run()
+        assert worksheets["SWE/DE - PAC"].rows == [list(FIELDS)] + [job.to_row() for job in old]
+
+
+def test_summary_counts_each_successful_token_for_the_same_firm(monkeypatch):
+    _patch_sheet_functions(monkeypatch, [])
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [
+        {"token": token, "firm": "Acme", "company_type": "Tech"} for token in ("one", "two")
+    ])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda *a: [])
+    summaries = []
+    monkeypatch.setattr(main, "_write_job_summary", summaries.append)
+    main.run()
+    assert "Boards fetched: 2/2" in summaries[0]

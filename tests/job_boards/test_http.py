@@ -1,13 +1,4 @@
-"""Tests for job_boards._http -- get_with_retries/post_with_retries (the retry
-policy shared by every job_boards/*/client.py) and paginate_with_retries,
-tested once here instead of once per board.
-
-Each client's own test module (tests/greenhouse, tests/lever, tests/ashby,
-tests/smartrecruiters, tests/eightfold, tests/workday) keeps a single
-raises_on_http_error test to confirm it wires these in correctly and
-propagates a persistent failure, but the retry-policy behavior itself
-(retries/backoff/gives-up) only lives here now.
-"""
+"""Tests for job_boards.http using fake integrations."""
 
 import pytest
 
@@ -75,7 +66,6 @@ def test_get_with_retries_returns_response_on_first_success(monkeypatch):
 
 
 def test_get_with_retries_defaults_params_to_none(monkeypatch):
-    # Ashby's client calls get_with_retries with no params at all.
     captured = {}
 
     def fake_get(url, params=None, timeout=None):
@@ -245,9 +235,9 @@ def test_paginate_with_retries_posts_cursor_in_the_body_and_keeps_the_first_tota
     # Workday's shape: `total` is only real on the first page and 0 on every
     # page after it -- the loop must keep going on the first page's total.
     pages = {
-        0: {"total": 5, "jobPostings": [{"n": 0}, {"n": 1}]},
-        2: {"total": 0, "jobPostings": [{"n": 2}, {"n": 3}]},
-        4: {"total": 0, "jobPostings": [{"n": 4}]},
+        0: {"total": 5, "jobPostings": [{"id": 0}, {"id": 1}]},
+        2: {"total": 0, "jobPostings": [{"id": 2}, {"id": 3}]},
+        4: {"total": 0, "jobPostings": [{"id": 4}]},
     }
     bodies = []
 
@@ -273,7 +263,7 @@ def test_paginate_with_retries_posts_cursor_in_the_body_and_keeps_the_first_tota
         items_key="jobPostings",
     )
 
-    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert bodies[0] == {"appliedFacets": {}, "searchText": "", "offset": 0, "limit": 2}
     assert [body["offset"] for body in bodies] == [0, 2, 4]
 
@@ -284,8 +274,8 @@ def test_paginate_with_retries_gets_cursor_as_query_params_by_default(monkeypatc
     def fake_get(url, params=None, timeout=None):
         params_seen.append(params)
         if params["offset"] == 0:
-            return _FakeResponse({"totalFound": 3, "content": [{"n": 0}, {"n": 1}]})
-        return _FakeResponse({"totalFound": 3, "content": [{"n": 2}]})
+            return _FakeResponse({"totalFound": 3, "content": [{"id": 0}, {"id": 1}]})
+        return _FakeResponse({"totalFound": 3, "content": [{"id": 2}]})
 
     monkeypatch.setattr(_http.requests, "get", fake_get)
 
@@ -300,7 +290,7 @@ def test_paginate_with_retries_gets_cursor_as_query_params_by_default(monkeypatc
         items_key="content",
     )
 
-    assert [item["n"] for item in items] == [0, 1, 2]
+    assert [item["id"] for item in items] == [0, 1, 2]
     assert params_seen == [{"offset": 0, "limit": 2}, {"offset": 2, "limit": 2}]
 
 
@@ -339,7 +329,7 @@ def _paginate_in_parallel(page_size=2):
 def _full_page(offset, total=5, size=2):
     return {
         "total": total if offset == 0 else 0,
-        "jobPostings": [{"n": n} for n in range(offset, min(offset + size, total))],
+        "jobPostings": [{"id": n} for n in range(offset, min(offset + size, total))],
     }
 
 
@@ -348,7 +338,7 @@ def test_paginate_with_retries_in_parallel_fetches_every_page_once_in_order(monk
 
     items = _paginate_in_parallel()
 
-    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert calls == {0: 1, 2: 1, 4: 1}
 
 
@@ -367,7 +357,7 @@ def test_paginate_with_retries_in_parallel_falls_back_when_a_page_fails(
     with caplog.at_level("WARNING"):
         items = _paginate_in_parallel()
 
-    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert "parallel page fetch failed" in caplog.text
     assert calls[0] == 2  # once per pass -- the fallback starts over
 
@@ -388,7 +378,7 @@ def test_paginate_with_retries_in_parallel_falls_back_when_pages_come_back_short
     with caplog.at_level("WARNING"):
         items = _paginate_in_parallel()
 
-    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert "different number of items" in caplog.text
 
 
@@ -397,7 +387,7 @@ def test_paginate_with_retries_in_parallel_stops_after_a_single_full_page(monkey
 
     items = _paginate_in_parallel()
 
-    assert [item["n"] for item in items] == [0, 1]
+    assert [item["id"] for item in items] == [0, 1]
     assert calls == {0: 1}
 
 
@@ -414,14 +404,14 @@ def test_paginate_with_retries_retries_an_incomplete_sequential_snapshot(monkeyp
         total_key="total", items_key="jobPostings",
     )
 
-    assert [item["n"] for item in items] == [0, 1, 2, 3, 4]
+    assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert calls == {0: 2, 2: 2, 4: 1}
 
 
 def test_paginate_with_retries_rejects_a_missing_total(monkeypatch):
     calls = _post_pages(
         monkeypatch,
-        lambda offset, nth: {"jobPostings": [{"n": 0}]},
+        lambda offset, nth: {"jobPostings": [{"id": 0}]},
     )
 
     with pytest.raises(_http.IncompleteBoardResponse, match="total"):
@@ -432,3 +422,32 @@ def test_paginate_with_retries_rejects_a_missing_total(monkeypatch):
         )
 
     assert calls == {0: 2}
+
+
+@pytest.mark.parametrize("workers", [1, 4])
+def test_paginate_rejects_duplicate_ids_even_when_totals_match(monkeypatch, workers):
+    calls = _post_pages(monkeypatch, lambda offset, nth: {
+        "total": 4,
+        "jobPostings": [{"id": 1}, {"id": 2}] if offset == 0 else [{"id": 2}, {"id": 3}],
+    })
+    with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
+        _http.paginate_with_retries(
+            "workday", "acme", "https://example.test/jobs", method="POST",
+            cursor_param="offset", page_size_param="limit", page_size=2,
+            total_key="total", items_key="jobPostings", workers=workers,
+        )
+    assert calls[0] >= 2  # The whole snapshot was retried before rejecting it.
+
+
+def test_paginate_recovers_when_retry_has_unique_ids(monkeypatch):
+    def page(offset, nth):
+        ids = [1, 2] if offset == 0 else ([2, 3] if nth == 1 else [3, 4])
+        return {"total": 4, "jobPostings": [{"id": value} for value in ids]}
+
+    _post_pages(monkeypatch, page)
+    items = _http.paginate_with_retries(
+        "test", "acme", "https://example.test/jobs", method="POST",
+        cursor_param="offset", page_size_param="limit", page_size=2,
+        total_key="total", items_key="jobPostings",
+    )
+    assert [item["id"] for item in items] == [1, 2, 3, 4]

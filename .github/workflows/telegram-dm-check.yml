@@ -1,9 +1,6 @@
 name: Telegram DM Check
 
-# Manual only -- DMs TELEGRAM_DM_CHAT_ID a test message and one live sample
-# role alert (alerts.py --check), to confirm the bot can reach it. Reads no
-# sheet and posts nothing to the group chats. The bot token only exists as
-# a repo secret, so this is the way to test it.
+# Send a test DM and live sample role to the configured operator.
 on:
   workflow_dispatch: {}
 
@@ -24,9 +21,6 @@ jobs:
 
       - name: Send test DM
         env:
-          # config.py requires these at import; nothing here opens the sheet.
-          GOOGLE_SHEET_ID: unused
-          GOOGLE_SERVICE_ACCOUNT_JSON: "{}"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_DM_CHAT_ID: ${{ secrets.TELEGRAM_DM_CHAT_ID }}
         run: uv run python -m jobscraper.alerts --check

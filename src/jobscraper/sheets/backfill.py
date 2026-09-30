@@ -13,15 +13,7 @@ from jobscraper.enrichment.classify_region import REGIONS, tab_name
 from jobscraper.enrichment.classify_roles import CATEGORIES
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations
-from jobscraper.job_boards.fetchers import (
-    fetch_ashby_jobs,
-    fetch_eightfold_jobs,
-    fetch_greenhouse_jobs,
-    fetch_lever_jobs,
-    fetch_recruitee_jobs,
-    fetch_smartrecruiters_jobs,
-    fetch_workday_jobs,
-)
+from jobscraper.job_boards import fetchers
 from jobscraper.models import (
     FIELDS,
     FIRMS_NEEDING_DESCRIPTION,
@@ -77,8 +69,6 @@ def _tab_rows_for_refresh(
     if not all_values:
         return None
     header, *data_rows = all_values
-    if not data_rows:
-        return None
     old_index = {
         name: (header.index(name) if name in header else None) for name in FIELDS
     }
@@ -89,24 +79,11 @@ def _tab_rows_for_refresh(
 def _fetch_overrides() -> dict[tuple[str, str], Job]:
     """Fetch open jobs keyed by `(board, job_id)` for refresh overrides."""
     overrides: dict[tuple[str, str], Job] = {}
-    for source, board_list, fetch in (
-        ("greenhouse", config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),
-        ("lever", config.LEVER_BOARDS, fetch_lever_jobs),
-        ("ashby", config.ASHBY_BOARDS, fetch_ashby_jobs),
-        ("smartrecruiters", config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
-        ("eightfold", config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
-        ("workday", config.WORKDAY_BOARDS, fetch_workday_jobs),
-        ("recruitee", config.RECRUITEE_BOARDS, fetch_recruitee_jobs),
-    ):
+    for source, board_list, fetch in fetchers.board_sources():
         for board in board_list:
             firm = board["firm"]
             try:
-                kwargs = (
-                    {"location_scope": board["location_scope"]}
-                    if source == "workday" and board.get("location_scope")
-                    else {}
-                )
-                jobs = fetch(board["token"], firm, board["company_type"], **kwargs)
+                jobs = fetchers.fetch_board(source, board, fetch)
             except Exception:
                 logger.warning(
                     "refresh: couldn't re-fetch %s for location/first_published"
@@ -128,23 +105,14 @@ def _renormalize_location(value: str) -> str:
 
 def _config_lookup_tables() -> tuple[dict[str, str], dict[str, str]]:
     """Build current company-type and board-source lookups by firm."""
-    board_lists_with_source = (
-        (config.GREENHOUSE_BOARDS, "Greenhouse"),
-        (config.LEVER_BOARDS, "Lever"),
-        (config.ASHBY_BOARDS, "Ashby"),
-        (config.SMARTRECRUITERS_BOARDS, "SmartRecruiters"),
-        (config.EIGHTFOLD_BOARDS, "Eightfold"),
-        (config.WORKDAY_BOARDS, "Workday"),
-        (config.RECRUITEE_BOARDS, "Recruitee"),
-    )
     company_type_by_firm = {
         board["firm"]: board["company_type"]
-        for board_list, _source in board_lists_with_source
+        for _source, _label, board_list in config.board_sources()
         for board in board_list
     }
     source_by_firm = {
         board["firm"]: source
-        for board_list, source in board_lists_with_source
+        for _source, source, board_list in config.board_sources()
         for board in board_list
     }
     return company_type_by_firm, source_by_firm
@@ -222,8 +190,7 @@ def refresh_worksheet(
     """Recompute and rewrite every row in one worksheet."""
     loaded = _tab_rows_for_refresh(worksheet)
     if loaded is None:
-        logger.info("refresh: no data rows, nothing to do")
-        return
+        loaded = ([], {name: None for name in FIELDS}, [])
     data_rows, old_index, url_formula_cells = loaded
     company_type_by_firm, source_by_firm = _config_lookup_tables()
 

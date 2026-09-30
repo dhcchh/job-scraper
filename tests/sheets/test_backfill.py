@@ -1,10 +1,4 @@
-"""Tests for sheets.backfill -- no live gspread/Google call.
-
-Same fake-worksheet approach as test_writer.py: a tiny in-file fake with
-just the methods backfill.py actually calls, kept self-contained rather
-than shared, matching the existing pattern (see CLAUDE.md's Architecture
-section on why sheets/writer.py's tests do the same).
-"""
+"""Tests for sheets.backfill using fake integrations."""
 
 from jobscraper.sheets import backfill
 
@@ -74,16 +68,16 @@ def _old_row(
     ]
 
 
-def test_refresh_noop_on_empty_sheet():
+def test_refresh_initializes_empty_sheet_header():
     worksheet = _FakeWorksheet([])
     backfill.refresh_worksheet(worksheet)
-    assert worksheet.updated_with is None
+    assert worksheet.updated_with == [backfill.HEADER]
 
 
-def test_refresh_noop_on_header_only():
+def test_refresh_migrates_header_only_sheet():
     worksheet = _FakeWorksheet([_OLD_HEADER])
     backfill.refresh_worksheet(worksheet)
-    assert worksheet.updated_with is None
+    assert worksheet.updated_with == [backfill.HEADER]
 
 
 def test_refresh_reorders_into_current_fields_order_and_recomputes_seniority():
@@ -331,7 +325,7 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     from jobscraper.enrichment.classify_roles import CATEGORIES
 
     # No boards to re-fetch for location overrides -- keeps this test off
-    # the network (see module docstring: tests never hit it).
+    # the network.
     monkeypatch.setattr(backfill.config, "GREENHOUSE_BOARDS", [])
     monkeypatch.setattr(backfill.config, "LEVER_BOARDS", [])
     monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
@@ -370,7 +364,7 @@ def test_fetch_overrides_keys_by_board_and_job_id(monkeypatch):
 
     fetched = [_job_stub("Acme", "1", "Singapore"), _job_stub("Acme", "2", "London, United Kingdom")]
     monkeypatch.setattr(
-        backfill, "fetch_greenhouse_jobs", lambda token, firm, company_type: fetched
+        backfill.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: fetched
     )
 
     overrides = backfill._fetch_overrides()
@@ -401,7 +395,7 @@ def test_fetch_overrides_skips_a_board_that_fails(monkeypatch):
             raise RuntimeError("greenhouse down")
         return [good_job]
 
-    monkeypatch.setattr(backfill, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+    monkeypatch.setattr(backfill.fetchers, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
 
     overrides = backfill._fetch_overrides()  # must not raise
 
@@ -464,20 +458,20 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
     workday_job = _job_stub("WorkdayCo", "R-6", "Seoul, South Korea")
     recruitee_job = _job_stub("RecruiteeCo", "7", "Singapore")
 
-    monkeypatch.setattr(backfill, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
+    monkeypatch.setattr(backfill.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     monkeypatch.setattr(
-        backfill, "fetch_lever_jobs", lambda token, firm, company_type: [lever_job]
+        backfill.fetchers, "fetch_lever_jobs", lambda token, firm, company_type: [lever_job]
     )
     monkeypatch.setattr(
-        backfill, "fetch_ashby_jobs", lambda token, firm, company_type: [ashby_job]
+        backfill.fetchers, "fetch_ashby_jobs", lambda token, firm, company_type: [ashby_job]
     )
     monkeypatch.setattr(
-        backfill,
+        backfill.fetchers,
         "fetch_smartrecruiters_jobs",
         lambda token, firm, company_type: [smartrecruiters_job],
     )
     monkeypatch.setattr(
-        backfill,
+        backfill.fetchers,
         "fetch_eightfold_jobs",
         lambda token, firm, company_type: [eightfold_job],
     )
@@ -487,9 +481,9 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         workday_scopes.append(location_scope)
         return [workday_job]
 
-    monkeypatch.setattr(backfill, "fetch_workday_jobs", fake_fetch_workday_jobs)
+    monkeypatch.setattr(backfill.fetchers, "fetch_workday_jobs", fake_fetch_workday_jobs)
     monkeypatch.setattr(
-        backfill,
+        backfill.fetchers,
         "fetch_recruitee_jobs",
         lambda token, firm, company_type: [recruitee_job],
     )

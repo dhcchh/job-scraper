@@ -20,6 +20,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="data-quality.json")
     args = parser.parse_args()
+    config.require_sheet_credentials()
     credentials = Credentials.from_service_account_info(
         json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON),
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],

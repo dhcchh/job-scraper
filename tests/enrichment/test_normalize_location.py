@@ -514,3 +514,11 @@ def test_normalize_location_reads_a_leading_city_before_a_building(raw, expected
 )
 def test_normalize_location_maps_bare_pac_and_excluded_cities(raw, expected):
     assert normalize_location(raw) == expected
+
+
+def test_structured_country_does_not_duplicate_existing_country():
+    from jobscraper.enrichment.normalize_location import normalize_office
+
+    assert normalize_office("Taipei, Taiwan", "tw") == "Taipei, Taiwan"
+    assert normalize_office("Taipei", "tw") == "Taipei, Taiwan"
+    assert normalize_office("Melbourne", "us") == "Melbourne, United States"

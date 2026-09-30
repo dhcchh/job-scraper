@@ -56,6 +56,7 @@ def fetch_workday_jobs(
         page_size=_PAGE_SIZE,
         total_key="total",
         items_key="jobPostings",
+        id_key="externalPath",
         workers=_WORKERS,
     )
     site = api.rsplit("/", 1)[-1]
@@ -63,17 +64,12 @@ def fetch_workday_jobs(
 
     jobs: list[Job] = []
     needs_detail: list[tuple[int, str]] = []  # (index into jobs, externalPath)
-    skipped = 0
     seen_ids: set[str] = set()
     for raw in raw_jobs:
         path = raw.get("externalPath")
-        if not path:
-            skipped += 1
-            continue
         job_id = _job_id(path)
         if job_id in seen_ids:
-            skipped += 1
-            continue
+            raise IncompleteBoardResponse(f"workday[{token}]: duplicate job_id {job_id}")
         seen_ids.add(job_id)
 
         job = _to_job(
@@ -99,13 +95,6 @@ def fetch_workday_jobs(
         jobs = [job for job in jobs if _location_in_scope(job.location, location_scope)]
         outside_scope = unscoped_count - len(jobs)
 
-    if skipped:
-        logger.warning(
-            "workday[%s]: skipped %d job(s) missing or duplicating an "
-            "externalPath",
-            token,
-            skipped,
-        )
     scope_summary = (
         f", {outside_scope} outside {location_scope!r} scope"
         if location_scope

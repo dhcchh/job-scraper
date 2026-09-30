@@ -7,12 +7,7 @@ on:
     paths:
       - "company_toml/*_boards.toml"
   schedule:
-    # 23:00 UTC = 07:00 Singapore time the NEXT day (UTC+8, no DST) -- so
-    # this fires on the previous UTC date to land on a Singapore morning.
-    # NOTE: GitHub Actions cron is best-effort and can be delayed under
-    # platform load (often by tens of minutes at the top of an hour) -- a
-    # known caveat, not something this workflow works around, so treat
-    # 07:00 SGT as the earliest it starts rather than a guaranteed time.
+    # 07:00 Singapore time the next day; GitHub schedules can be delayed.
     - cron: "0 23 * * *"
   workflow_dispatch:
     inputs:
@@ -24,10 +19,7 @@ on:
         default: ""
         type: string
 
-# Shared with full-refresh.yml: both read-then-write every tab, so they must
-# never run at the same time -- concurrent runs could both read the same
-# existing keys before either writes, then create duplicate or clobbered
-# rows. Queue rather than cancel: each run gets a complete read/write cycle.
+# Serialize the four workflows that write to the production sheet.
 concurrency:
   group: sheet-write
   cancel-in-progress: false
@@ -39,7 +31,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Full history so "Detect new firms" can diff against the push's
+          # Full history so "Detect changed boards" can diff against the push's
           # own base commit; a depth-1 clone has no parent to diff against.
           fetch-depth: 0
 
@@ -54,30 +46,22 @@ jobs:
       - name: Run tests before writing
         run: uv run pytest
 
-      - name: Detect new firms (push only)
-        id: new_firms
+      - name: Detect changed boards (push only)
+        id: changed_boards
         if: github.event_name == 'push'
         env:
-          BEFORE: ${{ github.event.before }}
-        run: |
-          # Diff to a file first so a git failure fails the step instead of
-          # silently yielding no firms (and a full scrape) through the pipe.
-          git diff "$BEFORE" "$GITHUB_SHA" -- company_toml/*_boards.toml > boards.diff
-          NEW=$(grep '^+firm = ' boards.diff \
-            | sed 's/^+firm = "//' \
-            | sed 's/"//' \
-            | paste -sd ',' -)
-          echo "firms=$NEW" >> $GITHUB_OUTPUT
+          BASE_REF: ${{ github.event.before }}
+        run: >-
+          uv run python -m jobscraper.changed_boards
+          --base "$BASE_REF" --head "$GITHUB_SHA"
+          --github-output "$GITHUB_OUTPUT"
 
       - name: Run scraper
         env:
           GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          # Optional Telegram digest (see telegram.py/.env.example) -- an
-          # unset repo secret comes through as "", which config.py already
-          # treats the same as not-set-at-all, so this feature stays off
-          # until all three of these are actually added as repo secrets.
+          # Digest needs a bot token and chat ID; the topic ID is optional.
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
@@ -87,9 +71,9 @@ jobs:
           TELEGRAM_DM_CHAT_ID: ${{ secrets.TELEGRAM_DM_CHAT_ID }}
           # Empty on schedule/push runs, which have no inputs.
           FORCE_PRUNE_FIRMS: ${{ inputs.force_prune_firms }}
-          # On a TOML push, only fetch the newly added firms. Empty on cron/
+          # On a TOML push, fetch firms with added or modified boards. Empty on cron/
           # workflow_dispatch so the full board list runs as normal.
-          ONLY_FIRMS: ${{ steps.new_firms.outputs.firms }}
+          ONLY_FIRMS: ${{ steps.changed_boards.outputs.firms }}
         run: uv run python -m jobscraper.main
 
       - name: Audit sheet data quality

@@ -1,9 +1,4 @@
-"""Tests for sheets.writer -- dedup-append/prune-closed logic, no live gspread/Google call.
-
-Both functions take a gspread.Worksheet; here they're given a tiny fake with
-just the methods writer.py actually calls, so the logic is exercised without
-any real network call or credential.
-"""
+"""Tests for sheets.writer using fake integrations."""
 
 import datetime
 from collections import Counter
@@ -18,7 +13,7 @@ class _FakeWorksheet:
     title = "SWE/DE - PAC"
 
     def __init__(self, rows=None):
-        self._rows = rows or []
+        self._rows = [writer.HEADER] if rows is None else rows
         self.appended = None
         self.updated_with = None
         self.id = 123
@@ -66,7 +61,7 @@ def _deletion_calls(worksheet):
 
 def _row(board, job_id, scraped_date):
     # Built by column name, not position, so it doesn't need updating every
-    # time FIELDS' column order changes (see models.FIELDS' docstring).
+    # time FIELDS' column order changes.
     values = {
         "board": board,
         "job_id": job_id,
@@ -352,7 +347,7 @@ def test_held_back_prunes_holds_a_firm_whose_board_returned_nothing():
     # is far likelier broken than empty.
     plans = [_plan({"acme": [1]}, {"acme": 1})]
 
-    held_back = writer.held_back_prunes(plans, fetched_counts={}, appended_counts={})
+    held_back = writer.held_back_prunes(plans, fetched_counts={})
 
     assert held_back == {
         "acme": "board returned 0 postings; would prune all 1 tracked row(s)"
@@ -366,19 +361,18 @@ def test_held_back_prunes_holds_a_majority_drop_summed_across_tabs():
     ]
 
     held_back = writer.held_back_prunes(
-        plans, fetched_counts={"acme": 40}, appended_counts={}
+        plans, fetched_counts={"acme": 40}
     )
 
     assert held_back == {"acme": "would prune 6 of 10 tracked row(s)"}
 
 
-def test_held_back_prunes_ignores_rows_appended_this_run():
-    # A job_id format change: all 6 old rows look closed, and the same 6
-    # postings were just appended under new ids -- still 6 of 6, not 6 of 12.
-    plans = [_plan({"acme": [1, 2, 3, 4, 5, 6]}, {"acme": 12})]
+def test_held_back_prunes_uses_counts_before_appending():
+    # Six replacement IDs cannot dilute the baseline of six tracked rows.
+    plans = [_plan({"acme": [1, 2, 3, 4, 5, 6]}, {"acme": 6})]
 
     held_back = writer.held_back_prunes(
-        plans, fetched_counts={"acme": 6}, appended_counts={"acme": 6}
+        plans, fetched_counts={"acme": 6}
     )
 
     assert held_back == {"acme": "would prune 6 of 6 tracked row(s)"}
@@ -394,7 +388,6 @@ def test_held_back_prunes_allows_ordinary_closures():
     held_back = writer.held_back_prunes(
         plans,
         fetched_counts={"acme": 20, "beta": 1, "gamma": 3},
-        appended_counts={},
     )
 
     assert held_back == {}
@@ -482,7 +475,7 @@ def test_set_basic_filter_is_one_write_including_saved_views():
     ]
 
 
-def test_set_basic_filter_still_filters_when_views_cannot_be_read():
+def test_set_basic_filter_preserves_existing_settings_when_metadata_fails():
     worksheet = _FakeWorksheet()
 
     def failing_metadata(spreadsheet_id, params=None):
@@ -490,10 +483,9 @@ def test_set_basic_filter_still_filters_when_views_cannot_be_read():
 
     worksheet.client.fetch_sheet_metadata = failing_metadata
 
-    writer.set_basic_filter(worksheet)
-
-    (_spreadsheet_id, body), = worksheet.client.batch_update_calls
-    assert body["requests"] == [{"setBasicFilter": {"filter": {"range": _WHOLE_TAB}}}]
+    with pytest.raises(RuntimeError, match="metadata down"):
+        writer.set_basic_filter(worksheet)
+    assert worksheet.client.batch_update_calls == []
 
 
 def test_set_basic_filter_tolerates_worksheet_without_client():
@@ -590,3 +582,33 @@ def test_append_jobs_rejects_invalid_key_before_write():
     with pytest.raises(ValueError, match='data quality'):
         writer.append_jobs(worksheet, [_job('Acme', ' 123')])
     assert worksheet.appended is None
+
+
+@pytest.mark.parametrize("action", ["append", "prune"])
+def test_blank_tab_is_rejected_before_writing(action):
+    worksheet = _FakeWorksheet([])
+    with pytest.raises(RuntimeError, match="refusing to append or prune"):
+        if action == "append":
+            writer.append_jobs(worksheet, [_job("Acme", "1")])
+        else:
+            writer.plan_prune(worksheet, [], {"Acme"})
+    assert worksheet.appended is None
+    assert worksheet.client.batch_update_calls == []
+
+
+def test_filter_range_update_preserves_criteria_and_sort(monkeypatch):
+    worksheet = _FakeWorksheet()
+    original = {
+        "range": {"sheetId": worksheet.id, "endColumnIndex": 3},
+        "criteria": {"2": {"hiddenValues": ["Acme"]}},
+        "sortSpecs": [{"dimensionIndex": 0, "sortOrder": "DESCENDING"}],
+    }
+    monkeypatch.setattr(worksheet.client, "fetch_sheet_metadata", lambda *a, **kw: {
+        "sheets": [{"properties": {"sheetId": worksheet.id}, "basicFilter": original}]
+    })
+    writer.set_basic_filter(worksheet)
+    written = worksheet.client.batch_update_calls[0][1]["requests"][0]["setBasicFilter"]["filter"]
+    assert written["criteria"] == original["criteria"]
+    assert written["sortSpecs"] == original["sortSpecs"]
+    assert written["range"] == _WHOLE_TAB
+    assert original["range"]["endColumnIndex"] == 3

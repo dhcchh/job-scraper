@@ -14,15 +14,7 @@ from jobscraper.enrichment.classify_region import (
     tab_name,
 )
 from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
-from jobscraper.job_boards.fetchers import (
-    fetch_ashby_jobs,
-    fetch_eightfold_jobs,
-    fetch_greenhouse_jobs,
-    fetch_lever_jobs,
-    fetch_recruitee_jobs,
-    fetch_smartrecruiters_jobs,
-    fetch_workday_jobs,
-)
+from jobscraper.job_boards import fetchers
 from jobscraper.models import Job
 from jobscraper.sheets.supported_companies import sync_and_announce
 from jobscraper.sheets.writer import (
@@ -51,15 +43,10 @@ def run() -> None:
             return boards
         return [b for b in boards if b["firm"] in config.ONLY_FIRMS]
 
-    board_sources = (
-        ("greenhouse", _filter(config.GREENHOUSE_BOARDS), fetch_greenhouse_jobs),
-        ("lever", _filter(config.LEVER_BOARDS), fetch_lever_jobs),
-        ("ashby", _filter(config.ASHBY_BOARDS), fetch_ashby_jobs),
-        ("smartrecruiters", _filter(config.SMARTRECRUITERS_BOARDS), fetch_smartrecruiters_jobs),
-        ("eightfold", _filter(config.EIGHTFOLD_BOARDS), fetch_eightfold_jobs),
-        ("workday", _filter(config.WORKDAY_BOARDS), fetch_workday_jobs),
-        ("recruitee", _filter(config.RECRUITEE_BOARDS), fetch_recruitee_jobs),
-    )
+    board_sources = [
+        (source, _filter(boards), fetch)
+        for source, boards, fetch in fetchers.board_sources()
+    ]
 
     all_jobs: list[Job] = []
     succeeded_firms: set[str] = set()
@@ -69,12 +56,7 @@ def run() -> None:
         for board in boards:
             firm = board["firm"]
             try:
-                kwargs = (
-                    {"location_scope": board["location_scope"]}
-                    if source == "workday" and board.get("location_scope")
-                    else {}
-                )
-                jobs = fetch(board["token"], firm, board["company_type"], **kwargs)
+                jobs = fetchers.fetch_board(source, board, fetch)
             except Exception:
                 logger.exception(
                     "%s[%s]: failed to fetch after retries, skipping this "
@@ -128,33 +110,38 @@ def run() -> None:
         excluded_count,
     )
 
-    newly_appended_by_tab: dict[str, list[Job]] = {}
     prune_plans: dict[str, PrunePlan] = {}
     for category, _keywords in CATEGORIES:
         for region in REGIONS:
             tab = tab_name(category, region)
             tab_jobs = jobs_by_tab[tab]
             worksheet = get_worksheet(spreadsheet, tab)
-            newly_appended_by_tab[tab] = append_jobs(worksheet, tab_jobs)
             prune_plans[tab] = plan_prune(
                 worksheet, tab_jobs, fetched_boards=fetched_boards
             )
 
-    # Every tab is planned before any is pruned, so the guard sees a firm's
-    # whole footprint rather than one tab's slice of it.
+    # Check the whole existing footprint before any job tab is changed.
     held_back: dict[str, str] = {}
     for firm, reason in held_back_prunes(
         prune_plans.values(),
         fetched_counts=Counter(job.board for job in all_jobs),
-        appended_counts=Counter(
-            job.board for jobs in newly_appended_by_tab.values() for job in jobs
-        ),
     ).items():
         if firm in config.FORCE_PRUNE_FIRMS:
             logger.warning("prune guard overridden for %s: %s", firm, reason)
         else:
             logger.warning("prune held back for %s: %s", firm, reason)
             held_back[firm] = reason
+
+    newly_appended_by_tab: dict[str, list[Job]] = {}
+    for tab, plan in prune_plans.items():
+        newly_appended_by_tab[tab] = append_jobs(
+            plan.worksheet, [job for job in jobs_by_tab[tab] if job.board not in held_back]
+        )
+    # Appends and preserved sort settings may change row positions.
+    prune_plans = {
+        tab: plan_prune(plan.worksheet, jobs_by_tab[tab], fetched_boards)
+        for tab, plan in prune_plans.items()
+    }
 
     tab_stats: dict[str, tuple[int, int, int]] = {}
     for tab, plan in prune_plans.items():
@@ -164,7 +151,7 @@ def run() -> None:
     markdown = _build_summary_markdown(
         spreadsheet_title=spreadsheet.title,
         spreadsheet_url=spreadsheet.url,
-        succeeded_firms=succeeded_firms,
+        succeeded_entries=succeeded_entries,
         failed_firms=failed_firms,
         total_boards=total_boards,
         total_jobs=len(all_jobs),
@@ -215,7 +202,7 @@ def _build_summary_markdown(
     *,
     spreadsheet_title: str,
     spreadsheet_url: str,
-    succeeded_firms: set[str],
+    succeeded_entries: int,
     failed_firms: set[str],
     total_boards: int,
     total_jobs: int,
@@ -235,7 +222,7 @@ def _build_summary_markdown(
         "",
         f"Spreadsheet: [{spreadsheet_title}]({spreadsheet_url})",
         "",
-        f"- Boards fetched: {len(succeeded_firms)}/{total_boards}"
+        f"- Boards fetched: {succeeded_entries}/{total_boards}"
         + (f" -- failed: {', '.join(sorted(failed_firms))}" if failed_firms else ""),
         f"- Jobs fetched: {total_jobs} ({noise_count} filtered as noise, "
         f"{excluded_count} excluded by country)",
@@ -254,7 +241,8 @@ def _build_summary_markdown(
             "",
             "### Prune held back",
             "",
-            "These firms' closed-looking rows were kept: the drop looks more "
+            "These firms' existing rows were kept and new rows were held back: "
+            "the drop looks more "
             "like a broken fetch than real closures. If the closures are real, "
             'rerun "Daily Scrape (Append)" with `force_prune_firms` set to the '
             "firm name(s).",

@@ -1,14 +1,10 @@
 name: Sync Supported Companies
 
-# Manual only -- syncs the "Supported companies" sheet tab with the current
-# *_boards.toml files and sends a Telegram announcement for any newly added
-# firms, without running a full job scrape. Useful after adding a firm when
-# you want the tab and announcement updated immediately rather than waiting
-# for the next daily scrape.
+# Add or recategorize configured firms and announce additions.
 on:
   workflow_dispatch: {}
 
-# Writes to the sheet (adds any missing firms to the supported companies tab).
+# Serialize the four workflows that write to the production sheet.
 concurrency:
   group: sheet-write
   cancel-in-progress: false
@@ -37,8 +33,6 @@ jobs:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
           TELEGRAM_COMPANIES_CHAT_ID: ${{ secrets.TELEGRAM_COMPANIES_CHAT_ID }}
           TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
         run: uv run python -m jobscraper.sheets.supported_companies

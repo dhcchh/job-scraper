@@ -1,6 +1,6 @@
 """Classify job seniority from title and optional employment type."""
 
-import re
+from jobscraper.enrichment._keywords import contains_keyword
 
 LEVELS: list[tuple[str, tuple[str, ...]]] = [
     (
@@ -35,11 +35,6 @@ def classify_seniority(
 def _match(text: str) -> str | None:
     """Return the first matching level, if any."""
     for level, keywords in LEVELS:
-        if any(_contains_keyword(text, keyword) for keyword in keywords):
+        if any(contains_keyword(text, keyword) for keyword in keywords):
             return level
     return None
-
-
-def _contains_keyword(text: str, keyword: str) -> bool:
-    pattern = r"\b" + re.escape(keyword) + r"\b"
-    return re.search(pattern, text, re.IGNORECASE) is not None

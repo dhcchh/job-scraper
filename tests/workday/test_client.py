@@ -1,12 +1,4 @@
-"""Tests for workday.client -- JSON-to-Job parsing, no real HTTP calls.
-
-Mirrors tests/eightfold/test_client.py's structure, adapted to Workday's
-response shape (confirmed against Visa's and Mastercard's live boards): a
-POSTed `{"total", "jobPostings": [...]}` search paginated via `offset`/
-`limit` where only the first page carries a real `total`, relative
-"Posted N Days Ago" dates, and multi-office postings whose offices only come
-from a per-posting detail GET.
-"""
+"""Tests for workday.client using fake integrations."""
 
 import datetime
 
@@ -453,7 +445,7 @@ def test_fetch_workday_jobs_fails_board_on_missing_detail_payload(monkeypatch):
     assert len(gets) == 2
 
 
-def test_fetch_workday_jobs_skips_a_missing_or_duplicate_external_path(monkeypatch):
+def test_fetch_workday_jobs_rejects_a_missing_or_duplicate_external_path(monkeypatch):
     _serve(
         monkeypatch,
         [
@@ -463,9 +455,8 @@ def test_fetch_workday_jobs_skips_a_missing_or_duplicate_external_path(monkeypat
         ],
     )
 
-    jobs = client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
-
-    assert [job.job_id for job in jobs] == ["R-1"]
+    with pytest.raises(_http.IncompleteBoardResponse):
+        client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
 
 
 def test_fetch_workday_jobs_raises_on_http_error(monkeypatch):

@@ -1,13 +1,4 @@
-"""Tests for sheets.supported_companies -- no live gspread/Google call.
-
-Same self-contained fake approach as test_writer.py/test_backfill.py (see
-CLAUDE.md's Architecture section on why sheets tests do this instead of
-sharing one fixture). Board lists are monkeypatched onto
-supported_companies.config directly (the same object jobscraper.config
-already is -- see config.py's own docstring on why callers read through the
-module rather than copying its values) so these tests don't depend on
-whatever firms happen to be in the real company_toml/*_boards.toml files.
-"""
+"""Tests for sheets.supported_companies using fake integrations."""
 
 from jobscraper.sheets import supported_companies
 

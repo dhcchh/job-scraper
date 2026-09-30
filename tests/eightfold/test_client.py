@@ -1,14 +1,4 @@
-"""Tests for eightfold.client -- JSON-to-Job parsing, no real HTTP calls.
-
-Mirrors tests/smartrecruiters/test_client.py's structure, adapted to
-Eightfold's response shape (confirmed against Millennium's live board): a
-`{"count", "positions": [...]}` payload paginated via `start`/`num` where
-`num` isn't honored (always 10 per page), `name`/pre-built
-`canonicalPositionUrl`, a `locations` array of "City, Region, Country"-shaped
-strings (not bare city names), a plain top-level `department` string, and
-both `t_create`/`t_update` epoch timestamps (unlike SmartRecruiters/Lever/
-Ashby's no-edited-at-signal shape).
-"""
+"""Tests for eightfold.client using fake integrations."""
 
 import datetime
 
@@ -88,7 +78,7 @@ def test_fetch_eightfold_jobs_parses_response(monkeypatch):
     assert first.updated_at == "2026-08-28"  # from t_update, epoch seconds
     assert first.source == "Eightfold"
     assert first.description == ""
-    assert first.salary is None  # no compensation field on any posting
+    assert first.salary is None  # this fixture has no compensation field
 
     # Missing department/locations and zero timestamps degrade to "", not a crash.
     assert second.department == ""
@@ -195,7 +185,7 @@ def test_fetch_eightfold_jobs_rejects_an_empty_page_before_total(monkeypatch):
     assert [call["start"] for call in calls] == [0, 1, 0, 1]
 
 
-def test_fetch_eightfold_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):
+def test_fetch_eightfold_jobs_rejects_a_job_missing_id(monkeypatch):
     response = _page(
         [
             {"name": "No id field", "t_create": 0, "t_update": 0},
@@ -204,16 +194,12 @@ def test_fetch_eightfold_jobs_skips_a_job_missing_id_instead_of_raising(monkeypa
     )
     monkeypatch.setattr(_http.requests, "get", lambda *a, **k: _FakeResponse(response))
 
-    jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
-
-    assert len(jobs) == 1
-    assert jobs[0].job_id == "real-id"
+    with pytest.raises(_http.IncompleteBoardResponse):
+        client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
 
-def test_fetch_eightfold_jobs_skips_a_duplicate_id_across_pages(monkeypatch):
-    # Unconfirmed whether Eightfold's server ever pads a short final page
-    # with an already-seen id instead of returning fewer than _PAGE_SIZE --
-    # if it does, this must not append the same (board, job_id) twice.
+def test_fetch_eightfold_jobs_rejects_a_duplicate_id_across_pages(monkeypatch):
+    # A repeated ID can hide a missing posting despite matching the total.
     page1 = _page(
         [{"id": 1, "name": "Job 1", "t_create": 0, "t_update": 0}], count=2
     )
@@ -228,10 +214,8 @@ def test_fetch_eightfold_jobs_skips_a_duplicate_id_across_pages(monkeypatch):
 
     monkeypatch.setattr(_http.requests, "get", fake_get)
 
-    jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
-
-    assert len(jobs) == 1
-    assert jobs[0].job_id == "1"
+    with pytest.raises(_http.IncompleteBoardResponse):
+        client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
 
 def test_epoch_date_tolerates_a_numeric_string(monkeypatch):
@@ -259,3 +243,16 @@ def test_fetch_eightfold_jobs_raises_on_http_error(monkeypatch):
 
     with pytest.raises(_http.requests.HTTPError):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
+
+
+@pytest.mark.parametrize("office, region, excluded", [
+    ("Shenzhen, Guangdong, China", "PAC", False),
+    ("Noida, Uttar Pradesh, India", "RoW", True),
+    ("Melbourne, Florida, United States", "RoW", False),
+])
+def test_location_preserves_country_for_unmapped_or_ambiguous_cities(office, region, excluded):
+    from jobscraper.enrichment.classify_region import classify_region, is_excluded
+
+    location = client._location({"locations": [office]})
+    assert classify_region(location) == region
+    assert is_excluded(location) == excluded

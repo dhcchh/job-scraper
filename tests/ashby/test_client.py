@@ -1,11 +1,4 @@
-"""Tests for ashby.client -- JSON-to-Job parsing, no real HTTP calls.
-
-Mirrors tests/lever/test_client.py's structure, adapted to Ashby's response
-shape: {"jobs": [...]} (like Greenhouse, not a bare array like Lever),
-`title`/`jobUrl` (not `text`/`hostedUrl`), and a primary `location` string
-plus `secondaryLocations[].location` instead of one combined
-`categories.allLocations` list.
-"""
+"""Tests for ashby.client using fake integrations."""
 
 import datetime
 
@@ -122,7 +115,7 @@ def test_fetch_ashby_jobs_populates_description_only_for_a_firm_needing_it(
     assert not_needed.description == ""  # not in FIRMS_NEEDING_DESCRIPTION
 
 
-def test_fetch_ashby_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):
+def test_fetch_ashby_jobs_rejects_a_job_missing_id(monkeypatch):
     response = {
         "jobs": [
             {
@@ -142,10 +135,8 @@ def test_fetch_ashby_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch)
         _http.requests, "get", lambda *a, **k: _FakeResponse(response)
     )
 
-    jobs = client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
-
-    assert len(jobs) == 1
-    assert jobs[0].job_id == "real-id"
+    with pytest.raises(_http.IncompleteBoardResponse):
+        client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
 
 
 def test_fetch_ashby_jobs_builds_location_from_primary_and_secondary_and_dedupes(

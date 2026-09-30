@@ -14,7 +14,7 @@ from jobscraper.enrichment.classify_region import (
     tab_name,
 )
 from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
-from jobscraper.models import FIELDS, Job, escape_sheet_row
+from jobscraper.models import DATE_FIELDS, FIELDS, Job
 from jobscraper.sheets.backfill import (
     _config_lookup_tables,
     _fetch_overrides,
@@ -68,17 +68,7 @@ def _read_tab_rows(
             row, url_cell, old_index, company_type_by_firm, source_by_firm, overrides
         )
         category = _classify(values)
-        if category is None:
-            logger.warning(
-                "full_refresh: %r (board=%s, job_id=%s) no longer matches any "
-                "category -- leaving it on %s instead of dropping it",
-                values["title"],
-                values["board"],
-                values["job_id"],
-                origin_tab,
-            )
-            dest = origin_tab
-        elif is_excluded(values["location"]):
+        if is_excluded(values["location"]):
             logger.warning(
                 "full_refresh: dropping %r (board=%s, job_id=%s) -- every "
                 "office in %r is an excluded country",
@@ -89,25 +79,69 @@ def _read_tab_rows(
             )
             dropped += 1
             continue
+        if category is None:
+            logger.warning(
+                "full_refresh: %r (board=%s, job_id=%s) no longer matches any "
+                "category -- leaving it on %s instead of dropping it",
+                values["title"],
+                values["board"],
+                values["job_id"],
+                origin_tab,
+            )
+            dest = origin_tab
         else:
             dest = tab_name(category, classify_region(values["location"]))
         rows.append((dest, values))
     return rows, dropped
 
 
-def _write_tab(worksheet: gspread.Worksheet, rows: list[list[str]]) -> None:
-    """Rewrite a tab, shrinking its grid only after the update succeeds."""
+def _cell_value(field: str, value: str) -> dict:
+    """Use explicit Sheets types to preserve identities, dates, and links."""
+    if field == "url" and value:
+        return {"formulaValue": value}
+    if field in DATE_FIELDS and value:
+        try:
+            date = datetime.date.fromisoformat(value)
+        except ValueError:
+            pass
+        else:
+            return {"numberValue": (date - datetime.date(1899, 12, 30)).days}
+    return {"stringValue": value}
+
+
+def _rewrite_requests(worksheet: gspread.Worksheet, rows: list[list[str]]) -> list[dict]:
+    """Build a tab replacement for the spreadsheet's atomic batch."""
     validate_rows(rows)
-    values = [HEADER] + [escape_sheet_row(row) for row in rows]
-    worksheet.update(
-        range_name="A1",
-        values=values,
-        value_input_option="USER_ENTERED",
-    )
-    target_row_count = len(values)
-    if worksheet.row_count != target_row_count:
-        worksheet.resize(rows=target_row_count)
-    format_tab(worksheet)
+    return [
+        {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": worksheet.id,
+                    "gridProperties": {
+                        "rowCount": len(rows) + 1,
+                        "columnCount": max(worksheet.col_count, len(FIELDS)),
+                    },
+                },
+                "fields": "gridProperties.rowCount,gridProperties.columnCount",
+            }
+        },
+        {
+            "updateCells": {
+                "start": {"sheetId": worksheet.id, "rowIndex": 0, "columnIndex": 0},
+                "rows": [
+                    {"values": [{"userEnteredValue": {"stringValue": name}} for name in HEADER]},
+                    *(
+                        {"values": [
+                            {"userEnteredValue": _cell_value(field, value)}
+                            for field, value in zip(FIELDS, row)
+                        ]}
+                        for row in rows
+                    ),
+                ],
+                "fields": "userEnteredValue",
+            }
+        },
+    ]
 
 
 def refresh_all() -> None:
@@ -156,9 +190,16 @@ def refresh_all() -> None:
                     moved += 1
                 buckets[dest_tab].append(values)
 
+    requests = []
     for tab, worksheet in worksheets.items():
-        logger.info("full_refresh: writing %s (%d rows)", tab, len(buckets[tab]))
-        _write_tab(worksheet, [[values[name] for name in FIELDS] for values in buckets[tab]])
+        requests.extend(_rewrite_requests(
+            worksheet, [[values[name] for name in FIELDS] for values in buckets[tab]]
+        ))
+    # Every row and grid change is validated and committed in a single batch.
+    # A rejected request cannot delete a source row without its destination.
+    spreadsheet.batch_update({"requests": requests})
+    for worksheet in worksheets.values():
+        format_tab(worksheet)
 
     logger.info(
         "full_refresh: done, %d row(s) moved to a different tab, %d row(s) "

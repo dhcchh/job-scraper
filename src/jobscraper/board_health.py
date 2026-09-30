@@ -5,46 +5,24 @@ import os
 import sys
 
 from jobscraper import config
-from jobscraper.job_boards.fetchers import (
-    fetch_ashby_jobs,
-    fetch_eightfold_jobs,
-    fetch_greenhouse_jobs,
-    fetch_lever_jobs,
-    fetch_recruitee_jobs,
-    fetch_smartrecruiters_jobs,
-    fetch_workday_jobs,
-)
+from jobscraper.job_boards import fetchers
 
 logger = logging.getLogger(__name__)
 
 
 def check() -> bool:
-    """Fetch every configured board and return True if all succeeded."""
-    board_sources = (
-        ("greenhouse", config.GREENHOUSE_BOARDS, fetch_greenhouse_jobs),
-        ("lever", config.LEVER_BOARDS, fetch_lever_jobs),
-        ("ashby", config.ASHBY_BOARDS, fetch_ashby_jobs),
-        ("smartrecruiters", config.SMARTRECRUITERS_BOARDS, fetch_smartrecruiters_jobs),
-        ("eightfold", config.EIGHTFOLD_BOARDS, fetch_eightfold_jobs),
-        ("workday", config.WORKDAY_BOARDS, fetch_workday_jobs),
-        ("recruitee", config.RECRUITEE_BOARDS, fetch_recruitee_jobs),
-    )
+    """Fetch selected boards and return True if at least one ran and all succeeded."""
 
     passed: list[tuple[str, int]] = []
     failed: list[tuple[str, str]] = []
 
-    for source, boards, fetch in board_sources:
+    for source, boards, fetch in fetchers.board_sources():
         for board in boards:
             firm = board["firm"]
             if config.ONLY_FIRMS and firm not in config.ONLY_FIRMS:
                 continue
-            kwargs = (
-                {"location_scope": board["location_scope"]}
-                if source == "workday" and board.get("location_scope")
-                else {}
-            )
             try:
-                jobs = fetch(board["token"], firm, board["company_type"], **kwargs)
+                jobs = fetchers.fetch_board(source, board, fetch)
                 passed.append((firm, len(jobs)))
                 logger.info("%s: %d jobs", firm, len(jobs))
             except Exception as exc:
@@ -53,6 +31,9 @@ def check() -> bool:
 
     _write_summary(passed, failed)
     logger.info("%d/%d boards healthy", len(passed), len(passed) + len(failed))
+    if not passed and not failed:
+        logger.error("No boards selected; check ONLY_FIRMS")
+        return False
     return not failed
 
 
