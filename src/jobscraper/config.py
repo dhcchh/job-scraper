@@ -61,6 +61,10 @@ TELEGRAM_THREAD_ID: int | None = _optional_int("TELEGRAM_THREAD_ID")
 TELEGRAM_COMPANIES_CHAT_ID: int | None = _optional_int("TELEGRAM_COMPANIES_CHAT_ID")
 TELEGRAM_COMPANIES_THREAD_ID: int | None = _optional_int("TELEGRAM_COMPANIES_THREAD_ID")
 
+# A private chat with the operator (their numeric user id) for alerts.py's
+# per-role DMs; the user must have pressed Start on the bot first.
+TELEGRAM_DM_CHAT_ID: int | None = _optional_int("TELEGRAM_DM_CHAT_ID")
+
 
 def _optional_set(name: str) -> frozenset[str]:
     """Read an optional comma-separated list, ignoring blank entries."""

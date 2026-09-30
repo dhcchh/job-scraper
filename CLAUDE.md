@@ -42,7 +42,7 @@ There is no formatter or linter. Tests never use the network or live Google
 or Telegram credentials: `tests/conftest.py` forces `GOOGLE_SHEET_ID`/
 `GOOGLE_SERVICE_ACCOUNT_JSON` to dummy values and `TELEGRAM_BOT_TOKEN`/
 `TELEGRAM_CHAT_ID`/`TELEGRAM_THREAD_ID`/`TELEGRAM_COMPANIES_CHAT_ID`/
-`TELEGRAM_COMPANIES_THREAD_ID` to `""`, all via `setdefault` *before*
+`TELEGRAM_COMPANIES_THREAD_ID`/`TELEGRAM_DM_CHAT_ID` to `""`, all via `setdefault` *before*
 `jobscraper.config` is ever imported -- config.py's own `load_dotenv()` call
 never overrides a key already in `os.environ` (its default `override=False`),
 so this reliably wins over whatever a real, locally configured `.env` has,
@@ -719,6 +719,28 @@ use a small fake `Worksheet`.
   `sheets.supported_companies.py` when that module is run directly. `--check`
   also sends a test message
   there when `TELEGRAM_COMPANIES_CHAT_ID` is set.
+- `alerts.py` DMs the operator (`TELEGRAM_DM_CHAT_ID`, their numeric
+  Telegram user id -- they must press Start on the bot once, since a bot
+  can't open a private chat) one message per newly appended posting that is
+  a data-engineering role with an office in Singapore or Hong Kong: title,
+  firm, location, seniority, salary, posted date, apply link and the full
+  JD (capped at 10k chars). The title rule (`is_alert_match`) is data/ETL/
+  analytics engineer, or any engineer/developer title naming "data"
+  ("Software Engineer, Data Platform"), minus PM/recruiter/data-centre
+  titles. `main.py` passes it every new PAC row, not just SWE/DE's, since
+  "ML Data Engineer" lands on DS/ML/Algos. Only rows `append_jobs` returned
+  are considered, so nothing is DMed twice; at most `MAX_ALERTS_PER_RUN`
+  (15) per run, then one "+N more" message -- a newly added firm's first
+  run appends its whole backlog. The JD comes from `Job.jd_raw`, which
+  Greenhouse/Lever/Ashby/Recruitee's clients fill for EVERY firm from the
+  list response they already fetch; it is `compare=False`, not in `FIELDS`,
+  and never reaches the sheet, so it is independent of
+  `FIRMS_NEEDING_DESCRIPTION` and needs no backfill. Workday and
+  SmartRecruiters have no JD in their list responses, so `fetch_jd` makes
+  one detail GET per matched posting, deriving the endpoint from `Job.url`
+  (confirmed live against Visa and Grab on 2026-09-30); Eightfold has none,
+  so its DM says to see the link. Same never-raises/no-op-when-unset
+  contract as `send_digest`; `--check` also tests the DM when set.
 
 ## Open work
 

@@ -9,7 +9,7 @@ here.
 
 TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID/TELEGRAM_THREAD_ID (and
 TELEGRAM_COMPANIES_CHAT_ID/TELEGRAM_COMPANIES_THREAD_ID, the new-company
-announcement's destination) are forced to "" the same way, for a different reason: they're optional, so config.py doesn't
+announcement's destination, and TELEGRAM_DM_CHAT_ID, alerts.py's DMs) are forced to "" the same way, for a different reason: they're optional, so config.py doesn't
 require them to be set at all, but a real `.env` configured for the actual
 production digest (as this repo's is) would otherwise flow straight through
 python-dotenv's load_dotenv() (called at jobscraper.config import time, with
@@ -34,3 +34,4 @@ os.environ.setdefault("TELEGRAM_CHAT_ID", "")
 os.environ.setdefault("TELEGRAM_THREAD_ID", "")
 os.environ.setdefault("TELEGRAM_COMPANIES_CHAT_ID", "")
 os.environ.setdefault("TELEGRAM_COMPANIES_THREAD_ID", "")
+os.environ.setdefault("TELEGRAM_DM_CHAT_ID", "")

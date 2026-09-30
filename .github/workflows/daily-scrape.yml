@@ -83,6 +83,8 @@ jobs:
           TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
           TELEGRAM_COMPANIES_CHAT_ID: ${{ secrets.TELEGRAM_COMPANIES_CHAT_ID }}
           TELEGRAM_COMPANIES_THREAD_ID: ${{ secrets.TELEGRAM_COMPANIES_THREAD_ID }}
+          # Optional per-role DMs of new SG/HK data-engineering postings (alerts.py).
+          TELEGRAM_DM_CHAT_ID: ${{ secrets.TELEGRAM_DM_CHAT_ID }}
           # Empty on schedule/push runs, which have no inputs.
           FORCE_PRUNE_FIRMS: ${{ inputs.force_prune_firms }}
           # On a TOML push, only fetch the newly added firms. Empty on cron/

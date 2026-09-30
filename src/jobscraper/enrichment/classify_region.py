@@ -128,6 +128,11 @@ def is_excluded(location: str) -> bool:
     return all(_country_of(office) in _EXCLUDED_COUNTRIES for office in offices)
 
 
+def office_countries(location: str) -> list[str]:
+    """Return each office's country-like part, in order."""
+    return [_country_of(office) for office in _offices(location)]
+
+
 def unresolved_offices(location: str) -> list[str]:
     """Return offices whose country part names no known country or state.
 

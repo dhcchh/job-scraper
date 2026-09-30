@@ -5,6 +5,7 @@ import os
 from collections import Counter
 
 from jobscraper import config
+from jobscraper.alerts import send_alerts
 from jobscraper.coverage import coverage_markdown, unmatched_titles, unresolved_locations
 from jobscraper.enrichment.classify_region import (
     REGIONS,
@@ -188,6 +189,16 @@ def run() -> None:
             category: newly_appended_by_tab.get(tab_name(category, "PAC"), [])
             for category in DIGEST_CATEGORIES
         },
+        spreadsheet_url=spreadsheet.url,
+    )
+    # SG/HK are PAC, and a data-engineering title can land on any category's
+    # tab (DS/ML/Algos wins "ML Data Engineer"), so every new PAC row is checked.
+    send_alerts(
+        [
+            job
+            for category, _keywords in CATEGORIES
+            for job in newly_appended_by_tab.get(tab_name(category, "PAC"), [])
+        ],
         spreadsheet_url=spreadsheet.url,
     )
 

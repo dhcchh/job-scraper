@@ -114,6 +114,7 @@ def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
 
     assert needed.description == "Do the thing."
     assert not_needed.description == ""  # not in FIRMS_NEEDING_DESCRIPTION
+    assert not_needed.jd_raw == "Do the thing."  # for alerts.py only
 
 
 def test_fetch_lever_jobs_skips_a_job_missing_id_instead_of_raising(monkeypatch):

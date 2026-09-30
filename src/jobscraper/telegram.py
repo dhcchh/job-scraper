@@ -114,7 +114,7 @@ def send_digest(new_jobs_by_category: dict[str, list[Job]], spreadsheet_url: str
         logger.info("telegram digest: nothing new to report, skipping")
         return
 
-    _send_chunks(
+    send_chunks(
         text, config.TELEGRAM_CHAT_ID, config.TELEGRAM_THREAD_ID, label="telegram digest"
     )
 
@@ -170,7 +170,7 @@ def send_new_companies(
         logger.info("telegram new companies: no new firms, skipping")
         return
 
-    _send_chunks(
+    send_chunks(
         text,
         config.TELEGRAM_COMPANIES_CHAT_ID,
         config.TELEGRAM_COMPANIES_THREAD_ID,
@@ -178,7 +178,9 @@ def send_new_companies(
     )
 
 
-def _send_chunks(text: str, chat_id: int, thread_id: int | None, *, label: str) -> None:
+def send_chunks(
+    text: str, chat_id: int, thread_id: int | None, *, label: str
+) -> bool:
     """Send chunks in order, stopping and logging on failure."""
     chunks = _chunk(text)
     for index, chunk in enumerate(chunks, start=1):
@@ -191,8 +193,9 @@ def _send_chunks(text: str, chat_id: int, thread_id: int | None, *, label: str) 
                 index,
                 len(chunks),
             )
-            return
+            return False
     logger.info("%s: sent in %d message(s)", label, len(chunks))
+    return True
 
 
 def _send_message(text: str, chat_id: int, thread_id: int | None) -> None:
@@ -226,6 +229,8 @@ def check_connection() -> bool:
                 config.TELEGRAM_COMPANIES_THREAD_ID,
             )
         )
+    if config.TELEGRAM_DM_CHAT_ID:
+        destinations.append(("role alerts DM", config.TELEGRAM_DM_CHAT_ID, None))
 
     ok = True
     for name, chat_id, thread_id in destinations:

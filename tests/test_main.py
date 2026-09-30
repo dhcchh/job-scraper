@@ -67,6 +67,7 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     # what main.run() passed send_digest overrides this itself, after
     # calling _patch_sheet_functions.
     monkeypatch.setattr(main, "send_digest", lambda new_jobs, spreadsheet_url: None)
+    monkeypatch.setattr(main, "send_alerts", lambda jobs, spreadsheet_url: None)
 
     def fake_append_jobs(worksheet, jobs):
         if append_calls is not None:
@@ -879,6 +880,31 @@ def test_run_sends_telegram_digest_with_newly_appended_pac_jobs(monkeypatch):
     assert new_jobs["DA/BI"] == [da_bi_job]
     assert new_jobs["SWE/DE"] == []
     assert new_jobs["DS/ML/Algos"] == []
+
+
+def test_run_passes_every_new_pac_row_to_send_alerts(monkeypatch):
+    # A data-engineering title can land on any category's tab ("ML Data
+    # Engineer" goes to DS/ML/Algos), so alerts see all new PAC rows.
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+    ml_de = _job("Acme", "1", title="ML Data Engineer", location="Singapore")
+    swe_de = _job("Acme", "2", title="Data Engineer", location="Hong Kong")
+    row_de = _job("Acme", "3", title="Data Engineer", location="London, United Kingdom")
+    monkeypatch.setattr(
+        main,
+        "fetch_greenhouse_jobs",
+        lambda token, firm, company_type: [ml_de, swe_de, row_de],
+    )
+    _patch_sheet_functions(monkeypatch, [])
+    alert_calls = []
+    monkeypatch.setattr(
+        main, "send_alerts", lambda jobs, spreadsheet_url: alert_calls.append(jobs)
+    )
+
+    main.run()
+
+    (jobs,) = alert_calls
+    assert sorted(job.job_id for job in jobs) == ["1", "2"]
 
 
 def test_run_excludes_deliberately_excluded_countries_from_pac_digest(monkeypatch):
