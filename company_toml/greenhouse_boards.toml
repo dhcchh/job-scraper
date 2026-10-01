@@ -304,3 +304,48 @@ company_type = "Prop Trading/Hedge Fund"
 token = "waymo"
 firm = "Waymo"
 company_type = "Applied AI Products"
+
+[[boards]]
+token = "headlandstechnologiesllc"
+firm = "Headlands"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "gsrmarkets"
+firm = "GSR"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "aurosglobal"
+firm = "Auros"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "mako"
+firm = "Mako"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "gemini"
+firm = "Gemini"
+company_type = "Crypto Exchange"
+
+[[boards]]
+token = "xai"
+firm = "xAI"
+company_type = "AI Lab"
+
+[[boards]]
+token = "coupang"
+firm = "Coupang"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "wizinc"
+firm = "Wiz"
+company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "twilio"
+firm = "Twilio"
+company_type = "Data/Cloud Infrastructure"

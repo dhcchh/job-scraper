@@ -19,3 +19,8 @@ company_type = "Enterprise/Productivity Software"
 token = "X"
 firm = "X"
 company_type = "Consumer/Media & Entertainment"
+
+[[boards]]
+token = "ServiceNow"
+firm = "ServiceNow"
+company_type = "Enterprise/Productivity Software"

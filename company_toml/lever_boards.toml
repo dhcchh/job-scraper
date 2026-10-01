@@ -32,3 +32,13 @@ company_type = "Prop Trading/Hedge Fund"
 token = "wintermute-trading"
 firm = "Wintermute"
 company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "ambergroup"
+firm = "Amber Group"
+company_type = "Prop Trading/Hedge Fund"
+
+[[boards]]
+token = "crypto"
+firm = "Crypto.com"
+company_type = "Crypto Exchange"

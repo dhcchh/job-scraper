@@ -144,3 +144,23 @@ company_type = "Applied AI Products"
 token = "harvey"
 firm = "Harvey"
 company_type = "Applied AI Products"
+
+[[boards]]
+token = "fireworks"
+firm = "Fireworks AI"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "temporal"
+firm = "Temporal"
+company_type = "Data/Cloud Infrastructure"
+
+[[boards]]
+token = "elevenlabs"
+firm = "ElevenLabs"
+company_type = "Applied AI Products"
+
+[[boards]]
+token = "replit"
+firm = "Replit"
+company_type = "Applied AI Products"

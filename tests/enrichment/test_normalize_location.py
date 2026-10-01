@@ -407,6 +407,46 @@ def test_normalize_location_resolves_alpha3_country_suffixes(raw, expected):
 @pytest.mark.parametrize(
     "raw,expected",
     [
+        # Workday's (the company) dotted alpha-3 office names
+        ("IND.Pune", "Pune, India"),
+        ("VNM.Da Nang", "Da Nang, Vietnam"),
+        ("JPN.Osaka", "Osaka, Japan"),
+        ("IRL.Dublin.College Square", "Dublin, Ireland"),
+        ("USA.VA.Reston", "Reston, United States"),
+        ("MEX.Zapopan", "Zapopan, Mexico"),
+        # an unlisted code, or a lowercase prefix, is left to the usual rules
+        ("XYZ.Somewhere", "XYZ.Somewhere"),
+        ("St.Louis", "St.Louis"),
+    ],
+)
+def test_normalize_location_resolves_dotted_alpha3_prefixes(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Workday's (the company) country-first offices
+        ("Australia, NSW, North Sydney", "North Sydney, Australia"),
+        ("Australia, VIC, Melbourne", "Melbourne, Australia"),
+        ("Korea, Seoul", "Seoul, South Korea"),
+        ("New Zealand, Auckland", "Auckland, New Zealand"),
+        ("India, Mumbai", "Mumbai, India"),
+        ("Malaysia, Kuala Lumpur", "Kuala Lumpur, Malaysia"),
+        # Snap's "<city> - <country>" and Mako's firm-prefixed offices
+        ("Mumbai - India", "Mumbai, India"),
+        ("Mako Singapore", "Singapore"),
+        ("Mako Sydney", "Sydney, Australia"),
+        ("Mako London", "London, United Kingdom"),
+    ],
+)
+def test_normalize_location_maps_pac_and_excluded_office_labels(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
         # Autodesk's Workday detail site names
         ("APAC - Korea - Seoul - ASEM Tower", "Seoul, South Korea"),
         ("APAC - Australia - NSW - North Sydney - 1 Denison", "Australia"),
@@ -510,6 +550,17 @@ def test_normalize_location_reads_a_leading_city_before_a_building(raw, expected
         ("Korea", "South Korea"),
         ("Gurugram", "Gurugram, India"),
         ("New Delhi", "New Delhi, India"),
+        ("Noida", "Noida, India"),
+        ("Taoyuan", "Taoyuan, Taiwan"),
+        ("Taichung", "Taichung, Taiwan"),
+        ("Tainan", "Tainan, Taiwan"),
+        ("Changhua", "Changhua, Taiwan"),
+        ("Shenzhen", "Shenzhen, China"),
+        ("Yanji", "Yanji, China"),
+        ("Aichi", "Aichi, Japan"),
+        ("Chiba", "Chiba, Japan"),
+        ("Fukuoka", "Fukuoka, Japan"),
+        ("HK", "Hong Kong"),
     ],
 )
 def test_normalize_location_maps_bare_pac_and_excluded_cities(raw, expected):

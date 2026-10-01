@@ -34,6 +34,7 @@ _WORK_MODE_WRAPPER_RE = re.compile(r"^(?:remote|hybrid)\s*\(([^()]+)\)$", re.IGN
 
 _ALPHA3_PREFIX_RE = re.compile(r"^([A-Z]{3})\s+-\s+(.+)$")
 _ALPHA3_SUFFIX_RE = re.compile(r"^(.+),\s*([A-Z]{3})(?:\s+-\s+(?i:remote))?$")
+_ALPHA3_DOTTED_RE = re.compile(r"^([A-Z]{3})\.(.+)$")
 _REGION_SITE_RE = re.compile(r"^(?:APAC|AMER|EMEA|LATAM)\s+-\s+(.+)$")
 _ALPHA3_COUNTRIES = {
     "SGP": "Singapore", "HKG": "Hong Kong", "AUS": "Australia", "JPN": "Japan",
@@ -135,6 +136,19 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "taipei city": "Taipei, Taiwan",
     "xinyi district": "Taipei, Taiwan",
     "hsinchu": "Hsinchu, Taiwan",
+    "taoyuan": "Taoyuan, Taiwan",
+    "taichung": "Taichung, Taiwan",
+    "tainan": "Tainan, Taiwan",
+    "changhua": "Changhua, Taiwan",
+    "shenzhen": "Shenzhen, China",
+    "yanji": "Yanji, China",
+    "aichi": "Aichi, Japan",
+    "chiba": "Chiba, Japan",
+    "fukuoka": "Fukuoka, Japan",
+    "hk": "Hong Kong",
+    "mako london": "London, United Kingdom",
+    "mako singapore": "Singapore",
+    "mako sydney": "Sydney, Australia",
     "tel aviv": "Tel Aviv, Israel",
     "apac": "Asia-Pacific",
     "hanoi": "Hanoi, Vietnam",
@@ -199,6 +213,8 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "seoul, korea": "Seoul, South Korea",
     "gurugram": "Gurugram, India",
     "new delhi": "New Delhi, India",
+    "noida": "Noida, India",
+    "mumbai - india": "Mumbai, India",
     "pune": "Pune, India",
     "chennai": "Chennai, India",
     "jakarta": "Jakarta, Indonesia",
@@ -271,6 +287,12 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "france, paris": "Paris, France",
     "united kingdom, london": "London, United Kingdom",
     "united states, new york": "New York, NY",
+    "korea, seoul": "Seoul, South Korea",
+    "india, mumbai": "Mumbai, India",
+    "malaysia, kuala lumpur": "Kuala Lumpur, Malaysia",
+    "new zealand, auckland": "Auckland, New Zealand",
+    "australia, nsw, north sydney": "North Sydney, Australia",
+    "australia, vic, melbourne": "Melbourne, Australia",
 }
 
 
@@ -286,6 +308,15 @@ def _alpha3_location(country: str, rest: str) -> str:
     if normalized in _KNOWN_LOCATIONS:
         return normalized
     return f"{normalized}, {country}"
+
+
+def _alpha3_dotted_location(country: str, rest: str) -> str:
+    """Normalize "<alpha-3>.[<State>.]<City>[.<Site>]", e.g. "IND.Pune",
+    "USA.VA.Reston", "IRL.Dublin.College Square"."""
+    parts = [part.strip() for part in rest.split(".") if part.strip()]
+    if not parts:
+        return country
+    return _place_in(country, parts) or _alpha3_location(country, parts[-1])
 
 
 def _region_site_location(rest: str) -> str | None:
@@ -345,6 +376,9 @@ def normalize_location(raw: str) -> str:
     alpha3 = _ALPHA3_SUFFIX_RE.match(raw.strip())
     if alpha3 and alpha3.group(2) in _ALPHA3_COUNTRIES:
         return _alpha3_location(_ALPHA3_COUNTRIES[alpha3.group(2)], alpha3.group(1))
+    alpha3 = _ALPHA3_DOTTED_RE.match(raw.strip())
+    if alpha3 and alpha3.group(1) in _ALPHA3_COUNTRIES:
+        return _alpha3_dotted_location(_ALPHA3_COUNTRIES[alpha3.group(1)], alpha3.group(2))
     region_site = _REGION_SITE_RE.match(raw.strip())
     if region_site:
         location = _region_site_location(region_site.group(1))

@@ -56,3 +56,23 @@ company_type = "Commodities Trading"
 token = "autodesk.wd1/Ext"
 firm = "Autodesk"
 company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "snapchat.wd1/snap"
+firm = "Snap"
+company_type = "Consumer Comms/Social"
+
+[[boards]]
+token = "crowdstrike.wd5/crowdstrikecareers"
+firm = "CrowdStrike"
+company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "adobe.wd5/external_experienced"
+firm = "Adobe"
+company_type = "Enterprise/Productivity Software"
+
+[[boards]]
+token = "workday.wd5/Workday"
+firm = "Workday"
+company_type = "Enterprise/Productivity Software"
