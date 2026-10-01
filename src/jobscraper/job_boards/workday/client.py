@@ -27,6 +27,11 @@ _PAGE_SIZE = 20
 
 _WORKERS = 8
 
+# A few placeholders per board are normal; beyond this the listing itself
+# looks degraded, and skipping them would prune real postings.
+_MAX_PLACEHOLDERS = 3
+_MAX_PLACEHOLDER_FRACTION = 0.05
+
 _TOKEN_RE = re.compile(r"^([A-Za-z0-9-]+)\.(wd\d+)/([^/\s]+)$")
 _MULTI_LOCATION_RE = re.compile(r"^\d+ Locations?$", re.IGNORECASE)
 _POSTED_DAYS_AGO_RE = re.compile(r"^posted (\d+) days? ago$", re.IGNORECASE)
@@ -57,8 +62,16 @@ def fetch_workday_jobs(
         total_key="total",
         items_key="jobPostings",
         id_key="externalPath",
+        is_placeholder=_is_placeholder,
         workers=_WORKERS,
     )
+    placeholders = sum(1 for raw in raw_jobs if _is_placeholder(raw))
+    if placeholders > max(_MAX_PLACEHOLDERS, _MAX_PLACEHOLDER_FRACTION * len(raw_jobs)):
+        raise IncompleteBoardResponse(
+            f"workday[{token}]: {placeholders} of {len(raw_jobs)} listed items "
+            "have no title or link; board snapshot is unsafe to prune"
+        )
+    raw_jobs = [raw for raw in raw_jobs if not _is_placeholder(raw)]
     site = api.rsplit("/", 1)[-1]
     workday_today = _workday_today(token, api, raw_jobs) or scraped_date
 
@@ -100,16 +113,31 @@ def fetch_workday_jobs(
         if location_scope
         else ""
     )
+    placeholder_summary = (
+        f", {placeholders} placeholder(s) skipped" if placeholders else ""
+    )
     logger.info(
-        "workday[%s]: fetched %d jobs (%d detail lookup(s), %d failed%s)",
+        "workday[%s]: fetched %d jobs (%d detail lookup(s), %d failed%s%s)",
         token,
         len(jobs),
         len(needs_detail),
         len(dropped),
         scope_summary,
+        placeholder_summary,
     )
 
     return jobs
+
+
+def _is_placeholder(raw: dict) -> bool:
+    """Whether a listed item has neither a title nor a link.
+
+    Workday counts such items in its total, e.g. {"bulletFields":
+    ["REF083382W"]}, but a search for the requisition ID finds no posting.
+    One with only a title or only a link is still a posting and must
+    validate.
+    """
+    return not raw.get("title") and not raw.get("externalPath")
 
 
 def _location_in_scope(location: str, scope: str) -> bool:

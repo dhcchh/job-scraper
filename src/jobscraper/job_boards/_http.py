@@ -42,6 +42,7 @@ def require_job_list(
     payload: object, source: str, identifier: str, *,
     key: str | None = None,
     id_key: str = "id",
+    is_placeholder: Callable[[dict], bool] | None = None,
 ) -> list[dict]:
     """Reject a changed or malformed API response instead of treating it as empty."""
     if key is not None:
@@ -50,14 +51,22 @@ def require_job_list(
         payload = payload[key]
     if not isinstance(payload, list) or any(not isinstance(item, dict) for item in payload):
         raise IncompleteBoardResponse(f"{source}[{identifier}]: invalid jobs list")
-    _validate_ids(payload, id_key)
+    _validate_ids(payload, id_key, is_placeholder)
     return payload
 
 
-def _validate_ids(items: list[dict], id_key: str) -> None:
-    """Missing or repeated identities make a snapshot unsafe for pruning."""
+def _validate_ids(
+    items: list[dict], id_key: str, is_placeholder: Callable[[dict], bool] | None = None
+) -> None:
+    """Missing or repeated identities make a snapshot unsafe for pruning.
+
+    `is_placeholder` marks provider items that count toward the reported
+    total but are not postings; they carry no identity to validate.
+    """
     seen = set()
     for item in items:
+        if is_placeholder is not None and is_placeholder(item):
+            continue
         try:
             job_id = normalize_job_id(item.get(id_key))
         except ValueError as exc:
@@ -127,11 +136,16 @@ def paginate_with_retries(
     total_key: str,
     items_key: str,
     id_key: str = "id",
+    is_placeholder: Callable[[dict], bool] | None = None,
     method: str = "GET",
     body: dict | None = None,
     workers: int = 1,
 ) -> list[dict]:
-    """Fetch every page, optionally in parallel after the first."""
+    """Fetch every page, optionally in parallel after the first.
+
+    Placeholders are returned with the postings, so page counts still match
+    the reported total; the caller drops them.
+    """
 
     def fetch_page(cursor: int) -> dict:
         page_args = {cursor_param: cursor, page_size_param: page_size}
@@ -145,7 +159,9 @@ def paginate_with_retries(
 
     if workers > 1:
         try:
-            items = _paginate_in_parallel(fetch_page, total_key, items_key, workers, id_key)
+            items = _paginate_in_parallel(
+                fetch_page, total_key, items_key, workers, id_key, is_placeholder
+            )
         except Exception as exc:
             logger.warning(
                 "%s[%s]: parallel page fetch failed (%s), refetching one page "
@@ -166,7 +182,9 @@ def paginate_with_retries(
             )
     for attempt in range(2):
         try:
-            return _paginate_sequentially(fetch_page, total_key, items_key, id_key)
+            return _paginate_sequentially(
+                fetch_page, total_key, items_key, id_key, is_placeholder
+            )
         except IncompleteBoardResponse:
             if attempt:
                 raise
@@ -189,7 +207,8 @@ def _page_total(payload: object, total_key: str) -> int:
 
 
 def _paginate_sequentially(
-    fetch_page: Callable[[int], dict], total_key: str, items_key: str, id_key: str
+    fetch_page: Callable[[int], dict], total_key: str, items_key: str, id_key: str,
+    is_placeholder: Callable[[dict], bool] | None = None,
 ) -> list[dict]:
     """Fetch pages sequentially until the endpoint is exhausted."""
     items: list[dict] = []
@@ -203,7 +222,8 @@ def _paginate_sequentially(
         elif page_total not in (0, total):
             raise IncompleteBoardResponse("pagination total changed during fetch")
         page = require_job_list(
-            payload, "pagination", str(cursor), key=items_key, id_key=id_key
+            payload, "pagination", str(cursor), key=items_key, id_key=id_key,
+            is_placeholder=is_placeholder,
         )
         if not page:
             if cursor < total:
@@ -217,18 +237,21 @@ def _paginate_sequentially(
             raise IncompleteBoardResponse(
                 f"received {cursor} items, more than reported total {total}"
             )
-    _validate_ids(items, id_key)
+    _validate_ids(items, id_key, is_placeholder)
     return items
 
 
 def _paginate_in_parallel(
     fetch_page: Callable[[int], dict], total_key: str, items_key: str,
-    workers: int, id_key: str,
+    workers: int, id_key: str, is_placeholder: Callable[[dict], bool] | None = None,
 ) -> list[dict] | None:
     """Fetch remaining pages concurrently when the total is known."""
     first = fetch_page(0)
     total = _page_total(first, total_key)
-    items = list(require_job_list(first, "pagination", "0", key=items_key, id_key=id_key))
+    items = list(require_job_list(
+        first, "pagination", "0", key=items_key, id_key=id_key,
+        is_placeholder=is_placeholder,
+    ))
     if len(items) == total:
         return items
     if not items or len(items) > total:
@@ -241,9 +264,10 @@ def _paginate_in_parallel(
         if page_total not in (0, total):
             return None
         items.extend(require_job_list(
-            payload, "pagination", str(len(items)), key=items_key, id_key=id_key
+            payload, "pagination", str(len(items)), key=items_key, id_key=id_key,
+            is_placeholder=is_placeholder,
         ))
-    _validate_ids(items, id_key)
+    _validate_ids(items, id_key, is_placeholder)
     return items if len(items) == total else None
 
 

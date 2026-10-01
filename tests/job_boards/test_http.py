@@ -479,3 +479,34 @@ def test_paginate_recovers_when_retry_has_unique_ids(monkeypatch):
         total_key="total", items_key="jobPostings",
     )
     assert [item["id"] for item in items] == [1, 2, 3, 4]
+
+
+@pytest.mark.parametrize("workers", [1, 4])
+def test_paginate_counts_placeholders_without_validating_their_ids(monkeypatch, workers):
+    placeholder = {"bulletFields": ["REF1"]}
+    _post_pages(monkeypatch, lambda offset, nth: {
+        "total": 4,
+        "jobPostings": [{"id": 1}, placeholder] if offset == 0 else [placeholder, {"id": 2}],
+    })
+
+    items = _http.paginate_with_retries(
+        "workday", "acme", "https://example.test/jobs", method="POST",
+        cursor_param="offset", page_size_param="limit", page_size=2,
+        total_key="total", items_key="jobPostings", workers=workers,
+        is_placeholder=lambda item: "id" not in item,
+    )
+
+    assert items == [{"id": 1}, placeholder, placeholder, {"id": 2}]
+
+
+def test_paginate_still_rejects_a_missing_id_without_a_placeholder_rule(monkeypatch):
+    _post_pages(monkeypatch, lambda offset, nth: {
+        "total": 2, "jobPostings": [{"id": 1}, {"bulletFields": ["REF1"]}],
+    })
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="missing or invalid id"):
+        _http.paginate_with_retries(
+            "workday", "acme", "https://example.test/jobs", method="POST",
+            cursor_param="offset", page_size_param="limit", page_size=2,
+            total_key="total", items_key="jobPostings",
+        )

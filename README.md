@@ -100,7 +100,11 @@ fetch pages, and Workday required detail records, with up to eight workers.
 
 A failed board is excluded from pruning. All configured tokens for a firm
 must succeed before its rows can be removed. A failed Workday detail request
-fails the board, except a confirmed 404/410 for a closed posting.
+fails the board, except a confirmed 404/410 for a closed posting. Workday
+also lists items with neither a title nor a link, such as
+`{"bulletFields": ["REF083382W"]}`, that no requisition search finds. These
+are counted toward the total and then skipped. More than three per board,
+and more than 5% of its listing, fails the board instead.
 
 Before any job rows are appended, the prune guard checks each firm's rows
 across all tabs. It holds back a firm if its feed is empty, or if at least

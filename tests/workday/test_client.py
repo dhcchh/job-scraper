@@ -459,6 +459,30 @@ def test_fetch_workday_jobs_rejects_a_missing_or_duplicate_external_path(monkeyp
         client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
 
 
+def test_fetch_workday_jobs_skips_a_placeholder_with_no_title_or_link(monkeypatch):
+    # Visa's live board lists {"bulletFields": ["REF083382W"]} items: counted
+    # in Workday's total, but no posting is found for that requisition ID.
+    _serve(
+        monkeypatch,
+        [{"bulletFields": ["REF083382W"]}, _posting("/job/a/Software-Engineer_R-1")],
+    )
+
+    jobs = client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
+
+    assert [job.job_id for job in jobs] == ["R-1"]
+
+
+def test_fetch_workday_jobs_fails_board_on_too_many_placeholders(monkeypatch):
+    _serve(
+        monkeypatch,
+        [{"bulletFields": [f"REF{n}"]} for n in range(4)]
+        + [_posting(f"/job/a/Software-Engineer_R-{n}") for n in range(20)],
+    )
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="4 of 24 listed items"):
+        client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
+
+
 def test_fetch_workday_jobs_raises_on_http_error(monkeypatch):
     # A persistent list-page failure must propagate out of fetch_workday_jobs
     # -- main.py is what decides that means "skip this board", not this

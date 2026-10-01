@@ -62,8 +62,10 @@ notifications for moved rows. Repository tests do not require live writes.
   created automatically.
 - Posting identity is `(firm, job_id)`. Validate external IDs before using
   them. Missing or duplicate IDs invalidate a board snapshot; silently
-  skipping them would allow false closures. A multi-token firm is eligible
-  for pruning only when every token succeeds.
+  skipping them would allow false closures. The one exception is Workday
+  list items with neither a title nor a link: they count toward the total
+  but aren't postings, so they're skipped, up to a small per-board allowance.
+  A multi-token firm is eligible for pruning only when every token succeeds.
 - Plan the prune guard across all job tabs before any job append. Hold both
   appends and prunes for flagged firms so repeated runs keep the same
   baseline. `FORCE_PRUNE_FIRMS` overrides a hold for confirmed closures.
