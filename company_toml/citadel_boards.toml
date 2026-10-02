@@ -1,0 +1,3 @@
+# Disabled until three consecutive scheduled Citadel probes pass on main.
+# See README.md for the activation gate and browser setup.
+boards = []

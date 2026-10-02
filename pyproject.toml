@@ -5,14 +5,17 @@ description = "Daily job-board scraper with Google Sheets tracking and optional 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "beautifulsoup4>=4.14.0",
     "google-auth>=2.58.0",
     "gspread>=6.2.1",
+    "playwright>=1.55.0",
     "python-dotenv>=1.2.3",
     "requests>=2.34.2",
 ]
 
 [project.scripts]
 jobscraper-validate-boards = "jobscraper.validate_boards:main"
+jobscraper-citadel-probe = "jobscraper.job_boards.citadel.probe:main"
 
 [dependency-groups]
 dev = [

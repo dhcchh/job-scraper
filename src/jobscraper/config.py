@@ -23,6 +23,7 @@ PROVIDERS = (
     ("eightfold", "Eightfold"),
     ("workday", "Workday"),
     ("recruitee", "Recruitee"),
+    ("citadel", "Citadel"),
 )
 
 
@@ -41,6 +42,7 @@ SMARTRECRUITERS_BOARDS = _BOARDS["smartrecruiters"]
 EIGHTFOLD_BOARDS = _BOARDS["eightfold"]
 WORKDAY_BOARDS = _BOARDS["workday"]
 RECRUITEE_BOARDS = _BOARDS["recruitee"]
+CITADEL_BOARDS = _BOARDS["citadel"]
 
 
 def board_sources() -> list[tuple[str, str, list[dict]]]:

@@ -36,6 +36,7 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main.config, "EIGHTFOLD_BOARDS", [])
     monkeypatch.setattr(main.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(main.config, "RECRUITEE_BOARDS", [])
+    monkeypatch.setattr(main.config, "CITADEL_BOARDS", [])
     # main.run() always syncs the supported-company tab before fetching jobs.
     # Keep orchestration tests isolated from gspread and Telegram unless a
     # test explicitly replaces this mock to inspect the call.
@@ -1005,3 +1006,49 @@ def test_summary_counts_each_successful_token_for_the_same_firm(monkeypatch):
     monkeypatch.setattr(main, "_write_job_summary", summaries.append)
     main.run()
     assert "Boards fetched: 2/2" in summaries[0]
+
+
+def test_citadel_challenge_preserves_existing_rows_while_other_firms_continue(monkeypatch):
+    from jobscraper.job_boards.citadel.client import CitadelChallengeError
+    from jobscraper.models import FIELDS
+    from jobscraper.sheets import writer
+
+    class Worksheet:
+        def __init__(self, title, jobs=()):
+            self.title = title
+            self.rows = [list(FIELDS)] + [job.to_row() for job in jobs]
+
+        def get_all_values(self):
+            return self.rows
+
+        def append_rows(self, rows, **kwargs):
+            self.rows.extend(rows)
+
+    _patch_sheet_functions(monkeypatch, [])
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", [
+        {"token": "good", "firm": "GoodCo", "company_type": "Big Tech"},
+    ])
+    monkeypatch.setattr(main.config, "CITADEL_BOARDS", [
+        {"token": "citadel", "firm": "Citadel", "company_type": "Prop Trading/Hedge Fund"},
+    ])
+    old = _job("Citadel", "software-engineer", location="Singapore")
+    new = _job("GoodCo", "new", location="Singapore")
+    worksheets = {
+        main.tab_name(category, region): Worksheet(main.tab_name(category, region))
+        for category, _ in main.CATEGORIES for region in main.REGIONS
+    }
+    worksheets["SWE/DE - PAC"] = Worksheet("SWE/DE - PAC", [old])
+    monkeypatch.setattr(main, "get_worksheet", lambda _, name: worksheets[name])
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda *a: [new])
+
+    def challenge(*args):
+        raise CitadelChallengeError("Cloudflare challenge")
+
+    monkeypatch.setattr(main.fetchers, "fetch_citadel_jobs", challenge)
+    monkeypatch.setattr(main, "append_jobs", writer.append_jobs)
+    monkeypatch.setattr(main, "plan_prune", writer.plan_prune)
+    monkeypatch.setattr(main, "apply_prune", writer.apply_prune)
+
+    with pytest.raises(RuntimeError, match="failed board fetches: Citadel"):
+        main.run()
+    assert worksheets["SWE/DE - PAC"].rows == [list(FIELDS), old.to_row(), new.to_row()]

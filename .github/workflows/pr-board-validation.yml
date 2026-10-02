@@ -33,6 +33,12 @@ jobs:
           --base "$BASE_REF" --head "$HEAD_REF" --merge-base
           --github-output "$GITHUB_OUTPUT"
 
+      - name: Install Chromium if Citadel changed
+        if: steps.changed_boards.outputs.firms != ''
+        env:
+          ONLY_FIRMS: ${{ steps.changed_boards.outputs.firms }}
+        run: uv run python -m jobscraper.job_boards.citadel.install
+
       - name: Validate changed boards
         if: steps.changed_boards.outputs.firms != ''
         env:

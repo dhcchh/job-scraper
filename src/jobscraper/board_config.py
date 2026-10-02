@@ -14,6 +14,7 @@ PROVIDERS: tuple[str, ...] = (
     "eightfold",
     "workday",
     "recruitee",
+    "citadel",
 )
 
 _PACKAGE_BOARD_DIR = Path(__file__).resolve().parent / "company_toml"
@@ -170,6 +171,13 @@ def _provider_from_path(path: Path) -> str:
 def _validate_token(
     path: Path, provider: str, identifier: object, token: str
 ) -> None:
+    if provider == "citadel":
+        if token == "citadel":
+            return
+        raise ValueError(
+            f"{path.name}: [[boards]] entry {identifier!r} has invalid token "
+            f"{token!r}; expected 'citadel'"
+        )
     pattern = _WORKDAY_TOKEN_RE if provider == "workday" else _SLUG_TOKEN_RE
     if pattern.fullmatch(token):
         return

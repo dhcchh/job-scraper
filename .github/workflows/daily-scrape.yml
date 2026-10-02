@@ -56,6 +56,11 @@ jobs:
           --base "$BASE_REF" --head "$GITHUB_SHA"
           --github-output "$GITHUB_OUTPUT"
 
+      - name: Install Chromium if Citadel is selected
+        env:
+          ONLY_FIRMS: ${{ steps.changed_boards.outputs.firms }}
+        run: uv run python -m jobscraper.job_boards.citadel.install
+
       - name: Run scraper
         env:
           GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}

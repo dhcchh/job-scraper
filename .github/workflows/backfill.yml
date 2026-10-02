@@ -27,6 +27,9 @@ jobs:
       - name: Run tests before writing
         run: uv run pytest
 
+      - name: Install Chromium if Citadel is configured
+        run: uv run python -m jobscraper.job_boards.citadel.install --all-firms
+
       - name: Run backfill
         env:
           GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}

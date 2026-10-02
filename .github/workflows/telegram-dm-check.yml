@@ -19,6 +19,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Install Chromium if Citadel is configured
+        run: uv run python -m jobscraper.job_boards.citadel.install
+
       - name: Send test DM
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

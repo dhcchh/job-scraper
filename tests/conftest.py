@@ -27,3 +27,13 @@ def block_unmocked_http(monkeypatch):
         pytest.fail("Test attempted an unmocked HTTP request")
 
     monkeypatch.setattr(requests.sessions.Session, "request", fail)
+
+
+@pytest.fixture(autouse=True)
+def block_unmocked_browser(monkeypatch):
+    from jobscraper import config
+    from jobscraper.job_boards.citadel import client
+
+    monkeypatch.setattr(client, "_playwright", lambda: pytest.fail("Test attempted an unmocked browser launch"))
+    # Provider tests opt in explicitly, including after production activation.
+    monkeypatch.setattr(config, "CITADEL_BOARDS", [])

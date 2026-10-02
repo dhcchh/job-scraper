@@ -138,3 +138,9 @@ def test_validate_live_reports_endpoint_errors_and_continues(monkeypatch):
     assert output[0].endswith("RuntimeError: not found")
     assert output[1].startswith("OK   lever")
     assert output[2] == "Live validation: 1/2 board(s) passed"
+
+
+def test_validate_live_routes_citadel_through_registered_fetcher(monkeypatch):
+    monkeypatch.setitem(validate_boards.FETCHERS, "citadel", lambda *args: [_job("software-engineer", "Citadel")])
+    board = _board(token="citadel", firm="Citadel", company_type="Prop Trading/Hedge Fund")
+    assert validate_boards.validate_live([("citadel", board)], output=lambda _: None) == 0

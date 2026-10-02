@@ -13,6 +13,7 @@ from jobscraper.board_config import (
 )
 from jobscraper.job_boards.fetchers import (
     fetch_ashby_jobs,
+    fetch_citadel_jobs,
     fetch_eightfold_jobs,
     fetch_greenhouse_jobs,
     fetch_lever_jobs,
@@ -34,6 +35,7 @@ FETCHERS: dict[str, Fetcher] = {
     "eightfold": fetch_eightfold_jobs,
     "workday": fetch_workday_jobs,
     "recruitee": fetch_recruitee_jobs,
+    "citadel": fetch_citadel_jobs,
 }
 
 

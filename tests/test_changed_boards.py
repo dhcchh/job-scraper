@@ -26,6 +26,13 @@ def test_changed_firms_ignores_order_and_removals_and_dedupes_firms():
     assert changed_firms({}, {"gh": [a, {**a, "token": "c"}]}) == ["Acme"]
 
 
+def test_citadel_activation_is_selected_but_disabled_config_is_not():
+    path = "company_toml/citadel_boards.toml"
+    board = {"token": "citadel", "firm": "Citadel", "company_type": "Prop Trading/Hedge Fund"}
+    assert changed_firms({}, {path: []}) == []
+    assert changed_firms({path: []}, {path: [board]}) == ["Citadel"]
+
+
 def test_changed_boards_cli_reads_committed_toml(tmp_path):
     def git(*args):
         return subprocess.check_output(["git", "-C", str(tmp_path), *args], text=True).strip()

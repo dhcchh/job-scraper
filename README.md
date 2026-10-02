@@ -3,6 +3,7 @@
 Fetches postings from Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold,
 Workday, and Recruitee. Jobs are classified into Google Sheets tabs by role
 and region, with optional Telegram notifications.
+Citadel has a browser-based SG/HK integration awaiting its CI activation gate.
 
 ## Setup
 
@@ -198,8 +199,62 @@ the Supported companies reference tab. Wheels bundle the board files and
 must be rebuilt after configuration changes.
 
 Dedicated integrations are still needed for the tracked backlog: Gojek,
-Shopify, Zoom, Citadel, Meta, Amazon, Google, The Trade Desk, Apple, and
+Shopify, Zoom, Meta, Amazon, Google, The Trade Desk, Apple, and
 Atlassian. X is configured through SmartRecruiters.
+
+### Citadel browser probe
+
+Citadel is registered but disabled (`boards = []` in
+`company_toml/citadel_boards.toml`). **Citadel Browser Probe** runs daily and
+can be dispatched manually without Sheets or Telegram credentials. It uses
+the production fetcher and reports completeness, global/SG/HK counts,
+matching role counts, elapsed time and the failure reason. Failure screenshots
+and JSON reports are retained for three days; cookies and browser profiles
+are never saved or uploaded.
+
+For a local read-only probe:
+
+```bash
+uv run playwright install chromium --with-deps --no-shell
+uv run jobscraper-citadel-probe --output /tmp/citadel-probe.json --diagnostics-dir /tmp/citadel-probe
+```
+
+The fetch uses one modern headless Chromium context, allows automatic
+Cloudflare verification, and fails if an interactive challenge persists for
+45 seconds. Listing navigations are separated by at least ten seconds. One
+whole-snapshot retry is allowed for transient navigation or incomplete
+pagination, within a five-minute fetch deadline. A failed fetch cannot prune
+Citadel rows. Chromium is installed conditionally in other fetching workflows,
+so disabled or unselected Citadel boards need no browser setup.
+
+All global pages must match their displayed counts and contain valid unique
+identities before the fetcher retains postings with any Singapore or Hong
+Kong office. Every office on retained jobs is preserved. Unknown office
+labels or HTML changes fail the board rather than returning partial data.
+The structural HTML parser must be verified by a successful live probe; local
+Chromium checks currently stop at Cloudflare, so parser fixtures represent
+the expected structure rather than captured live HTML.
+
+The activation gate requires three consecutive **scheduled** passes on the
+same `main` commit, each with at least one SG/HK posting matching the tracked
+role categories. Manual runs do not count. Failures or code changes restart
+the gate. Passing reports readiness only; it does not edit configuration or
+write to Sheets. After it passes, replace the empty board list with:
+
+```toml
+[[boards]]
+token = "citadel"
+firm = "Citadel"
+company_type = "Prop Trading/Hedge Fund"
+```
+
+Then run static validation and scoped live validation before enabling daily
+collection. Detail-page URL slugs identify postings, so a repost using the
+same slug is not treated as a new job. Publication/update dates, department,
+salary and descriptions remain blank; no detail pages are fetched.
+Citadel Securities is a separate, unsupported source. For a manual headed
+diagnostic, use `xvfb-run uv run jobscraper-citadel-probe --headed`; headed
+mode is not an automatic fallback and does not guarantee clearance.
 
 ## GitHub Actions
 
@@ -208,6 +263,7 @@ Atlassian. X is configured through SmartRecruiters.
 | Tests | Push to main and PR | Run the test suite |
 | Validate Changed Boards | PR changing board TOML | Fetch added or modified entries, including token/scope edits |
 | Board Health Check | Weekly and manual | Fetch all configured boards |
+| Citadel Browser Probe | Daily and manual | Check Chromium access and the Citadel activation gate; no sheet writes |
 | Daily Scrape | Board TOML push to main, daily at 23:00 UTC, manual | Sync firms, scrape, notify, audit |
 | Backfill | Manual | Refresh rows in place and audit |
 | Full Refresh | Manual | Refresh and reroute rows atomically, then audit |
