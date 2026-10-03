@@ -3,7 +3,8 @@
 Fetches postings from Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold,
 Workday, and Recruitee. Jobs are classified into Google Sheets tabs by role
 and region, with optional Telegram notifications.
-Citadel has a browser-based SG/HK integration awaiting its CI activation gate.
+Citadel's browser-based SG/HK integration is disabled pending a Cloudflare
+access fix; follow-up work is tracked in the integration backlog below.
 
 ## Setup
 
@@ -198,9 +199,20 @@ The board-health command remains the concurrent operational check used by CI.
 the Supported companies reference tab. Wheels bundle the board files and
 must be rebuilt after configuration changes.
 
+### Integration backlog
+
 Dedicated integrations are still needed for the tracked backlog: Gojek,
 Shopify, Zoom, Meta, Amazon, Google, The Trade Desk, Apple, and
 Atlassian. X is configured through SmartRecruiters.
+
+- [ ] Revisit Citadel SG/HK browser access. On 2026-10-02, both the GitHub
+  Actions probe and a local headed Chromium attempt with manual challenge
+  clicks failed to clear Cloudflare. Compare access in an ordinary browser
+  with the automated session, resolve the access blocker, and verify the
+  parser against captured live listing HTML. Keep
+  `company_toml/citadel_boards.toml` at `boards = []` until the existing
+  three-consecutive-scheduled-pass activation gate and scoped live validation
+  succeed. Deferred; no activation planned until this work is revisited.
 
 ### Citadel browser probe
 
