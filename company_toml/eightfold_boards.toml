@@ -4,8 +4,3 @@
 token = "mlp"
 firm = "Millennium"
 company_type = "Prop Trading/Hedge Fund"
-
-[[boards]]
-token = "netflix"
-firm = "Netflix"
-company_type = "Consumer/Media & Entertainment"
