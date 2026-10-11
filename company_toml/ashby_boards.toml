@@ -164,3 +164,8 @@ company_type = "Applied AI Products"
 token = "replit"
 firm = "Replit"
 company_type = "Applied AI Products"
+
+[[boards]]
+token = "hoyoverse"
+firm = "HoYoverse"
+company_type = "Gaming"

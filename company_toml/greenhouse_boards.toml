@@ -106,11 +106,6 @@ firm = "Ripple"
 company_type = "Crypto Exchange"
 
 [[boards]]
-token = "hoyoverse"
-firm = "HoYoverse"
-company_type = "Gaming"
-
-[[boards]]
 token = "riotgames"
 firm = "Riot Games"
 company_type = "Gaming"
