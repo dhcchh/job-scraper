@@ -141,8 +141,23 @@ def test_classify_returns_category_for_a_normal_title():
         "title": "Software Engineer",
         "department": "Eng",
         "location": "Singapore",
+        "company_type": "",
     }
     assert full_refresh._classify(values) == "SWE/DE"
+
+
+def test_classify_uses_the_rows_company_type():
+    # A bare research title is quant research only at a trading firm.
+    values = {
+        "board": "AQR",
+        "job_id": "1",
+        "title": "2027 Research Summer Analyst",
+        "department": "",
+        "location": "Greenwich, CT",
+        "company_type": "Prop Trading/Hedge Fund",
+    }
+    assert full_refresh._classify(values) == "QT/QR"
+    assert full_refresh._classify({**values, "company_type": "Fintech"}) is None
 
 
 def test_rewrite_requests_preserve_literal_text_and_url_formulas():
@@ -166,6 +181,7 @@ def test_classify_returns_none_for_a_recruiter_title():
         "title": "Technical Recruiter",
         "department": "People",
         "location": "Singapore",
+        "company_type": "",
     }
     assert full_refresh._classify(values) is None
 

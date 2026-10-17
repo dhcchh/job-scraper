@@ -61,7 +61,9 @@ integration settings, disable dotenv loading, and block unmocked HTTP requests.
   name from TOML; IDs are strings. `scraped_date` records when a row was
   first added. Daily runs leave metadata on existing rows unchanged.
 - **Roles:** title keywords select the first matching category: DS/ML/Algos,
-  DA/BI, SWE/DE, QT/QR, or SRE/DevOps. Unmatched titles are omitted.
+  DA/BI, SWE/DE, QT/QR, or SRE/DevOps. Generic engineering titles (SWE/DE),
+  bare research titles at trading firms (QT/QR) and AI labs (DS/ML/Algos),
+  and analytics titles (DA/BI) are fallbacks. Unmatched titles are omitted.
   Seniority uses title and department, with Greenhouse employment-type
   metadata as a fallback.
 - **Regions:** PAC includes Singapore, Hong Kong, Australia, Japan, South

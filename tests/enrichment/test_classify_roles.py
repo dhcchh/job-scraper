@@ -10,8 +10,11 @@ from jobscraper.models import Job
 _TODAY = datetime.date(2026, 9, 12)
 
 
-def _job(title, department=""):
-    return Job("acme", "1", title, department, "Remote", "https://x", "", _TODAY)
+def _job(title, department="", company_type=""):
+    return Job(
+        "acme", "1", title, department, "Remote", "https://x", "", _TODAY,
+        company_type=company_type,
+    )
 
 
 @pytest.mark.parametrize(
@@ -88,10 +91,151 @@ def _job(title, department=""):
         ("Forward-Deployed Engineer", "SWE/DE"),
         ("Manager, Forward Deployed Engineering", "SWE/DE"),
         ("Data Science Intern", "DS/ML/Algos"),
+        # Surfaced by a sweep of every board's unmatched titles (2026-10-17):
+        # all were noise before.
+        ("Staff Back-end Engineer (Rocket Pay)", "SWE/DE"),
+        ("Sr. Staff Front-end Engineer  (Global Operations Technology)", "SWE/DE"),
+        ("Front End Engineer, Marketing", "SWE/DE"),
+        ("Server-Side Engineer (C++) - Pre-Trade Risk Technology", "SWE/DE"),
+        ("Senior C++ Engineer - High Frequency Trading", "SWE/DE"),
+        ("Kdb+ Engineer - Systematic Data Platform", "SWE/DE"),
+        ("Product Engineer, Computer Use", "SWE/DE"),
+        ("Growth Engineer", "SWE/DE"),
+        ("Staff Web Engineer", "SWE/DE"),
+        ("Blockchain Engineer - Binance Wallet", "SWE/DE"),
+        ("Flutter Engineer (iOS)", "SWE/DE"),
+        ("Tools & Compilers Research and Development", "SWE/DE"),
+        ("Trading Engineer - Execution", "SWE/DE"),
+        ("Research & Portfolio Management Engineering - Associate", "SWE/DE"),
+        ("Senior Cloud Networking Engineer", "SWE/DE"),
+        ("Director, Analytics Engineering", "SWE/DE"),
+        ("Deep Learning Researcher | Trading Team", "DS/ML/Algos"),
+        ("Member of Technical Staff, Post-Training", "DS/ML/Algos"),
+        ("AI Scientist - Physics Models", "DS/ML/Algos"),
+        ("LLM Scientist, AI for Science", "DS/ML/Algos"),
+        ("Campus AI Researcher, PhD/Postdoc (Intern)", "DS/ML/Algos"),
+        ("Research MLE (Training Optimization)", "DS/ML/Algos"),
+        ("Inference Engineer, Robotics", "DS/ML/Algos"),
+        ("AI Agent  Engineer", "DS/ML/Algos"),  # runs of spaces collapse
+        ("Research Engineering Lead", "DS/ML/Algos"),
+        ("Experienced Options Trader – Singapore Office", "QT/QR"),
+        ("Graduate Trader", "QT/QR"),
+        ("Systematic Trader", "QT/QR"),
+        ("Futures & Options Trading Analyst Intern - Summer 2027", "QT/QR"),
+        ("Trading Intern", "QT/QR"),
+        ("Electronic Trader Analyst", "QT/QR"),
+        ("Linux Engineer", "SRE/DevOps"),
+        ("Trading Desk Operations Engineer", "SRE/DevOps"),
+        ("Systematic Production Support Engineer", "SRE/DevOps"),
+        ("HPC Operations Engineer", "SRE/DevOps"),
+        ("Network Operations Engineer (AWS)", "SRE/DevOps"),
+        ("Senior Database Administrator (DBA), Infra", "SRE/DevOps"),
+        ("Lead Database Engineer", "SRE/DevOps"),
+        ("Cloud Infra Engineer", "SRE/DevOps"),
+        ("2027 – Internship, Infrastructure Engineering", "SRE/DevOps"),
+        ("Trading Infrastructure Specialist – Graduate Programme", "SRE/DevOps"),
+        # Generic senior titles are a fallback after every category.
+        ("Engineering Lead / Manager, KYC", "SWE/DE"),
+        ("Engineering Director, Mobile (iOS/Android)", "SWE/DE"),
+        ("Engineering Leader - Payments APAC", "SWE/DE"),
+        ("Distinguished Engineer, Architecture & Engineering Excellence", "SWE/DE"),
+        ("Principal Engineer, Authentication", "SWE/DE"),
+        ("Member of Technical Staff - SDK", "SWE/DE"),
+        ("2027 Engineering Summer Analyst", "SWE/DE"),
+        ("Engineering Intern (Summer 2027)", "SWE/DE"),
+        ("2027 Platform Engineering Intern", "SRE/DevOps"),
+        ("Distinguished Engineer, Core DevOps", "SRE/DevOps"),
+        ("Member of Technical Staff (AI Infrastructure Engineer)", "SRE/DevOps"),
+        # So is bare "analytics".
+        ("Senior Product Analytics Manager - Online Platforms", "DA/BI"),
+        ("Analyst (Supply Analytics, Bangkok-based, Relocation provided)", "DA/BI"),
+        ("Portfolio Analytics Engineer - Vice President", "SWE/DE"),
     ],
 )
 def test_classify_job_routes_to_expected_category(title, expected):
     assert classify_job(_job(title)) == expected
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Junior Discretionary Trader",
+        "ETF Sales Trader",
+        "OTC Trader - Digital Assets",
+        "Floor Trader",
+        "Repo Trader",
+        "Equity Financing Trader, Asia Pacific",
+        "Portfolio Finance Trader",
+        "Trader Assistant (Working Student)",
+        "Commodities Broker Trader",
+        "Associate Head of Trader Education",
+        "Customer Experience Representative, Active Trader",
+    ],
+)
+def test_classify_job_keeps_non_quant_traders_as_noise(title):
+    assert classify_job(_job(title)) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Technical Support Engineering Leader, Singapore",
+        "Dedicated Support Engineering Lead",
+        "Solutions Engineering Lead",
+        "Systems Engineering Lead, New Product Initiatives",
+        "Staff Silicon Product Engineer",
+        "Data Center Infrastructure Engineering Program Manager",
+        "Senior Product Manager - Interactive Analytics",
+        "Principal, Strategic Finance & Analytics, Acquisition",
+        "Advisory Solution Consultant - Data & Analytics",
+    ],
+)
+def test_classify_job_keeps_new_keywords_off_non_engineering_titles(title):
+    assert classify_job(_job(title)) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "2027 Research Summer Analyst",
+        "Global Stock Selection Research – Technical Signals",
+        "Senior Member of Research Staff, Optimization",
+        "Campus Crypto Researcher (Intern)",
+        "Portfolio Researcher",
+        "VIE in Research",
+    ],
+)
+def test_classify_job_routes_bare_research_at_trading_firms_to_qt_qr(title):
+    assert classify_job(_job(title, company_type="Prop Trading/Hedge Fund")) == "QT/QR"
+    # The same title elsewhere is too ambiguous to keep.
+    assert classify_job(_job(title, company_type="Fintech")) is None
+
+
+@pytest.mark.parametrize(
+    "title", ["Researcher, Alignment", "Research, General Agents", "Research Intern"]
+)
+def test_classify_job_routes_bare_research_at_ai_labs_to_ds_ml(title):
+    assert classify_job(_job(title, company_type="AI Lab")) == "DS/ML/Algos"
+
+
+@pytest.mark.parametrize(
+    "title,company_type",
+    [
+        ("Fundamental Researcher - Canvas", "Prop Trading/Hedge Fund"),
+        ("Equity Research Analyst, China Industrials", "Prop Trading/Hedge Fund"),
+        ("Macro Research Analyst", "Prop Trading/Hedge Fund"),
+        ("Client Investment Research Associate", "Prop Trading/Hedge Fund"),
+        ("Corporate Access & Research Coordinator", "Prop Trading/Hedge Fund"),
+        ("Research Data Expert", "Prop Trading/Hedge Fund"),
+        ("Research Economist, Economic Research", "AI Lab"),
+        ("Research Program Manager, Governance", "AI Lab"),
+        ("User Experience Researcher, Platform", "AI Lab"),
+        ("Market Research Lead, ChatGPT", "AI Lab"),
+        ("Research Counsel", "AI Lab"),
+    ],
+)
+def test_classify_job_keeps_non_technical_research_as_noise(title, company_type):
+    assert classify_job(_job(title, company_type=company_type)) is None
 
 
 def test_classify_job_ignores_department():

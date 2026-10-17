@@ -42,6 +42,7 @@ def _classify(values: dict[str, str]) -> str | None:
         url="",
         updated_at="",
         scraped_date=datetime.date.today(),
+        company_type=values["company_type"],
     )
     return classify_job(stub)
 
