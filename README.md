@@ -322,3 +322,14 @@ issues without repairing data or rolling back completed writes.
 Sheets quotas, full-tab reads, provider rate limits, and the spreadsheet
 cell cap constrain scale. Runtime depends on provider pagination and job
 volume; there is no measured company-count capacity guarantee.
+
+## Future work
+
+- [ ] Eventually migrate the Google Sheets job board to a searchable,
+  mobile-friendly website hosted on the existing Hetzner server. Gate access
+  like the current sheet: require sign-in, restrict access to explicitly
+  approved users, and allow access to be revoked. Protect both job pages and
+  data endpoints. Reuse the scraper, classifications, closure safeguards,
+  and Telegram alerts; migrate existing jobs while preserving first-seen
+  dates and avoiding duplicate new-job notifications. Plan database storage,
+  scheduled scraping, HTTPS, and backups when this work is taken up.
