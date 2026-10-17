@@ -81,6 +81,10 @@ _SUBDIVISIONS = {
     "Newfoundland and Labrador", "Prince Edward Island",
 }
 
+# Whole-location values naming the Asia-Pacific region itself. A role open
+# across APAC ("Software Engineer (Sydney, Shanghai, Singapore)") is a PAC role.
+_PAC_AREAS = {"Asia-Pacific", "APAC", "APJ"}
+
 # Whole-location values that name no single country, all fine as RoW.
 _ROW_AREAS = {
     "Remote", "Global", "Worldwide", "Anywhere", "EMEA", "Europe", "AMER",
@@ -102,8 +106,9 @@ def _check_disjoint(a: set[str], b: set[str]) -> None:
 _check_disjoint(_PAC_COUNTRIES, _EXCLUDED_COUNTRIES)
 _check_disjoint(_PAC_COUNTRIES | _EXCLUDED_COUNTRIES, _ROW_COUNTRIES)
 
+_PAC_PARTS = frozenset(_PAC_COUNTRIES | _PAC_AREAS)
 _KNOWN_COUNTRY_PARTS = frozenset(
-    _PAC_COUNTRIES | _EXCLUDED_COUNTRIES | _ROW_COUNTRIES | _SUBDIVISIONS | _ROW_AREAS
+    _PAC_PARTS | _EXCLUDED_COUNTRIES | _ROW_COUNTRIES | _SUBDIVISIONS | _ROW_AREAS
 )
 
 
@@ -113,9 +118,9 @@ def _offices(location: str) -> list[str]:
 
 
 def classify_region(location: str) -> str:
-    """Return PAC when any office is in a PAC country; otherwise RoW."""
+    """Return PAC when any office is in a PAC country or APAC; otherwise RoW."""
     for office in _offices(location):
-        if _country_of(office) in _PAC_COUNTRIES:
+        if _country_of(office) in _PAC_PARTS:
             return "PAC"
     return "RoW"
 

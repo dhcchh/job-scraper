@@ -43,13 +43,11 @@ def run() -> None:
     )
     sync_and_announce(spreadsheet)
 
-    def _filter(boards: list[dict]) -> list[dict]:
-        if not config.ONLY_FIRMS:
-            return boards
-        return [b for b in boards if b["firm"] in config.ONLY_FIRMS]
-
     board_sources = [
-        (source, _filter(boards), fetch)
+        (source, [
+            board for board in boards
+            if not config.ONLY_FIRMS or board["firm"] in config.ONLY_FIRMS
+        ], fetch)
         for source, boards, fetch in fetchers.board_sources()
     ]
 
@@ -81,7 +79,7 @@ def run() -> None:
     total_boards = sum(len(boards) for _source, boards, _fetch in board_sources)
 
     # Any failed token makes that firm's postings unsafe to prune.
-    fetched_boards = succeeded_firms - failed_firms.keys()
+    fetched_firms = succeeded_firms - failed_firms.keys()
 
     logger.info(
         "fetched %d jobs total across %d/%d board(s)%s",
@@ -118,15 +116,12 @@ def run() -> None:
         excluded_count,
     )
 
-    prune_plans: dict[str, PrunePlan] = {}
-    for category, _keywords in CATEGORIES:
-        for region in REGIONS:
-            tab = tab_name(category, region)
-            tab_jobs = jobs_by_tab[tab]
-            worksheet = get_worksheet(spreadsheet, tab)
-            prune_plans[tab] = plan_prune(
-                worksheet, tab_jobs, fetched_boards=fetched_boards
-            )
+    prune_plans: dict[str, PrunePlan] = {
+        tab: plan_prune(
+            get_worksheet(spreadsheet, tab), tab_jobs, fetched_boards=fetched_firms
+        )
+        for tab, tab_jobs in jobs_by_tab.items()
+    }
 
     # Check the whole existing footprint before any job tab is changed.
     held_back: dict[str, str] = {}
@@ -143,11 +138,13 @@ def run() -> None:
     newly_appended_by_tab: dict[str, list[Job]] = {}
     for tab, plan in prune_plans.items():
         newly_appended_by_tab[tab] = append_jobs(
-            plan.worksheet, [job for job in jobs_by_tab[tab] if job.board not in held_back]
+            plan.worksheet,
+            [job for job in jobs_by_tab[tab] if job.board not in held_back],
+            existing_keys=plan.keys,
         )
     # Appends and preserved sort settings may change row positions.
     prune_plans = {
-        tab: plan_prune(plan.worksheet, jobs_by_tab[tab], fetched_boards)
+        tab: plan_prune(plan.worksheet, jobs_by_tab[tab], fetched_firms)
         for tab, plan in prune_plans.items()
     }
 

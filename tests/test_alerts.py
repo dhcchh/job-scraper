@@ -61,6 +61,14 @@ def test_other_titles_do_not_match(title):
     assert not alerts.is_alert_match(_job(title))
 
 
+def test_alerts_share_the_classifier_noise_vetoes():
+    # A title the sheet drops never alerts; a "Recruiting" team qualifier on
+    # a real data-engineering title is not a recruiter title.
+    assert not alerts.is_alert_match(_job("Solutions Architect, Data Platform Engineering"))
+    assert not alerts.is_alert_match(_job("Legal Engineer, Data"))
+    assert alerts.is_alert_match(_job("Recruiting Analytics Data Engineer"))
+
+
 @pytest.mark.parametrize(
     "location, expected",
     [

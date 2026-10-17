@@ -14,7 +14,10 @@ import time
 
 from jobscraper import config
 from jobscraper.enrichment.classify_region import office_countries
-from jobscraper.enrichment.classify_roles import _NOT_AN_ENGINEERING_ROLE_RE
+from jobscraper.enrichment.classify_roles import (
+    _NOT_AN_ENGINEERING_ROLE_RE,
+    classify_job,
+)
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job
 from jobscraper.telegram import send_chunks
 
@@ -30,10 +33,7 @@ _DE_TITLE_RE = re.compile(
 # Data Infrastructure": an engineering title that names data.
 _DATA_RE = re.compile(r"\bdata\b", re.IGNORECASE)
 _ENGINEER_RE = re.compile(r"\b(?:engineer(?:ing)?|developer)\b", re.IGNORECASE)
-_NOT_DATA_ENGINEERING_RE = re.compile(
-    r"\brecruit|\bdata cent(?:er|re)\b|\bsolutions architect|\blegal engineer",
-    re.IGNORECASE,
-)
+_DATA_CENTRE_RE = re.compile(r"\bdata cent(?:er|re)\b", re.IGNORECASE)
 
 MAX_ALERTS_PER_RUN = 15
 _MAX_JD_CHARS = 10_000
@@ -42,14 +42,20 @@ _PAUSE_SECONDS = 1.0  # Telegram allows about one message per second per chat
 
 
 def is_alert_match(job: Job) -> bool:
-    """Whether a posting is a data-engineering role with a SG/HK office."""
-    return _is_data_engineering_title(job.title) and any(
-        country in ALERT_COUNTRIES for country in office_countries(job.location)
+    """Whether a posting is a data-engineering role with a SG/HK office.
+
+    `classify_job` applies the shared noise vetoes (recruiters, solutions
+    architects, ...), so a title the sheet drops never alerts.
+    """
+    return (
+        _is_data_engineering_title(job.title)
+        and any(country in ALERT_COUNTRIES for country in office_countries(job.location))
+        and classify_job(job) is not None
     )
 
 
 def _is_data_engineering_title(title: str) -> bool:
-    if _NOT_AN_ENGINEERING_ROLE_RE.search(title) or _NOT_DATA_ENGINEERING_RE.search(title):
+    if _NOT_AN_ENGINEERING_ROLE_RE.search(title) or _DATA_CENTRE_RE.search(title):
         return False
     if _DE_TITLE_RE.search(title):
         return True

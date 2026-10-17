@@ -189,7 +189,7 @@ def test_classify_returns_none_for_a_recruiter_title():
 def test_read_tab_rows_keeps_a_row_on_its_current_tab_when_unchanged():
     worksheet = _FakeWorksheet([list(FIELDS), _row(title="Software Engineer", location="Singapore")])
 
-    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
+    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {})
 
     assert dropped == 0
     assert len(rows) == 1
@@ -205,7 +205,7 @@ def test_read_tab_rows_moves_a_row_whose_region_changed():
         [list(FIELDS), _row(title="Software Engineer", location="Bangkok, Thailand")]
     )
 
-    rows, _dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
+    rows, _dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {})
 
     dest, _values = rows[0]
     assert dest == "SWE/DE - PAC"
@@ -219,25 +219,25 @@ def test_read_tab_rows_moves_a_row_whose_category_changed():
         [list(FIELDS), _row(title="Quantitative Researcher", location="Singapore")]
     )
 
-    rows, _dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
+    rows, _dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {})
 
     dest, _values = rows[0]
     assert dest == "QT/QR - PAC"
 
 
-def test_read_tab_rows_leaves_a_row_with_no_category_on_its_origin_tab(caplog):
+def test_read_tab_rows_drops_a_row_with_no_category(caplog):
     # Title no longer matches anything (e.g. now reads as a recruiter
-    # title) -- must not be dropped from the tracker entirely.
+    # title). Kept, the next daily prune would delete it as a closure.
     worksheet = _FakeWorksheet(
         [list(FIELDS), _row(title="Technical Recruiter", location="Singapore")]
     )
 
     with caplog.at_level(logging.WARNING):
-        rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC")
+        rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {})
 
-    assert dropped == 0
-    dest, _values = rows[0]
-    assert dest == "SWE/DE - PAC"
+    assert rows == []
+    assert dropped == 1
+    assert "dropping" in caplog.text
     assert "no longer matches any category" in caplog.text
 
 
@@ -247,7 +247,7 @@ def test_read_tab_rows_drops_a_row_wholly_in_an_excluded_country(caplog):
     )
 
     with caplog.at_level(logging.WARNING):
-        rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
+        rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {})
 
     assert rows == []
     assert dropped == 1
@@ -265,7 +265,7 @@ def test_read_tab_rows_keeps_a_multi_location_row_with_one_non_excluded_office()
         ]
     )
 
-    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
+    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {})
 
     assert dropped == 0
     dest, _values = rows[0]
@@ -273,7 +273,7 @@ def test_read_tab_rows_keeps_a_multi_location_row_with_one_non_excluded_office()
 
 
 def test_read_tab_rows_empty_sheet_returns_nothing():
-    assert full_refresh._read_tab_rows(_FakeWorksheet([]), {}, {}, {}, "SWE/DE", "PAC") == (
+    assert full_refresh._read_tab_rows(_FakeWorksheet([]), {}, {}, {}) == (
         [],
         0,
     )
@@ -281,7 +281,7 @@ def test_read_tab_rows_empty_sheet_returns_nothing():
 
 def test_read_tab_rows_header_only_returns_nothing():
     worksheet = _FakeWorksheet([list(FIELDS)])
-    assert full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "PAC") == ([], 0)
+    assert full_refresh._read_tab_rows(worksheet, {}, {}, {}) == ([], 0)
 
 
 @pytest.mark.parametrize("old_count, jobs", [(1, 2), (5, 0), (2, 1)])
@@ -408,6 +408,6 @@ def test_atomic_cell_values_preserve_dates_and_text_ids():
 
 def test_excluded_country_is_dropped_even_when_title_is_unmatched():
     worksheet = _FakeWorksheet([list(FIELDS), _row(title="Recruiter", location="Noida, India")])
-    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {}, "SWE/DE", "RoW")
+    rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {})
     assert rows == []
     assert dropped == 1

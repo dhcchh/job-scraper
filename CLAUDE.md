@@ -84,9 +84,11 @@ notifications for moved rows. Repository tests do not require live writes.
   disjoint. Exclude a posting only if every office is excluded. Unknown
   locations remain visible in coverage reports.
 - Role category precedence is intentional. Recruiter, solutions-architect
-  and legal-engineer titles are noise. Data-engineering keywords alone do
-  not make a product/program/project manager an engineering role. QT/QR
-  excludes discretionary, sales, OTC, floor and financing traders. Bare
+  and legal-engineer titles are noise, as are developer relations/advocacy
+  titles and leads of customer-facing engineering teams ("Sales Engineering
+  Manager"). Data-engineering keywords alone do not make a
+  product/program/project manager an engineering role. QT/QR excludes
+  discretionary, sales, OTC, floor and financing traders. Bare
   research titles depend on `company_type`, so every caller of
   `classify_job` must set it.
 - Greenhouse employment type is a seniority fallback. Refresh open jobs from

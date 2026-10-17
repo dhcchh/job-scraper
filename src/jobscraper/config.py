@@ -1,16 +1,10 @@
 """Load environment variables and job-board configuration."""
 
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 
-from jobscraper.board_config import (
-    DEFAULT_BOARD_DIR,
-    BoardConfig,
-    load_all_boards,
-    load_boards,
-)
+from jobscraper.board_config import DEFAULT_BOARD_DIR, load_all_boards
 
 load_dotenv()
 
@@ -25,11 +19,6 @@ PROVIDERS = (
     ("recruitee", "Recruitee"),
     ("citadel", "Citadel"),
 )
-
-
-def _load_boards(path: Path) -> list[BoardConfig]:
-    """Compatibility wrapper for callers loading one provider fixture."""
-    return load_boards(path)
 
 
 _BOARDS = load_all_boards(_COMPANY_TOML_DIR)

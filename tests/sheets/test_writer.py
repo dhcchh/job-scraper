@@ -121,6 +121,21 @@ def test_append_jobs_appends_only_the_new_ones():
     assert appended == [new]
 
 
+def test_append_jobs_uses_given_existing_keys_instead_of_rereading():
+    rows = [writer.HEADER, _row("acme", "1", "2026-09-01")]
+    worksheet = _FakeWorksheet(rows)
+    plan = writer.plan_prune(worksheet, [], fetched_boards=set())
+    worksheet.get_all_values = lambda: pytest.fail("tab reread for append")
+    seen = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
+    new = Job("acme", "2", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
+
+    appended = writer.append_jobs(worksheet, [seen, new], existing_keys=plan.keys)
+
+    assert plan.keys == {("acme", "1")}
+    assert worksheet.appended == [new.to_row()]
+    assert appended == [new]
+
+
 def test_append_jobs_same_job_id_different_board_is_not_a_duplicate():
     rows = [writer.HEADER, _row("acme", "1", "2026-09-01")]
     worksheet = _FakeWorksheet(rows)
@@ -339,7 +354,9 @@ def test_apply_prune_noop_when_every_closed_row_is_held_back():
 
 
 def _plan(closed_rows, tracked_counts):
-    return writer.PrunePlan(_FakeWorksheet(), closed_rows, Counter(tracked_counts))
+    return writer.PrunePlan(
+        _FakeWorksheet(), closed_rows, Counter(tracked_counts), frozenset()
+    )
 
 
 def test_held_back_prunes_holds_a_firm_whose_board_returned_nothing():

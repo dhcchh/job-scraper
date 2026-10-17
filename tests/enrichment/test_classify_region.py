@@ -33,6 +33,12 @@ from jobscraper.enrichment.classify_region import (
         ("Gurgaon, India", "RoW"),
         ("Remote", "RoW"),
         ("", "RoW"),
+        # A role open across Asia-Pacific ("Software Engineer (Sydney,
+        # Shanghai, Singapore)", location "APAC") belongs on PAC tabs.
+        ("Asia-Pacific", "PAC"),
+        ("Remote, APAC", "PAC"),
+        ("APJ", "PAC"),
+        ("EMEA", "RoW"),
     ],
 )
 def test_classify_region_single_location(location, expected):
@@ -144,6 +150,7 @@ def test_row_countries_share_nothing_with_pac_or_excluded():
         "Toronto, ON",
         "Remote",
         "EMEA",
+        "Asia-Pacific",
     ],
 )
 def test_unresolved_offices_accepts_known_country_parts(location):

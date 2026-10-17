@@ -48,14 +48,14 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main, "send_digest", lambda new_jobs, spreadsheet_url: None)
     monkeypatch.setattr(main, "send_alerts", lambda jobs, spreadsheet_url: None)
 
-    def fake_append_jobs(worksheet, jobs):
+    def fake_append_jobs(worksheet, jobs, existing_keys=None):
         if append_calls is not None:
             append_calls.append((worksheet, jobs))
         return jobs  # simulate every job as newly appended
 
     def fake_plan_prune(worksheet, jobs, fetched_boards):
         prune_calls.append(fetched_boards)
-        return PrunePlan(worksheet, {}, Counter())
+        return PrunePlan(worksheet, {}, Counter(), frozenset())
 
     monkeypatch.setattr(main, "append_jobs", fake_append_jobs)
     monkeypatch.setattr(main, "plan_prune", fake_plan_prune)
@@ -595,9 +595,12 @@ def _patch_stale_rows(monkeypatch, firm, row_count):
 
     def fake_plan_prune(worksheet, jobs, fetched_boards):
         if worksheet != "SWE/DE - RoW" or firm not in fetched_boards:
-            return PrunePlan(worksheet, {}, Counter())
+            return PrunePlan(worksheet, {}, Counter(), frozenset())
         return PrunePlan(
-            worksheet, {firm: list(range(1, row_count + 1))}, Counter({firm: row_count})
+            worksheet,
+            {firm: list(range(1, row_count + 1))},
+            Counter({firm: row_count}),
+            frozenset(),
         )
 
     apply_calls = []

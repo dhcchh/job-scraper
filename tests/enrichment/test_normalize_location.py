@@ -16,6 +16,9 @@ from jobscraper.enrichment.normalize_location import normalize_location
         # A raw location.name fallback (no offices data) can be the fuller
         # "City, Region, Country" form, not just office.name's bare city.
         ("Sydney, New South Wales, Australia", "Sydney, Australia"),
+        ("APAC", "Asia-Pacific"),
+        ("APJ", "Asia-Pacific"),
+        ("Remote - APAC", "Asia-Pacific"),
     ],
 )
 def test_normalize_location_maps_known_names(raw, expected):

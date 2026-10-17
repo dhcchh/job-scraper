@@ -56,12 +56,16 @@ jobs:
           --base "$BASE_REF" --head "$GITHUB_SHA"
           --github-output "$GITHUB_OUTPUT"
 
+      # A TOML push that only removed entries selects no firms. Skip the
+      # scrape rather than reading the empty ONLY_FIRMS as "every board".
       - name: Install Chromium if Citadel is selected
+        if: github.event_name != 'push' || steps.changed_boards.outputs.firms != ''
         env:
           ONLY_FIRMS: ${{ steps.changed_boards.outputs.firms }}
         run: uv run python -m jobscraper.job_boards.citadel.install
 
       - name: Run scraper
+        if: github.event_name != 'push' || steps.changed_boards.outputs.firms != ''
         env:
           GOOGLE_SHEET_TITLE: ${{ secrets.GOOGLE_SHEET_TITLE }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
@@ -80,6 +84,10 @@ jobs:
           # workflow_dispatch so the full board list runs as normal.
           ONLY_FIRMS: ${{ steps.changed_boards.outputs.firms }}
         run: uv run python -m jobscraper.main
+
+      - name: No changed boards detected
+        if: github.event_name == 'push' && steps.changed_boards.outputs.firms == ''
+        run: echo "No added or modified boards -- skipping the scrape."
 
       - name: Audit sheet data quality
         if: ${{ !cancelled() }}

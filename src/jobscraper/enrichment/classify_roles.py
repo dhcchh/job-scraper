@@ -86,6 +86,7 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
             "web engineer",
             "blockchain engineer",
             "flutter engineer",
+            "developer experience engineer",
             "compiler",
             "compilers",
             "trading engineer",
@@ -98,7 +99,6 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
             "analytics engineer",
             "analytics engineering",
             "fpga",
-            "staff engineer",
             "security engineer",
             "cybersecurity engineer",
             "network engineer",
@@ -164,21 +164,22 @@ CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
     ),
 ]
 
-_RECRUITER_RE = re.compile(r"\brecruiter\b", re.IGNORECASE)
-
-_SOLUTIONS_ARCHITECT_RE = re.compile(r"\bsolutions architect", re.IGNORECASE)
-
-# A "legal engineer" (Harvey's term) is a lawyer in a customer-facing
-# solutions role, not an engineer -- "Legal Engineering Manager, APAC" was
-# landing in SWE/DE via "engineering manager".
-_LEGAL_ENGINEER_RE = re.compile(r"\blegal engineer", re.IGNORECASE)
+# Recruiter, solutions-architect(ure) and legal-engineer titles are noise
+# whatever else they mention. A "legal engineer" (Harvey's term) is a lawyer
+# in a customer-facing solutions role, not an engineer -- "Legal Engineering
+# Manager, APAC" was landing in SWE/DE via "engineering manager".
+_NOISE_TITLE_RE = re.compile(
+    r"\brecruiter\b|\bsolutions architect|\blegal engineer", re.IGNORECASE
+)
 
 # On a product/program manager or pre-sales title, a data-engineering keyword
 # names the team, not the job ("Sr. Product Manager, Data Engineering") --
 # DE is meant for proper data-engineering roles only. The same goes for the
-# other team-name "... engineering" keywords.
+# other team-name "... engineering" keywords, and for "developer" on a
+# "Product Manager, Developer Productivity" title.
 _TEAM_KEYWORDS = frozenset(
     {
+        "developer",
         "data engineer",
         "data engineering",
         "big data engineer",
@@ -201,7 +202,13 @@ _NOT_AN_ENGINEERING_ROLE_RE = re.compile(
 # sales, OTC or floor traders, financing desks or trading operations.
 # Robinhood's "Active Trader" is a product name on support titles.
 _TRADER_KEYWORDS = frozenset(
-    {"trader", "trading analyst", "trading intern", "trading internship"}
+    {
+        "trader",
+        "execution trader",
+        "trading analyst",
+        "trading intern",
+        "trading internship",
+    }
 )
 _NOT_A_QUANT_TRADER_RE = re.compile(
     r"\b(?:discretionary|sales|otc|floor|repo|financing|finance|assistant"
@@ -212,17 +219,41 @@ _NOT_A_QUANT_TRADER_RE = re.compile(
 # Waymo's "Silicon Product Engineer" is a chip role.
 _HARDWARE_RE = re.compile(r"\b(?:silicon|hardware|manufacturing)\b", re.IGNORECASE)
 
+# "Developer" names the audience, not the job, on developer relations,
+# advocacy, experience, marketing and similar titles ("Developer Advocate",
+# "Developer Marketing Lead, APAC"). Their engineers are customer-facing like
+# solutions and support engineers, so they stay noise too; developer
+# experience engineers build internal tooling and keep their own keyword.
+_NOT_A_SOFTWARE_DEVELOPER_RE = re.compile(
+    r"\bdeveloper (?:relations|advocates?|advocacy|experiences?|success|support"
+    r"|community|engagement|connections|education|marketing|evangelists?"
+    r"|ecosystems?|programs?)\b"
+    r"|\b(?:business|curriculum|content) developer\b",
+    re.IGNORECASE,
+)
+
+# Leads of customer-facing engineering teams are noise: "Solutions
+# Engineering Lead", "Sales Engineering Manager".
+_NOT_SOFTWARE_ENGINEERING_RE = re.compile(
+    r"\b(?:support|solutions?|field|sales|legal|operations|vendor|systems)"
+    r" engineering\b",
+    re.IGNORECASE,
+)
+
 _KEYWORD_VETOES: list[tuple[re.Pattern[str], frozenset[str]]] = [
     (_NOT_AN_ENGINEERING_ROLE_RE, _TEAM_KEYWORDS),
     (_NOT_A_QUANT_TRADER_RE, _TRADER_KEYWORDS),
     (_HARDWARE_RE, frozenset({"product engineer"})),
+    (_NOT_A_SOFTWARE_DEVELOPER_RE, frozenset({"developer"})),
+    (_NOT_SOFTWARE_ENGINEERING_RE, frozenset({"engineering manager"})),
 ]
 
 # Generic senior titles name no specialism, so they count only after every
-# category's keywords: "Distinguished Engineer, Core DevOps" stays
-# SRE/DevOps. Leads of customer-facing engineering teams stay noise.
+# category's keywords: "Distinguished Engineer, Core DevOps" and "Staff
+# Engineer, Site Reliability" stay SRE/DevOps.
 _GENERIC_ENGINEERING_KEYWORDS = (
     "member of technical staff",
+    "staff engineer",
     "principal engineer",
     "distinguished engineer",
     "engineering director",
@@ -231,11 +262,6 @@ _GENERIC_ENGINEERING_KEYWORDS = (
     "engineering intern",
     "engineering internship",
     "engineering summer analyst",
-)
-_NOT_SOFTWARE_ENGINEERING_RE = re.compile(
-    r"\b(?:support|solutions?|field|sales|legal|operations|vendor|systems)"
-    r" engineering\b",
-    re.IGNORECASE,
 )
 
 # A bare "Research"/"Researcher" title names quant research at a trading firm
@@ -266,9 +292,7 @@ _NOT_DATA_ANALYTICS_RE = re.compile(
 def classify_job(job: Job) -> str | None:
     """Return the first matching role category, or None for noise."""
     text = " ".join(job.title.split())
-    if _RECRUITER_RE.search(text):
-        return None
-    if _SOLUTIONS_ARCHITECT_RE.search(text) or _LEGAL_ENGINEER_RE.search(text):
+    if _NOISE_TITLE_RE.search(text):
         return None
     skipped = frozenset().union(
         *(keywords for pattern, keywords in _KEYWORD_VETOES if pattern.search(text))

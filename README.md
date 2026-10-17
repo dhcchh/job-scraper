@@ -67,7 +67,8 @@ integration settings, disable dotenv loading, and block unmocked HTTP requests.
   Seniority uses title and department, with Greenhouse employment-type
   metadata as a fallback.
 - **Regions:** PAC includes Singapore, Hong Kong, Australia, Japan, South
-  Korea, China, Taiwan, New Zealand, and Thailand. Jobs whose every office
+  Korea, China, Taiwan, New Zealand, Thailand, and roles listed for all of
+  APAC or APJ. Jobs whose every office
   is in Vietnam, Malaysia, Indonesia, India, Armenia, or Uruguay are
   excluded. Other locations go to RoW. A posting with any PAC office goes
   to PAC unless excluded.
@@ -151,9 +152,10 @@ fresh response no longer supplies it.
 
 **Full Refresh** performs the same recomputation and also routes rows under
 the current category and region rules. It deduplicates identities across
-tabs and removes jobs wholly in excluded countries. Unmatched titles remain
-on their current tab. It does not discover new jobs or remove a posting
-solely because its board no longer lists it.
+tabs and removes rows the daily scrape would no longer route: titles that
+match no category and jobs wholly in excluded countries. Left in place, the
+next daily run would prune them as closures. It does not discover new jobs
+or remove a posting solely because its board no longer lists it.
 
 Run the appropriate refresh after deploying changes to classifications,
 location mappings, descriptions, schema, or formatting. Use Full Refresh
@@ -297,8 +299,8 @@ mode is not an automatic fallback and does not guarantee clearance.
 
 23:00 UTC is 07:00 Singapore time the next day; scheduled runs can be delayed.
 On TOML pushes, Daily Scrape fetches firms with added or modified entries.
-With no selected changes, it runs the full list. PR validation skips fetches
-when no entries were added or modified. Both compare parsed TOML.
+A push that only removes entries selects no firms and skips the scrape, as
+PR validation skips fetches. Both compare parsed TOML.
 
 The four sheet-writing workflows share the `sheet-write` concurrency group.
 This serializes active Actions runs, but does not protect against local

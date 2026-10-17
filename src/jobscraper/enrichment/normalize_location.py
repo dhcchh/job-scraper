@@ -151,6 +151,7 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "mako sydney": "Sydney, Australia",
     "tel aviv": "Tel Aviv, Israel",
     "apac": "Asia-Pacific",
+    "apj": "Asia-Pacific",
     "hanoi": "Hanoi, Vietnam",
     "ho chi minh": "Ho Chi Minh City, Vietnam",
     "ho chi minh city": "Ho Chi Minh City, Vietnam",

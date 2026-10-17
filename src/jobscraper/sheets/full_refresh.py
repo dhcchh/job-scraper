@@ -52,16 +52,18 @@ def _read_tab_rows(
     company_type_by_firm: dict[str, str],
     source_by_firm: dict[str, str],
     overrides: dict[tuple[str, str], Job],
-    origin_category: str,
-    origin_region: str,
 ) -> tuple[list[tuple[str, dict[str, str]]], int]:
-    """Read, recompute, and route the rows from one tab."""
+    """Read, recompute, and route the rows from one tab.
+
+    Rows the daily scrape would no longer route -- an unmatched title, or
+    every office excluded -- are dropped. Kept, the next daily run would
+    prune them anyway and count them as closures against the prune guard.
+    """
     loaded = _tab_rows_for_refresh(worksheet)
     if loaded is None:
         return [], 0
     data_rows, old_index, url_formula_cells = loaded
 
-    origin_tab = tab_name(origin_category, origin_region)
     rows: list[tuple[str, dict[str, str]]] = []
     dropped = 0
     for row, url_cell in zip(data_rows, url_formula_cells):
@@ -69,30 +71,21 @@ def _read_tab_rows(
             row, url_cell, old_index, company_type_by_firm, source_by_firm, overrides
         )
         category = _classify(values)
-        if is_excluded(values["location"]):
-            logger.warning(
-                "full_refresh: dropping %r (board=%s, job_id=%s) -- every "
-                "office in %r is an excluded country",
-                values["title"],
-                values["board"],
-                values["job_id"],
-                values["location"],
-            )
-            dropped += 1
-            continue
         if category is None:
-            logger.warning(
-                "full_refresh: %r (board=%s, job_id=%s) no longer matches any "
-                "category -- leaving it on %s instead of dropping it",
-                values["title"],
-                values["board"],
-                values["job_id"],
-                origin_tab,
-            )
-            dest = origin_tab
+            reason = "its title no longer matches any category"
+        elif is_excluded(values["location"]):
+            reason = f"every office in {values['location']!r} is an excluded country"
         else:
-            dest = tab_name(category, classify_region(values["location"]))
-        rows.append((dest, values))
+            rows.append((tab_name(category, classify_region(values["location"])), values))
+            continue
+        logger.warning(
+            "full_refresh: dropping %r (board=%s, job_id=%s) -- %s",
+            values["title"],
+            values["board"],
+            values["job_id"],
+            reason,
+        )
+        dropped += 1
     return rows, dropped
 
 
@@ -171,8 +164,6 @@ def refresh_all() -> None:
                 company_type_by_firm,
                 source_by_firm,
                 overrides,
-                category,
-                region,
             )
             dropped_total += dropped
             for dest_tab, values in rows:
@@ -204,7 +195,7 @@ def refresh_all() -> None:
 
     logger.info(
         "full_refresh: done, %d row(s) moved to a different tab, %d row(s) "
-        "dropped (excluded country)",
+        "dropped (unmatched title or excluded country)",
         moved,
         dropped_total,
     )

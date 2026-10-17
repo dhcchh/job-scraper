@@ -76,9 +76,12 @@ def load_boards(path: Path, provider: str | None = None) -> list[BoardConfig]:
                 f"field(s): {', '.join(unknown)}"
             )
 
+        string_fields = [*_REQUIRED_FIELDS]
+        if "location_scope" in raw:
+            string_fields.append("location_scope")
         missing = [
             field
-            for field in _REQUIRED_FIELDS
+            for field in string_fields
             if not isinstance(raw.get(field), str) or not raw[field].strip()
         ]
         if missing:
@@ -87,16 +90,8 @@ def load_boards(path: Path, provider: str | None = None) -> list[BoardConfig]:
                 f"required non-blank string field(s): {', '.join(missing)}"
             )
 
-        string_fields = [*_REQUIRED_FIELDS]
-        if "location_scope" in raw:
-            string_fields.append("location_scope")
         for field in string_fields:
             value = raw[field]
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(
-                    f"{path.name}: [[boards]] entry {identifier!r} field "
-                    f"{field!r} must be a non-blank string"
-                )
             if value != value.strip():
                 raise ValueError(
                     f"{path.name}: [[boards]] entry {identifier!r} field "

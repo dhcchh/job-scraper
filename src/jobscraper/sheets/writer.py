@@ -190,13 +190,20 @@ def _sheet_metadata(worksheet: gspread.Worksheet) -> dict:
     )
 
 
-def append_jobs(worksheet: gspread.Worksheet, jobs: list[Job]) -> list[Job]:
-    """Append jobs not already tracked by `(board, job_id)`."""
+def append_jobs(
+    worksheet: gspread.Worksheet,
+    jobs: list[Job],
+    existing_keys: Iterable[tuple[str, str]] | None = None,
+) -> list[Job]:
+    """Append jobs not already tracked by `(board, job_id)`.
+
+    `existing_keys` saves rereading the tab when a `PrunePlan` just read it.
+    """
     if not jobs:
         logger.info("no jobs to append")
         return []
 
-    existing = _existing_keys(worksheet)
+    existing = set(_existing_keys(worksheet) if existing_keys is None else existing_keys)
     new_jobs = []
     for job in jobs:
         key = (job.board, job.job_id)
@@ -242,6 +249,7 @@ class PrunePlan:
     worksheet: gspread.Worksheet
     closed_rows: dict[str, list[int]]  # board -> 1-based data row indexes
     tracked_counts: Counter[str]  # board -> rows in the tab, closed or not
+    keys: frozenset[tuple[str, str]]  # (board, job_id) of every row in the tab
 
 
 def plan_prune(
@@ -252,6 +260,7 @@ def plan_prune(
     """Find rows confirmed absent from successfully fetched boards."""
     closed_rows: dict[str, list[int]] = {}
     tracked_counts: Counter[str] = Counter()
+    keys: set[tuple[str, str]] = set()
     all_values = worksheet.get_all_values()
     if not all_values:
         _check_header(worksheet, [])
@@ -264,10 +273,11 @@ def plan_prune(
         if key is None:
             continue  # can't confirm closure -- leave it alone
         board, _job_id = key
+        keys.add(key)
         tracked_counts[board] += 1
         if board in fetched_boards and key not in current_keys:
             closed_rows.setdefault(board, []).append(row_index)
-    return PrunePlan(worksheet, closed_rows, tracked_counts)
+    return PrunePlan(worksheet, closed_rows, tracked_counts, frozenset(keys))
 
 
 def held_back_prunes(

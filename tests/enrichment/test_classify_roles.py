@@ -124,6 +124,7 @@ def _job(title, department="", company_type=""):
         ("Futures & Options Trading Analyst Intern - Summer 2027", "QT/QR"),
         ("Trading Intern", "QT/QR"),
         ("Electronic Trader Analyst", "QT/QR"),
+        ("Execution Trader", "QT/QR"),
         ("Linux Engineer", "SRE/DevOps"),
         ("Trading Desk Operations Engineer", "SRE/DevOps"),
         ("Systematic Production Support Engineer", "SRE/DevOps"),
@@ -145,6 +146,7 @@ def _job(title, department="", company_type=""):
         ("Engineering Intern (Summer 2027)", "SWE/DE"),
         ("2027 Platform Engineering Intern", "SRE/DevOps"),
         ("Distinguished Engineer, Core DevOps", "SRE/DevOps"),
+        ("Staff Engineer, Site Reliability", "SRE/DevOps"),
         ("Member of Technical Staff (AI Infrastructure Engineer)", "SRE/DevOps"),
         # So is bare "analytics".
         ("Senior Product Analytics Manager - Online Platforms", "DA/BI"),
@@ -170,6 +172,7 @@ def test_classify_job_routes_to_expected_category(title, expected):
         "Commodities Broker Trader",
         "Associate Head of Trader Education",
         "Customer Experience Representative, Active Trader",
+        "Sales Execution Trader",
     ],
 )
 def test_classify_job_keeps_non_quant_traders_as_noise(title):
@@ -183,6 +186,12 @@ def test_classify_job_keeps_non_quant_traders_as_noise(title):
         "Dedicated Support Engineering Lead",
         "Solutions Engineering Lead",
         "Systems Engineering Lead, New Product Initiatives",
+        # Live postings that matched "engineering manager" (2026-10-17).
+        "Technical Solutions Engineering Manager",
+        "Pre-sales Engineering Manager (Retail & CPG)",
+        "Senior Field Engineering Manager - Japan",
+        "Sales Engineering Manager, APJ",
+        "Systems Engineering Manager",
         "Staff Silicon Product Engineer",
         "Data Center Infrastructure Engineering Program Manager",
         "Senior Product Manager - Interactive Analytics",
@@ -366,3 +375,41 @@ def test_de_veto_leaves_other_keywords_alone():
     # Only the DE keywords are skipped; another category's keyword still counts.
     title = "Technical Program Manager, Data Engineering & Machine Learning"
     assert classify_job(_job(title)) == "DS/ML/Algos"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # Live postings that matched the bare "developer" keyword (2026-10-17):
+        # "Developer" names the audience or team, not the job.
+        "Developer Advocate",
+        "Senior Developer Relations Manager – Cloud Provider AI Factory",
+        "Developer Relations Engineer",
+        "Senior Developer Success Engineer - West",
+        "Developer Support Engineer",
+        "Developer Marketing Lead, APAC",
+        "Developer Engagement Lead",
+        "Senior Social Media Manager, Developer Community",
+        "Technical Producer II - VALORANT, Developer Experience",
+        "Business Developer",
+        "Senior Curriculum Developer & Instructor",
+        "Product Manager - Developer Experience",
+        "Principal Technical Product Manager - VALORANT, Developer Tooling",
+    ],
+)
+def test_classify_job_keeps_developer_audience_titles_as_noise(title):
+    assert classify_job(_job(title)) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Developer Experience Engineer, Cyber",  # builds internal tooling
+        "Software Engineer, Developer Experience",
+        "Senior Back-end Engineer (Developer Experience)",
+        "Low Latency C++ Developer",
+        "Developer Productivity",
+    ],
+)
+def test_classify_job_still_routes_real_developer_titles(title):
+    assert classify_job(_job(title)) == "SWE/DE"
