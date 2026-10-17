@@ -395,6 +395,10 @@ def test_de_veto_leaves_other_keywords_alone():
         "Senior Curriculum Developer & Instructor",
         "Product Manager - Developer Experience",
         "Principal Technical Product Manager - VALORANT, Developer Tooling",
+        "Social Media Lead, Developer Audience",
+        "Developer GTM Strategy Manager, Technical Programs",
+        "Developer/Agency Commercial Lead",
+        "Powered Land Developer, Development & Power Projects",
     ],
 )
 def test_classify_job_keeps_developer_audience_titles_as_noise(title):

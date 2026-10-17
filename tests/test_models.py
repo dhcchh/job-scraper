@@ -79,6 +79,11 @@ def test_job_to_row_escapes_external_text_but_keeps_the_url_formula():
     assert row["description"] == "'\t=1+1"
     assert row["url"] == '=HYPERLINK("https://example.com/1", "Apply")'
 
+    # Typed-value writers (Full Refresh) take the literal text instead.
+    values = dict(zip(FIELDS, job.to_values()))
+    assert values["title"] == "=SUM(1,2)"
+    assert values["url"] == row["url"]
+
 
 def test_hyperlink_formula_wraps_url_with_default_label():
     assert (

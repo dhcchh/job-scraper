@@ -1,4 +1,5 @@
-"""Recompute sheet rows and route them to their current tabs."""
+"""Recompute sheet rows, route them to their current tabs, and add open
+postings that route but aren't tracked yet."""
 
 import datetime
 import logging
@@ -45,6 +46,14 @@ def _classify(values: dict[str, str]) -> str | None:
         company_type=values["company_type"],
     )
     return classify_job(stub)
+
+
+def _route(job: Job) -> str | None:
+    """Return the tab the daily scrape would append a job to, if any."""
+    category = classify_job(job)
+    if category is None or is_excluded(job.location):
+        return None
+    return tab_name(category, classify_region(job.location))
 
 
 def _read_tab_rows(
@@ -139,7 +148,7 @@ def _rewrite_requests(worksheet: gspread.Worksheet, rows: list[list[str]]) -> li
 
 
 def refresh_all() -> None:
-    """Recompute and route every managed sheet row."""
+    """Recompute and route every managed sheet row, adding untracked ones."""
     overrides = _fetch_overrides()
     company_type_by_firm, source_by_firm = _config_lookup_tables()
     spreadsheet = get_spreadsheet()
@@ -182,6 +191,18 @@ def refresh_all() -> None:
                     moved += 1
                 buckets[dest_tab].append(values)
 
+    # Open postings that now route but aren't tracked (a classifier change
+    # newly matches them) are added here, so the daily scrape doesn't
+    # announce months-old postings as new.
+    added = 0
+    for key, job in overrides.items():
+        if key in seen_keys:
+            continue
+        dest_tab = _route(job)
+        if dest_tab is not None:
+            buckets[dest_tab].append(dict(zip(FIELDS, job.to_values())))
+            added += 1
+
     requests = []
     for tab, worksheet in worksheets.items():
         requests.extend(_rewrite_requests(
@@ -195,9 +216,11 @@ def refresh_all() -> None:
 
     logger.info(
         "full_refresh: done, %d row(s) moved to a different tab, %d row(s) "
-        "dropped (unmatched title or excluded country)",
+        "dropped (unmatched title or excluded country), %d untracked open "
+        "posting(s) added",
         moved,
         dropped_total,
+        added,
     )
 
 

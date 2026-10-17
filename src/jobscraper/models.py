@@ -154,8 +154,12 @@ class Job:
         _validate_identity(self.job_id, "job_id")
 
     def to_row(self) -> list[str]:
-        """Render the job in `FIELDS` order for Google Sheets."""
-        return escape_sheet_row([
+        """Render the job in `FIELDS` order for USER_ENTERED Sheets writes."""
+        return escape_sheet_row(self.to_values())
+
+    def to_values(self) -> list[str]:
+        """Render the job's literal cell values in `FIELDS` order."""
+        return [
             normalize_date(self.first_published),
             normalize_date(self.updated_at),
             self.board,
@@ -170,4 +174,4 @@ class Job:
             normalize_date(self.scraped_date),
             self.source,
             self.description,
-        ])
+        ]

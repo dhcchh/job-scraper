@@ -27,10 +27,15 @@ BOARD_WORKERS = 8
 WORKDAY_BOARD_WORKERS = 4
 
 
+def fetcher_for(source: str) -> Fetcher:
+    """Return a provider's fetch function, looked up at call time."""
+    return globals()[f"fetch_{source}_jobs"]
+
+
 def board_sources() -> list[tuple[str, list[dict], Fetcher]]:
     """Return each configured provider and its fetch function."""
     return [
-        (name, boards, globals()[f"fetch_{name}_jobs"])
+        (name, boards, fetcher_for(name))
         for name, _label, boards in config.board_sources()
     ]
 

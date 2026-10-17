@@ -224,11 +224,13 @@ _HARDWARE_RE = re.compile(r"\b(?:silicon|hardware|manufacturing)\b", re.IGNORECA
 # "Developer Marketing Lead, APAC"). Their engineers are customer-facing like
 # solutions and support engineers, so they stay noise too; developer
 # experience engineers build internal tooling and keep their own keyword.
+# Business, land and property developers don't write software at all.
 _NOT_A_SOFTWARE_DEVELOPER_RE = re.compile(
     r"\bdeveloper (?:relations|advocates?|advocacy|experiences?|success|support"
     r"|community|engagement|connections|education|marketing|evangelists?"
-    r"|ecosystems?|programs?)\b"
-    r"|\b(?:business|curriculum|content) developer\b",
+    r"|ecosystems?|programs?|audiences?|gtm)\b"
+    r"|\b(?:business|curriculum|content|land|property) developer\b"
+    r"|\bdeveloper/agency\b",
     re.IGNORECASE,
 )
 

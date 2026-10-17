@@ -111,16 +111,18 @@ def format_tab(worksheet: gspread.Worksheet) -> None:
     """Apply every managed format to a tab in one write.
 
     That's `yyyy-mm-dd` date columns, a clipped description column (so a
-    long JD doesn't blow up its row's height), and the basic filter. One
-    batch rather than a call each keeps a ten-tab refresh well under Sheets'
-    60-writes-per-minute quota.
+    long JD doesn't blow up its row's height), a frozen header row, and the
+    basic filter. One batch rather than a call each keeps a ten-tab refresh
+    well under Sheets' 60-writes-per-minute quota.
     """
     if not _has_client(worksheet):
         return
+    metadata = _sheet_metadata(worksheet)
     requests = [
         *(_repeat_cell(worksheet, name, _DATE_FORMAT) for name in DATE_FIELDS),
         _repeat_cell(worksheet, "description", {"wrapStrategy": "CLIP"}),
-        *_filter_requests(worksheet),
+        *_freeze_header_requests(worksheet, metadata),
+        *_filter_requests(worksheet, metadata),
     ]
     worksheet.client.batch_update(worksheet.spreadsheet_id, {"requests": requests})
 
@@ -130,7 +132,8 @@ def set_basic_filter(worksheet: gspread.Worksheet) -> None:
     if not _has_client(worksheet):
         return
     worksheet.client.batch_update(
-        worksheet.spreadsheet_id, {"requests": _filter_requests(worksheet)}
+        worksheet.spreadsheet_id,
+        {"requests": _filter_requests(worksheet, _sheet_metadata(worksheet))},
     )
 
 
@@ -155,7 +158,25 @@ def _repeat_cell(worksheet: gspread.Worksheet, field: str, cell_format: dict) ->
     }
 
 
-def _filter_requests(worksheet: gspread.Worksheet) -> list[dict]:
+def _freeze_header_requests(worksheet: gspread.Worksheet, metadata: dict) -> list[dict]:
+    """Freeze the header row, unless it's the only row: Sheets rejects that."""
+    row_count = metadata["properties"].get("gridProperties", {}).get("rowCount", 0)
+    if row_count < 2:
+        return []
+    return [
+        {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": worksheet.id,
+                    "gridProperties": {"frozenRowCount": 1},
+                },
+                "fields": "gridProperties.frozenRowCount",
+            }
+        }
+    ]
+
+
+def _filter_requests(worksheet: gspread.Worksheet, metadata: dict) -> list[dict]:
     """Set the basic filter, and stretch saved filter views to match it."""
     grid_range = {
         "sheetId": worksheet.id,
@@ -163,7 +184,6 @@ def _filter_requests(worksheet: gspread.Worksheet) -> list[dict]:
         "startColumnIndex": 0,
         "endColumnIndex": len(FIELDS),
     }
-    metadata = _sheet_metadata(worksheet)
     basic_filter = {**metadata.get("basicFilter", {}), "range": grid_range}
     return [
         {"setBasicFilter": {"filter": basic_filter}},

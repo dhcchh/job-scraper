@@ -411,3 +411,55 @@ def test_excluded_country_is_dropped_even_when_title_is_unmatched():
     rows, dropped = full_refresh._read_tab_rows(worksheet, {}, {}, {})
     assert rows == []
     assert dropped == 1
+
+
+def _open_job(job_id, title="Software Engineer", location="Singapore", board="Acme"):
+    from jobscraper.models import Job
+
+    return Job(
+        board, job_id, title, "Eng", location, f"https://x/{job_id}", "",
+        datetime.date(2026, 10, 17), first_published="2026-05-01",
+    )
+
+
+def test_read_tab_rows_routes_by_the_open_postings_current_title():
+    # Retitled since the row was written: route as the daily scrape will.
+    worksheet = _FakeWorksheet([list(FIELDS), _row(title="Software Engineer")])
+    overrides = {("Acme", "1"): _open_job("1", title="Quantitative Researcher")}
+
+    rows, _dropped = full_refresh._read_tab_rows(worksheet, {}, {}, overrides)
+
+    dest, values = rows[0]
+    assert dest == "QT/QR - PAC"
+    assert values["title"] == "Quantitative Researcher"
+
+
+def test_refresh_all_adds_untracked_open_postings_that_now_route(monkeypatch, caplog):
+    # A classifier change newly matches open postings. Adding them here keeps
+    # the next daily scrape from announcing them as new.
+    monkeypatch.setattr(full_refresh, "_config_lookup_tables", lambda: ({}, {}))
+    monkeypatch.setattr(full_refresh, "_fetch_overrides", lambda: {
+        ("Acme", "1"): _open_job("1"),  # already tracked
+        ("Acme", "2"): _open_job("2", title="=Quant Trader"),  # newly matched
+        ("Acme", "3"): _open_job("3", title="Technical Recruiter"),  # noise
+        ("Acme", "4"): _open_job("4", location="Hanoi, Vietnam"),  # excluded
+    })
+    tracked = _FakeWorksheet([list(FIELDS), _row(board="Acme", job_id="1")], row_count=2)
+    quant = _FakeWorksheet(row_count=1)
+    worksheets = _all_tab_worksheets({"SWE/DE - PAC": tracked, "QT/QR - PAC": quant})
+    _patch_tabs(monkeypatch, worksheets)
+
+    with caplog.at_level(logging.INFO):
+        full_refresh.refresh_all()
+
+    assert len(tracked.updated_with) == 2  # header + the tracked row, once
+    assert len(quant.updated_with) == 2
+    added = dict(zip(FIELDS, quant.updated_with[1]))
+    assert added["job_id"] == "2"
+    assert added["title"] == "=Quant Trader"  # typed string, not a formula
+    assert added["first_published"] == "2026-05-01"
+    assert added["scraped_date"] == "2026-10-17"
+    assert added["url"] == '=HYPERLINK("https://x/2", "Apply")'
+    written = sum(len(ws.updated_with) - 1 for ws in worksheets.values() if ws.updated_with)
+    assert written == 2
+    assert "1 untracked open posting(s) added" in caplog.text

@@ -38,16 +38,18 @@ class _FakeHttpClient:
     accessor.
     """
 
-    def __init__(self, filter_view_ids=()):
+    def __init__(self, filter_view_ids=(), row_count=10):
         self.batch_update_calls = []
         self.filter_view_ids = filter_view_ids
+        self.row_count = row_count
 
     def batch_update(self, spreadsheet_id, body):
         self.batch_update_calls.append((spreadsheet_id, body))
 
     def fetch_sheet_metadata(self, spreadsheet_id, params=None):
         views = [{"filterViewId": view_id} for view_id in self.filter_view_ids]
-        return {"sheets": [{"properties": {"sheetId": 123}, "filterViews": views}]}
+        properties = {"sheetId": 123, "gridProperties": {"rowCount": self.row_count}}
+        return {"sheets": [{"properties": properties, "filterViews": views}]}
 
 
 def _deletion_calls(worksheet):
@@ -461,6 +463,12 @@ def test_format_tab_sends_every_managed_format_in_one_write():
                 "fields": "userEnteredFormat(wrapStrategy)",
             }
         },
+        {
+            "updateSheetProperties": {
+                "properties": {"sheetId": 123, "gridProperties": {"frozenRowCount": 1}},
+                "fields": "gridProperties.frozenRowCount",
+            }
+        },
         {"setBasicFilter": {"filter": {"range": _WHOLE_TAB}}},
         {
             "updateFilterView": {
@@ -469,6 +477,17 @@ def test_format_tab_sends_every_managed_format_in_one_write():
             }
         },
     ]
+
+
+def test_format_tab_does_not_freeze_a_header_only_tab():
+    # Sheets rejects freezing every row of a tab.
+    worksheet = _FakeWorksheet()
+    worksheet.client = _FakeHttpClient(row_count=1)
+
+    writer.format_tab(worksheet)
+
+    (_spreadsheet_id, body), = worksheet.client.batch_update_calls
+    assert not any("updateSheetProperties" in request for request in body["requests"])
 
 
 def test_format_tab_tolerates_worksheet_without_client():

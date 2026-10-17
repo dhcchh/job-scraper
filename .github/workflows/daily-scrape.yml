@@ -29,14 +29,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Full history so "Detect changed boards" can diff against the push's
           # own base commit; a depth-1 clone has no parent to diff against.
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.3.0
         with:
           python-version: "3.12"
 
@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload data quality report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: data-quality
           path: data-quality.json

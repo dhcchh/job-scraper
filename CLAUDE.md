@@ -31,7 +31,9 @@ After deploying changes to descriptions, their allowlist, schema or
 formatting, run Full Refresh to update existing rows. After seniority-only
 changes, Backfill is sufficient. For category or region changes, run Full
 Refresh before the next daily scrape to preserve first-seen dates and avoid
-notifications for moved rows. Repository tests do not require live writes.
+notifications for moved rows and for open postings the change newly
+matches, which Full Refresh adds silently. Repository tests do not require
+live writes.
 
 ## Code map
 
@@ -101,7 +103,8 @@ notifications for moved rows. Repository tests do not require live writes.
   `ONLY_FIRMS` must never reduce that reference tab to the scrape subset.
 - Notifications use newly appended rows. Failures are best effort and have
   no durable retry queue. A thread ID is optional; a token and destination
-  chat ID enable each Telegram feature independently.
+  chat ID enable each Telegram feature independently. Telegram errors must
+  never include the request URL, which embeds the bot token.
 
 ## Tests and maintenance
 

@@ -198,6 +198,10 @@ def send_chunks(
     return True
 
 
+class TelegramError(RuntimeError):
+    """A failed Telegram request, described without the bot token."""
+
+
 def _send_message(text: str, chat_id: int, thread_id: int | None) -> None:
     url = _SEND_MESSAGE_URL.format(token=config.TELEGRAM_BOT_TOKEN)
     payload = {
@@ -208,8 +212,29 @@ def _send_message(text: str, chat_id: int, thread_id: int | None) -> None:
     }
     if thread_id is not None:
         payload["message_thread_id"] = thread_id
-    response = requests.post(url, json=payload, timeout=15)
-    response.raise_for_status()
+    try:
+        response = requests.post(url, json=payload, timeout=15)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        # requests puts the URL, and so the token, in its messages; drop the
+        # original from the traceback too.
+        raise TelegramError(_describe_failure(exc)) from None
+
+
+def _describe_failure(exc: requests.RequestException) -> str:
+    """Telegram's own error description when it sent one, token redacted."""
+    response = exc.response
+    if response is None:
+        text = f"{type(exc).__name__}: {exc}"
+    else:
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        description = body.get("description") if isinstance(body, dict) else None
+        text = f"HTTP {response.status_code}: {description or response.reason}"
+    token = config.TELEGRAM_BOT_TOKEN
+    return text.replace(token, "<token>") if token else text
 
 
 def check_connection() -> bool:

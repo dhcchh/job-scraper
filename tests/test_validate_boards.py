@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 from jobscraper import validate_boards
+from jobscraper.job_boards import fetchers
 
 
 def _board(**overrides):
@@ -32,9 +33,9 @@ def test_select_boards_applies_provider_firm_and_token_filters():
 
 
 def test_validate_live_reports_a_success(monkeypatch):
-    monkeypatch.setitem(
-        validate_boards.FETCHERS,
-        "greenhouse",
+    monkeypatch.setattr(
+        fetchers,
+        "fetch_greenhouse_jobs",
         lambda token, firm, company_type: [_job("1"), _job("2")],
     )
     output = []
@@ -57,7 +58,7 @@ def test_validate_live_passes_workday_location_scope(monkeypatch):
         received.update(kwargs)
         return [_job()]
 
-    monkeypatch.setitem(validate_boards.FETCHERS, "workday", fetch)
+    monkeypatch.setattr(fetchers, "fetch_workday_jobs", fetch)
 
     failures = validate_boards.validate_live(
         [("workday", _board(token="acme.wd5/jobs", location_scope="Singapore"))],
@@ -69,9 +70,9 @@ def test_validate_live_passes_workday_location_scope(monkeypatch):
 
 
 def test_validate_live_rejects_empty_board_by_default(monkeypatch):
-    monkeypatch.setitem(
-        validate_boards.FETCHERS,
-        "greenhouse",
+    monkeypatch.setattr(
+        fetchers,
+        "fetch_greenhouse_jobs",
         lambda token, firm, company_type: [],
     )
     output = []
@@ -86,9 +87,9 @@ def test_validate_live_rejects_empty_board_by_default(monkeypatch):
 
 
 def test_validate_live_can_allow_an_expected_empty_board(monkeypatch):
-    monkeypatch.setitem(
-        validate_boards.FETCHERS,
-        "greenhouse",
+    monkeypatch.setattr(
+        fetchers,
+        "fetch_greenhouse_jobs",
         lambda token, firm, company_type: [],
     )
 
@@ -102,9 +103,9 @@ def test_validate_live_can_allow_an_expected_empty_board(monkeypatch):
 
 
 def test_validate_live_rejects_duplicate_ids_and_wrong_firm(monkeypatch):
-    monkeypatch.setitem(
-        validate_boards.FETCHERS,
-        "greenhouse",
+    monkeypatch.setattr(
+        fetchers,
+        "fetch_greenhouse_jobs",
         lambda token, firm, company_type: [_job("1"), _job("1", "Other")],
     )
     output = []
@@ -122,10 +123,10 @@ def test_validate_live_reports_endpoint_errors_and_continues(monkeypatch):
     def fail(token, firm, company_type):
         raise RuntimeError("not found")
 
-    monkeypatch.setitem(validate_boards.FETCHERS, "greenhouse", fail)
-    monkeypatch.setitem(
-        validate_boards.FETCHERS,
-        "lever",
+    monkeypatch.setattr(fetchers, "fetch_greenhouse_jobs", fail)
+    monkeypatch.setattr(
+        fetchers,
+        "fetch_lever_jobs",
         lambda token, firm, company_type: [_job()],
     )
     output = []
@@ -141,6 +142,6 @@ def test_validate_live_reports_endpoint_errors_and_continues(monkeypatch):
 
 
 def test_validate_live_routes_citadel_through_registered_fetcher(monkeypatch):
-    monkeypatch.setitem(validate_boards.FETCHERS, "citadel", lambda *args: [_job("software-engineer", "Citadel")])
+    monkeypatch.setattr(fetchers, "fetch_citadel_jobs", lambda *args: [_job("software-engineer", "Citadel")])
     board = _board(token="citadel", firm="Citadel", company_type="Prop Trading/Hedge Fund")
     assert validate_boards.validate_live([("citadel", board)], output=lambda _: None) == 0

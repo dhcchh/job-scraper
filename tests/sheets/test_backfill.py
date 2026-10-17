@@ -797,3 +797,40 @@ def test_refresh_recomputes_seniority_from_the_row_when_the_posting_has_closed()
     seniority_index = backfill.HEADER.index("seniority")
     _, row = worksheet.updated_with
     assert row[seniority_index] == "Senior"
+
+
+def test_refresh_takes_title_department_and_updated_at_from_an_open_posting():
+    # The posting was retitled since the row was written. Seniority already
+    # comes from the fresh posting, so the title must too, or the row would
+    # read "Senior ..." under a "Staff" level.
+    from datetime import date
+
+    from jobscraper.models import Job
+
+    worksheet = _FakeWorksheet(
+        [_OLD_HEADER, _old_row(board="Acme", job_id="1", title="Senior Data Engineer")]
+    )
+    fresh = Job(
+        "Acme", "1", "Staff Data Engineer", "Data Platform", "Remote", "https://x",
+        "2026-10-16", date(2026, 10, 17), seniority="Staff",
+    )
+
+    backfill.refresh_worksheet(worksheet, overrides={("Acme", "1"): fresh})
+
+    header, row = worksheet.updated_with
+    values = dict(zip(header, row))
+    assert values["title"] == "Staff Data Engineer"
+    assert values["seniority"] == "Staff"
+    assert values["department"] == "Data Platform"
+    assert values["updated_at"] == "2026-10-16"
+
+
+def test_refresh_keeps_updated_at_when_the_provider_reports_none():
+    worksheet = _FakeWorksheet([_OLD_HEADER, _old_row(board="Acme", job_id="1")])
+
+    backfill.refresh_worksheet(
+        worksheet, overrides={("Acme", "1"): _job_stub("Acme", "1", "Remote")}
+    )
+
+    header, row = worksheet.updated_with
+    assert row[header.index("updated_at")] == "2026-09-01"

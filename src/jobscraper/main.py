@@ -142,9 +142,14 @@ def run() -> None:
             [job for job in jobs_by_tab[tab] if job.board not in held_back],
             existing_keys=plan.keys,
         )
-    # Appends and preserved sort settings may change row positions.
+    # Reread a tab that got appends: preserved sort settings may have moved
+    # its rows. An untouched tab's plan still holds.
     prune_plans = {
-        tab: plan_prune(plan.worksheet, jobs_by_tab[tab], fetched_firms)
+        tab: (
+            plan_prune(plan.worksheet, jobs_by_tab[tab], fetched_firms)
+            if newly_appended_by_tab[tab]
+            else plan
+        )
         for tab, plan in prune_plans.items()
     }
 

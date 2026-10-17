@@ -493,3 +493,43 @@ def test_send_new_companies_swallows_a_send_failure(monkeypatch):
     monkeypatch.setattr(telegram.requests, "post", fake_post)
 
     telegram.send_new_companies({"Visa": "Fintech"}, spreadsheet_url=_SHEET_URL, total_firms=90)  # must not raise
+
+
+def test_send_failure_reports_telegrams_description_without_the_token(monkeypatch):
+    import requests
+
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "secret-token")
+
+    response = requests.Response()
+    response.status_code = 400
+    response.reason = "Bad Request"
+    response.url = "https://api.telegram.org/botsecret-token/sendMessage"
+    response._content = b'{"ok": false, "description": "Bad Request: can\'t parse entities"}'
+    monkeypatch.setattr(telegram.requests, "post", lambda url, json, timeout: response)
+
+    with pytest.raises(telegram.TelegramError) as caught:
+        telegram._send_message("<b>", 123, None)
+
+    assert str(caught.value) == "HTTP 400: Bad Request: can't parse entities"
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+def test_send_failure_redacts_the_token_from_a_connection_error(monkeypatch):
+    import requests
+
+    monkeypatch.setattr(telegram.config, "TELEGRAM_BOT_TOKEN", "secret-token")
+
+    def fake_post(url, json, timeout):
+        raise requests.exceptions.ConnectionError(
+            "Max retries exceeded with url: /botsecret-token/sendMessage"
+        )
+
+    monkeypatch.setattr(telegram.requests, "post", fake_post)
+
+    with pytest.raises(telegram.TelegramError) as caught:
+        telegram._send_message("hi", 123, None)
+
+    assert "secret-token" not in str(caught.value)
+    assert str(caught.value) == (
+        "ConnectionError: Max retries exceeded with url: /bot<token>/sendMessage"
+    )

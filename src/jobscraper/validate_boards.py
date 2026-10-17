@@ -11,32 +11,9 @@ from jobscraper.board_config import (
     BoardConfig,
     load_all_boards,
 )
-from jobscraper.job_boards.fetchers import (
-    fetch_ashby_jobs,
-    fetch_citadel_jobs,
-    fetch_eightfold_jobs,
-    fetch_greenhouse_jobs,
-    fetch_lever_jobs,
-    fetch_recruitee_jobs,
-    fetch_smartrecruiters_jobs,
-    fetch_workday_jobs,
-)
-from jobscraper.models import Job
 
 
-Fetcher = Callable[..., list[Job]]
 SelectedBoard = tuple[str, BoardConfig]
-
-FETCHERS: dict[str, Fetcher] = {
-    "greenhouse": fetch_greenhouse_jobs,
-    "lever": fetch_lever_jobs,
-    "ashby": fetch_ashby_jobs,
-    "smartrecruiters": fetch_smartrecruiters_jobs,
-    "eightfold": fetch_eightfold_jobs,
-    "workday": fetch_workday_jobs,
-    "recruitee": fetch_recruitee_jobs,
-    "citadel": fetch_citadel_jobs,
-}
 
 
 def select_boards(
@@ -66,25 +43,24 @@ def validate_live(
     allow_empty: bool = False,
     output: Callable[[str], None] = print,
 ) -> int:
-    """Fetch selected boards and return the number that fail validation."""
-    failures = 0
-    checked = 0
-    for provider, board in boards:
-        checked += 1
-        label = f"{provider}[{board['firm']}] ({board['token']})"
-        kwargs = {}
-        if provider == "workday" and board.get("location_scope"):
-            kwargs["location_scope"] = board["location_scope"]
+    """Fetch selected boards concurrently; return the number that fail validation."""
+    # Imported here: importing config loads the board files, and main()
+    # reports an invalid file itself rather than failing at import time.
+    from jobscraper.job_boards import fetchers
 
-        try:
-            jobs = FETCHERS[provider](
-                board["token"], board["firm"], board["company_type"], **kwargs
-            )
-        except Exception as exc:
+    results = fetchers.fetch_boards([
+        (provider, [board], fetchers.fetcher_for(provider)) for provider, board in boards
+    ])
+    failures = 0
+    for result in results:
+        board = result.board
+        label = f"{result.source}[{board['firm']}] ({board['token']})"
+        if result.error is not None:
             failures += 1
-            output(f"FAIL {label}: {type(exc).__name__}: {exc}")
+            output(f"FAIL {label}: {type(result.error).__name__}: {result.error}")
             continue
 
+        jobs = result.jobs
         if not jobs:
             message = f"{label}: returned no jobs, so IDs could not be verified"
             if allow_empty:
@@ -115,7 +91,7 @@ def validate_live(
         else:
             output(f"OK   {label}: {len(jobs)} job(s)")
 
-    output(f"Live validation: {checked - failures}/{checked} board(s) passed")
+    output(f"Live validation: {len(results) - failures}/{len(results)} board(s) passed")
     return failures
 
 

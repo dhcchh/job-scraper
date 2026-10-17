@@ -142,25 +142,30 @@ criteria and sort settings are retained when ranges are updated.
 
 ## Refreshing existing data
 
-**Backfill** refreshes seniority, company type, source, location,
-first-published date, salary, allowlisted descriptions, date formatting and
-URL formulas. It rewrites columns in the current schema, including on
-header-only tabs. It preserves title, department, URL target, updated date,
-and scrape date. Unavailable board overrides fall back to existing values
-and local classification/normalization. Salary may become blank when a
-fresh response no longer supplies it.
+**Backfill** refreshes title, department, seniority, company type, source,
+location, updated and first-published dates, salary, allowlisted
+descriptions, date formatting, the frozen header row and URL formulas. It
+rewrites columns in the current schema, including on header-only tabs. It
+preserves the URL target and scrape date. Rows whose posting has closed, or
+whose board couldn't be fetched, keep their existing text and fall back to
+local classification/normalization. Salary may become blank when a fresh
+response no longer supplies it.
 
 **Full Refresh** performs the same recomputation and also routes rows under
-the current category and region rules. It deduplicates identities across
-tabs and removes rows the daily scrape would no longer route: titles that
-match no category and jobs wholly in excluded countries. Left in place, the
-next daily run would prune them as closures. It does not discover new jobs
-or remove a posting solely because its board no longer lists it.
+the current category and region rules, using each open posting's current
+title. It deduplicates identities across tabs and removes rows the daily
+scrape would no longer route: titles that match no category and jobs wholly
+in excluded countries. Left in place, the next daily run would prune them
+as closures. It also adds open postings that route but aren't tracked, such
+as ones a new keyword matches, without notifications. A posting first
+listed shortly before a Full Refresh is therefore added silently. It does
+not remove a posting solely because its board no longer lists it.
 
 Run the appropriate refresh after deploying changes to classifications,
 location mappings, descriptions, schema, or formatting. Use Full Refresh
 before the next daily scrape for routing changes, to preserve original
-`scraped_date` values and avoid treating moved rows as new notifications.
+`scraped_date` values and to avoid announcing moved rows, or long-open
+postings a change newly matches, as new.
 
 Supported-company sync adds configured firms, moves recategorized firms,
 and retains firms removed from configuration until manually removed from

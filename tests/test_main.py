@@ -1108,3 +1108,31 @@ def test_citadel_challenge_preserves_existing_rows_while_other_firms_continue(mo
     with pytest.raises(RuntimeError, match="failed board fetches: Citadel"):
         main.run()
     assert worksheets["SWE/DE - PAC"].rows == [list(FIELDS), old.to_row(), new.to_row()]
+
+
+def test_run_rereads_only_the_tabs_that_got_appends(monkeypatch):
+    boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+    monkeypatch.setattr(
+        main.fetchers,
+        "fetch_greenhouse_jobs",
+        lambda token, firm, company_type: [_job("Acme", "1", location="Singapore")],
+    )
+    _patch_sheet_functions(monkeypatch, [])
+    planned = []
+
+    def fake_plan_prune(worksheet, jobs, fetched_boards):
+        planned.append(worksheet)
+        return PrunePlan(worksheet, {}, Counter(), frozenset())
+
+    monkeypatch.setattr(main, "plan_prune", fake_plan_prune)
+
+    main.run()
+
+    expected = Counter(
+        main.tab_name(category, region)
+        for category, _keywords in main.CATEGORIES
+        for region in main.REGIONS
+    )
+    expected["SWE/DE - PAC"] += 1  # its append may have moved rows
+    assert Counter(planned) == expected

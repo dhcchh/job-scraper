@@ -2,6 +2,7 @@
 
 import logging
 import re
+from collections import Counter
 
 from jobscraper.quality import validate_rows
 
@@ -139,6 +140,14 @@ def _recompute_row_values(
 
     fresh = overrides.get((values["board"], values["job_id"])) if overrides else None
 
+    # A still-open posting's current text wins, so the title, its seniority
+    # and its routing agree with what the daily scrape sees.
+    if fresh is not None:
+        values["title"] = fresh.title
+        values["department"] = fresh.department
+        if fresh.updated_at:
+            values["updated_at"] = fresh.updated_at
+
     values["seniority"] = (
         fresh.seniority
         if fresh is not None
@@ -178,6 +187,20 @@ def _recompute_row_values(
     return values
 
 
+_COUNTED_FIELDS = (
+    "title",
+    "department",
+    "seniority",
+    "company_type",
+    "source",
+    "location",
+    "updated_at",
+    "first_published",
+    "description",
+    "salary",
+)
+
+
 def refresh_worksheet(
     worksheet: gspread.Worksheet,
     *,
@@ -191,34 +214,15 @@ def refresh_worksheet(
     company_type_by_firm, source_by_firm = _config_lookup_tables()
 
     new_rows = []
-    seniority_changed = 0
-    company_type_changed = 0
-    source_changed = 0
-    location_changed = 0
-    first_published_changed = 0
-    description_changed = 0
-    salary_changed = 0
+    changed: Counter[str] = Counter()
     for row, url_cell in zip(data_rows, url_formula_cells):
         old_values = _read_row_values(row, old_index)
         values = _recompute_row_values(
             row, url_cell, old_index, company_type_by_firm, source_by_firm, overrides
         )
-
-        if old_values["seniority"] != values["seniority"]:
-            seniority_changed += 1
-        if old_values["company_type"] != values["company_type"]:
-            company_type_changed += 1
-        if old_values["source"] != values["source"]:
-            source_changed += 1
-        if old_values["location"] != values["location"]:
-            location_changed += 1
-        if old_values["first_published"] != values["first_published"]:
-            first_published_changed += 1
-        if old_values["description"] != values["description"]:
-            description_changed += 1
-        if old_values["salary"] != values["salary"]:
-            salary_changed += 1
-
+        changed.update(
+            name for name in _COUNTED_FIELDS if old_values[name] != values[name]
+        )
         new_rows.append([values[name] for name in FIELDS])
 
     validate_rows(new_rows)
@@ -229,17 +233,9 @@ def refresh_worksheet(
     )
     format_tab(worksheet)
     logger.info(
-        "refresh: rewrote %d row(s) into current column order -- "
-        "%d seniority, %d company_type, %d source, %d location, "
-        "%d first_published, %d description, %d salary changed",
+        "refresh: rewrote %d row(s) into current column order -- %s changed",
         len(new_rows),
-        seniority_changed,
-        company_type_changed,
-        source_changed,
-        location_changed,
-        first_published_changed,
-        description_changed,
-        salary_changed,
+        ", ".join(f"{changed[name]} {name}" for name in _COUNTED_FIELDS),
     )
 
 
