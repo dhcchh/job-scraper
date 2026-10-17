@@ -210,21 +210,21 @@ Atlassian. X is configured through SmartRecruiters.
   clicks failed to clear Cloudflare. Compare access in an ordinary browser
   with the automated session, resolve the access blocker, and verify the
   parser against captured live listing HTML. Keep
-  `company_toml/citadel_boards.toml` at `boards = []` until the existing
-  three-consecutive-scheduled-pass activation gate and scoped live validation
-  succeed. Deferred; no activation planned until this work is revisited.
+  `company_toml/citadel_boards.toml` at `boards = []` until the probe passes
+  consistently and scoped live validation succeeds. The scheduled Actions
+  probe was removed on 2026-10-17 after failing daily at the Cloudflare
+  challenge. Deferred; no activation planned until this work is revisited.
 
 ### Citadel browser probe
 
 Citadel is registered but disabled (`boards = []` in
-`company_toml/citadel_boards.toml`). **Citadel Browser Probe** runs daily and
-can be dispatched manually without Sheets or Telegram credentials. It uses
-the production fetcher and reports completeness, global/SG/HK counts,
-matching role counts, elapsed time and the failure reason. Failure screenshots
-and JSON reports are retained for three days; cookies and browser profiles
-are never saved or uploaded.
+`company_toml/citadel_boards.toml`). The read-only probe needs no Sheets or
+Telegram credentials. It uses the production fetcher and reports
+completeness, global/SG/HK counts, matching role counts, elapsed time and the
+failure reason. With `--diagnostics-dir`, it also writes a failure
+screenshot; cookies and browser profiles are never saved.
 
-For a local read-only probe:
+To run it locally:
 
 ```bash
 uv run playwright install chromium --with-deps --no-shell
@@ -247,11 +247,10 @@ The structural HTML parser must be verified by a successful live probe; local
 Chromium checks currently stop at Cloudflare, so parser fixtures represent
 the expected structure rather than captured live HTML.
 
-The activation gate requires three consecutive **scheduled** passes on the
-same `main` commit, each with at least one SG/HK posting matching the tracked
-role categories. Manual runs do not count. Failures or code changes restart
-the gate. Passing reports readiness only; it does not edit configuration or
-write to Sheets. After it passes, replace the empty board list with:
+Enable Citadel only after the probe passes consistently, each pass with at
+least one SG/HK posting matching the tracked role categories. The probe
+reports readiness only; it does not edit configuration or write to Sheets.
+To enable it, replace the empty board list with:
 
 ```toml
 [[boards]]
@@ -275,7 +274,6 @@ mode is not an automatic fallback and does not guarantee clearance.
 | Tests | Push to main and PR | Run the test suite |
 | Validate Changed Boards | PR changing board TOML | Fetch added or modified entries, including token/scope edits |
 | Board Health Check | Weekly and manual | Fetch all configured boards |
-| Citadel Browser Probe | Daily and manual | Check Chromium access and the Citadel activation gate; no sheet writes |
 | Daily Scrape | Board TOML push to main, daily at 23:00 UTC, manual | Sync firms, scrape, notify, audit |
 | Backfill | Manual | Refresh rows in place and audit |
 | Full Refresh | Manual | Refresh and reroute rows atomically, then audit |

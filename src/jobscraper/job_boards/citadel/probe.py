@@ -1,4 +1,4 @@
-"""Fetch Citadel without sheet access and report the production activation gate."""
+"""Fetch Citadel without sheet access and report activation readiness."""
 
 import argparse
 import datetime
@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         f"tracked roles: {report['tracked_role_count']}; pages: {report['page_count']}\n\n"
         f"Fetch duration: {report['elapsed_seconds']} seconds\n\n"
         f"{report['failure_reason'] or 'No human interaction was needed.'}\n\n"
-        "Production activation requires three consecutive useful scheduled passes on main.\n"
+        "Enable Citadel only after consistent useful passes and scoped live validation.\n"
     )
     print(summary)
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):

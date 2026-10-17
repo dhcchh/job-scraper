@@ -18,7 +18,7 @@ def test_checked_in_board_configuration_is_valid():
 
     assert tuple(boards_by_provider) == PROVIDERS
     assert all(boards for provider, boards in boards_by_provider.items() if provider != "citadel")
-    assert boards_by_provider["citadel"] == []  # CI activation gate has not passed.
+    assert boards_by_provider["citadel"] == []  # Disabled pending a Cloudflare access fix.
 
 
 def test_load_boards_rejects_duplicate_tokens_ignoring_case(tmp_path):

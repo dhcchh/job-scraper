@@ -28,7 +28,7 @@ def test_probe_report_and_summary_need_no_credentials(monkeypatch, tmp_path):
     assert report["status"] == "passed" and report["snapshot_complete"]
     assert report["global_count"] == 3 and report["sg_hk_count"] == report["tracked_role_count"] == 1
     assert report["event"] == "schedule" and report["commit"] == "tested-sha"
-    assert "three consecutive" in summary.read_text()
+    assert "scoped live validation" in summary.read_text()
 
 
 def test_probe_failure_does_not_expose_raw_browser_tokens(monkeypatch, tmp_path):
