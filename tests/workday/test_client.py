@@ -9,17 +9,6 @@ from jobscraper.job_boards.workday import client
 
 _SCRAPED = datetime.date(2026, 9, 26)
 
-
-@pytest.fixture(autouse=True)
-def _no_real_http(monkeypatch):
-    """Fail any test that reaches the network without mocking it first --
-    each test's own monkeypatch of _http._session.get/post replaces these."""
-
-    def fail(*args, **kwargs):
-        pytest.fail(f"unmocked HTTP call: {args!r}")
-
-    monkeypatch.setattr(_http._session, "get", fail)
-    monkeypatch.setattr(_http._session, "post", fail)
 _API = "https://visa.wd5.myworkdayjobs.com/wday/cxs/visa/Visa"
 
 

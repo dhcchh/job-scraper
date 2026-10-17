@@ -16,7 +16,6 @@ class _FakeWorksheet:
         self._rows = rows or []
         self.row_count = row_count if row_count is not None else len(self._rows)
         self.updated_with = None
-        self.resized_to = None
 
     def get_all_values(self):
         return self._rows
@@ -33,7 +32,6 @@ class _FakeWorksheet:
         self.updated_with = values
 
     def resize(self, rows=None, cols=None):
-        self.resized_to = rows
         self.row_count = rows
 
 
@@ -134,7 +132,7 @@ def _all_tab_worksheets(overrides=None):
     return worksheets
 
 
-def test_classify_returns_category_for_a_normal_title():
+def test_route_sends_a_normal_title_to_its_tab():
     values = {
         "board": "Acme",
         "job_id": "1",
@@ -143,10 +141,10 @@ def test_classify_returns_category_for_a_normal_title():
         "location": "Singapore",
         "company_type": "",
     }
-    assert full_refresh._classify(values) == "SWE/DE"
+    assert full_refresh._route(full_refresh._as_job(values)) == "SWE/DE - PAC"
 
 
-def test_classify_uses_the_rows_company_type():
+def test_route_uses_the_rows_company_type():
     # A bare research title is quant research only at a trading firm.
     values = {
         "board": "AQR",
@@ -156,8 +154,9 @@ def test_classify_uses_the_rows_company_type():
         "location": "Greenwich, CT",
         "company_type": "Prop Trading/Hedge Fund",
     }
-    assert full_refresh._classify(values) == "QT/QR"
-    assert full_refresh._classify({**values, "company_type": "Fintech"}) is None
+    assert full_refresh._route(full_refresh._as_job(values)) == "QT/QR - RoW"
+    fintech = {**values, "company_type": "Fintech"}
+    assert full_refresh._route(full_refresh._as_job(fintech)) is None
 
 
 def test_rewrite_requests_preserve_literal_text_and_url_formulas():
@@ -174,7 +173,7 @@ def test_rewrite_requests_preserve_literal_text_and_url_formulas():
     assert written["url"]["userEnteredValue"] == {"formulaValue": '=HYPERLINK("https://x/1", "Apply")'}
 
 
-def test_classify_returns_none_for_a_recruiter_title():
+def test_route_drops_a_recruiter_title():
     values = {
         "board": "Acme",
         "job_id": "1",
@@ -183,7 +182,7 @@ def test_classify_returns_none_for_a_recruiter_title():
         "location": "Singapore",
         "company_type": "",
     }
-    assert full_refresh._classify(values) is None
+    assert full_refresh._route(full_refresh._as_job(values)) is None
 
 
 def test_read_tab_rows_keeps_a_row_on_its_current_tab_when_unchanged():

@@ -83,11 +83,17 @@ def _row(board, job_id, scraped_date):
     return [values[name] for name in writer.HEADER]
 
 
+def _append(worksheet, jobs):
+    """Append the way `main.run` does: keys come from the tab's prune plan."""
+    plan = writer.plan_prune(worksheet, [], fetched_boards=set())
+    return writer.append_jobs(worksheet, jobs, existing_keys=plan.keys)
+
+
 def test_append_jobs_writes_job_rows():
     worksheet = _FakeWorksheet()
     job = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
-    appended = writer.append_jobs(worksheet, [job])
+    appended = _append(worksheet, [job])
 
     assert worksheet.appended == [job.to_row()]
     assert appended == [job]
@@ -95,7 +101,7 @@ def test_append_jobs_writes_job_rows():
 
 def test_append_jobs_noop_on_empty_list():
     worksheet = _FakeWorksheet()
-    appended = writer.append_jobs(worksheet, [])
+    appended = _append(worksheet, [])
     assert worksheet.appended is None
     assert appended == []
 
@@ -105,7 +111,7 @@ def test_append_jobs_skips_already_tracked_job():
     worksheet = _FakeWorksheet(rows)
     job = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
-    appended = writer.append_jobs(worksheet, [job])
+    appended = _append(worksheet, [job])
 
     assert worksheet.appended is None  # already tracked -- not re-appended
     assert appended == []
@@ -117,13 +123,13 @@ def test_append_jobs_appends_only_the_new_ones():
     seen = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
     new = Job("acme", "2", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
-    appended = writer.append_jobs(worksheet, [seen, new])
+    appended = _append(worksheet, [seen, new])
 
     assert worksheet.appended == [new.to_row()]
     assert appended == [new]
 
 
-def test_append_jobs_uses_given_existing_keys_instead_of_rereading():
+def test_append_jobs_does_not_reread_the_tab():
     rows = [writer.HEADER, _row("acme", "1", "2026-09-01")]
     worksheet = _FakeWorksheet(rows)
     plan = writer.plan_prune(worksheet, [], fetched_boards=set())
@@ -143,7 +149,7 @@ def test_append_jobs_same_job_id_different_board_is_not_a_duplicate():
     worksheet = _FakeWorksheet(rows)
     job = Job("beta", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
-    writer.append_jobs(worksheet, [job])
+    _append(worksheet, [job])
 
     assert worksheet.appended == [job.to_row()]
 
@@ -156,7 +162,7 @@ def test_append_jobs_refuses_a_reordered_header():
     job = Job("acme", "2", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
     with pytest.raises(RuntimeError, match="refusing to append or prune"):
-        writer.append_jobs(worksheet, [job])
+        _append(worksheet, [job])
 
     assert worksheet.appended is None
 
@@ -166,7 +172,7 @@ def test_append_jobs_refuses_a_header_missing_a_field():
     job = Job("acme", "1", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
     with pytest.raises(RuntimeError, match="SWE/DE - PAC"):
-        writer.append_jobs(worksheet, [job])
+        _append(worksheet, [job])
 
     assert worksheet.appended is None
 
@@ -176,7 +182,7 @@ def test_append_jobs_tolerates_extra_columns_after_fields():
     worksheet = _FakeWorksheet([header, _row("acme", "1", "2026-09-01") + ["x", ""]])
     job = Job("acme", "2", "T", "D", "L", "U", "", datetime.date(2026, 9, 12))
 
-    writer.append_jobs(worksheet, [job])
+    _append(worksheet, [job])
 
     assert worksheet.appended == [job.to_row()]
 
@@ -692,14 +698,14 @@ def test_read_is_not_retried_after_a_client_error(monkeypatch, code):
 def test_append_jobs_deduplicates_incoming_batch():
     worksheet = _FakeWorksheet()
     job = _job('Acme', '123')
-    assert writer.append_jobs(worksheet, [job, job]) == [job]
+    assert _append(worksheet, [job, job]) == [job]
     assert worksheet.appended == [job.to_row()]
 
 
 def test_append_jobs_rejects_invalid_key_before_write():
     worksheet = _FakeWorksheet()
     with pytest.raises(ValueError, match='data quality'):
-        writer.append_jobs(worksheet, [_job('Acme', ' 123')])
+        _append(worksheet, [_job('Acme', ' 123')])
     assert worksheet.appended is None
 
 
@@ -708,7 +714,7 @@ def test_blank_tab_is_rejected_before_writing(action):
     worksheet = _FakeWorksheet([])
     with pytest.raises(RuntimeError, match="refusing to append or prune"):
         if action == "append":
-            writer.append_jobs(worksheet, [_job("Acme", "1")])
+            _append(worksheet, [_job("Acme", "1")])
         else:
             writer.plan_prune(worksheet, [], {"Acme"})
     assert worksheet.appended is None

@@ -4,7 +4,6 @@ import logging
 import os
 import sys
 
-from jobscraper import config
 from jobscraper.job_boards import fetchers
 
 logger = logging.getLogger(__name__)
@@ -16,14 +15,7 @@ def check() -> bool:
     passed: list[tuple[str, int]] = []
     failed: list[tuple[str, str]] = []
 
-    sources = [
-        (source, [
-            board for board in boards
-            if not config.ONLY_FIRMS or board["firm"] in config.ONLY_FIRMS
-        ], fetch)
-        for source, boards, fetch in fetchers.board_sources()
-    ]
-    for result in fetchers.fetch_boards(sources):
+    for result in fetchers.fetch_boards(fetchers.selected_board_sources()):
         firm = result.board["firm"]
         if result.error is not None:
             failed.append((firm, str(result.error)))

@@ -6,7 +6,6 @@ only for a firm in FIRMS_NEEDING_DESCRIPTION, whose own apply page doesn't
 show it. Disabled unless that and TELEGRAM_BOT_TOKEN are set; never raises.
 """
 
-import html
 import logging
 import re
 import textwrap
@@ -19,7 +18,7 @@ from jobscraper.enrichment.classify_roles import (
     classify_job,
 )
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job
-from jobscraper.telegram import send_chunks
+from jobscraper.telegram import _escape, send_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +87,6 @@ def _format_jd(jd: str) -> str:
     for line in jd.split("\n"):
         lines.extend(textwrap.wrap(line, _MAX_LINE_CHARS) or [""])
     return _escape("\n".join(lines))
-
-
-def _escape(text: str, *, quote: bool = False) -> str:
-    return html.escape(text, quote=quote)
 
 
 def send_alerts(jobs: list[Job], spreadsheet_url: str) -> None:

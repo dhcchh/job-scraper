@@ -43,13 +43,7 @@ def run() -> None:
     )
     sync_and_announce(spreadsheet)
 
-    board_sources = [
-        (source, [
-            board for board in boards
-            if not config.ONLY_FIRMS or board["firm"] in config.ONLY_FIRMS
-        ], fetch)
-        for source, boards, fetch in fetchers.board_sources()
-    ]
+    board_sources = fetchers.selected_board_sources()
 
     all_jobs: list[Job] = []
     succeeded_firms: set[str] = set()

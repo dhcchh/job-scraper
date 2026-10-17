@@ -4,24 +4,24 @@ import os
 
 from dotenv import load_dotenv
 
-from jobscraper.board_config import DEFAULT_BOARD_DIR, load_all_boards
+from jobscraper.board_config import DEFAULT_BOARD_DIR, PROVIDERS, load_all_boards
 
 load_dotenv()
 
-_COMPANY_TOML_DIR = DEFAULT_BOARD_DIR
-PROVIDERS = (
-    ("greenhouse", "Greenhouse"),
-    ("lever", "Lever"),
-    ("ashby", "Ashby"),
-    ("smartrecruiters", "SmartRecruiters"),
-    ("eightfold", "Eightfold"),
-    ("workday", "Workday"),
-    ("recruitee", "Recruitee"),
-    ("citadel", "Citadel"),
-)
+# Each provider's name in the sheet's source column.
+_PROVIDER_LABELS = {
+    "greenhouse": "Greenhouse",
+    "lever": "Lever",
+    "ashby": "Ashby",
+    "smartrecruiters": "SmartRecruiters",
+    "eightfold": "Eightfold",
+    "workday": "Workday",
+    "recruitee": "Recruitee",
+    "citadel": "Citadel",
+}
 
 
-_BOARDS = load_all_boards(_COMPANY_TOML_DIR)
+_BOARDS = load_all_boards(DEFAULT_BOARD_DIR)
 
 
 GREENHOUSE_BOARDS = _BOARDS["greenhouse"]
@@ -37,8 +37,8 @@ CITADEL_BOARDS = _BOARDS["citadel"]
 def board_sources() -> list[tuple[str, str, list[dict]]]:
     """Read the configured provider lists, including runtime overrides."""
     return [
-        (name, label, globals()[f"{name.upper()}_BOARDS"])
-        for name, label in PROVIDERS
+        (name, _PROVIDER_LABELS[name], globals()[f"{name.upper()}_BOARDS"])
+        for name in PROVIDERS
     ]
 
 

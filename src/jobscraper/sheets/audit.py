@@ -6,28 +6,17 @@ import json
 import os
 from pathlib import Path
 
-import gspread
-from google.oauth2.service_account import Credentials
-
 from jobscraper.enrichment.classify_region import REGIONS, tab_name
 from jobscraper.enrichment.classify_roles import CATEGORIES
 from jobscraper.quality import inspect_tabs, summary_markdown
+from jobscraper.sheets.writer import get_spreadsheet
 
 
 def main() -> None:
-    from jobscraper import config
-
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="data-quality.json")
     args = parser.parse_args()
-    config.require_sheet_credentials()
-    credentials = Credentials.from_service_account_info(
-        json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON),
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
-    )
-    sheet = gspread.authorize(credentials, http_client=gspread.BackOffHTTPClient).open_by_key(config.GOOGLE_SHEET_ID)
-    if config.GOOGLE_SHEET_TITLE and sheet.title != config.GOOGLE_SHEET_TITLE:
-        raise RuntimeError("Configured spreadsheet title does not match")
+    sheet = get_spreadsheet(read_only=True)
     expected = [tab_name(category, region) for category, _ in CATEGORIES for region in REGIONS]
     tabs = {ws.title: ws.get_all_values() for ws in sheet.worksheets() if ws.title in expected}
     report = inspect_tabs(tabs, expected)

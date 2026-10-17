@@ -83,9 +83,8 @@ def _fetch_overrides() -> dict[tuple[str, str], Job]:
     for result in fetchers.fetch_boards(fetchers.board_sources()):
         if result.error is not None:
             logger.warning(
-                "refresh: couldn't re-fetch %s for location/first_published"
-                "/description overrides, its rows keep whatever they "
-                "already have",
+                "refresh: couldn't re-fetch %s, so its rows keep their "
+                "current posting data",
                 result.board["firm"],
             )
             continue

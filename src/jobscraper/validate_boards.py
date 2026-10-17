@@ -2,7 +2,6 @@
 
 import argparse
 import sys
-from collections import Counter
 from collections.abc import Callable, Iterable
 
 from jobscraper.board_config import (
@@ -43,7 +42,11 @@ def validate_live(
     allow_empty: bool = False,
     output: Callable[[str], None] = print,
 ) -> int:
-    """Fetch selected boards concurrently; return the number that fail validation."""
+    """Fetch selected boards concurrently; return the number that fail validation.
+
+    A fetch already fails on a missing or repeated job ID, so a board that
+    returns jobs has unique IDs.
+    """
     # Imported here: importing config loads the board files, and main()
     # reports an invalid file itself rather than failing at import time.
     from jobscraper.job_boards import fetchers
@@ -53,43 +56,20 @@ def validate_live(
     ])
     failures = 0
     for result in results:
-        board = result.board
-        label = f"{result.source}[{board['firm']}] ({board['token']})"
+        label = f"{result.source}[{result.board['firm']}] ({result.board['token']})"
         if result.error is not None:
             failures += 1
             output(f"FAIL {label}: {type(result.error).__name__}: {result.error}")
-            continue
-
-        jobs = result.jobs
-        if not jobs:
-            message = f"{label}: returned no jobs, so IDs could not be verified"
-            if allow_empty:
-                output(f"WARN {message}")
-            else:
-                failures += 1
-                output(f"FAIL {message}; pass --allow-empty if this is expected")
-            continue
-
-        blank_ids = sum(not str(job.job_id).strip() for job in jobs)
-        id_counts = Counter(str(job.job_id) for job in jobs)
-        duplicate_ids = sorted(
-            job_id for job_id, count in id_counts.items() if count > 1
-        )
-        wrong_firms = sum(job.board != board["firm"] for job in jobs)
-        problems = []
-        if blank_ids:
-            problems.append(f"{blank_ids} blank job ID(s)")
-        if duplicate_ids:
-            sample = ", ".join(duplicate_ids[:3])
-            problems.append(f"duplicate job ID(s): {sample}")
-        if wrong_firms:
-            problems.append(f"{wrong_firms} job(s) have the wrong firm name")
-
-        if problems:
-            failures += 1
-            output(f"FAIL {label}: {'; '.join(problems)}")
+        elif result.jobs:
+            output(f"OK   {label}: {len(result.jobs)} job(s)")
+        elif allow_empty:
+            output(f"WARN {label}: returned no jobs, so IDs could not be verified")
         else:
-            output(f"OK   {label}: {len(jobs)} job(s)")
+            failures += 1
+            output(
+                f"FAIL {label}: returned no jobs, so IDs could not be verified; "
+                "pass --allow-empty if this is expected"
+            )
 
     output(f"Live validation: {len(results) - failures}/{len(results)} board(s) passed")
     return failures

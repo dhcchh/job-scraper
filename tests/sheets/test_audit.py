@@ -5,7 +5,7 @@ import pytest
 
 from jobscraper import config
 from jobscraper.models import FIELDS
-from jobscraper.sheets import audit
+from jobscraper.sheets import audit, writer
 
 
 @pytest.mark.parametrize('job_id, fails', [('123', False), ('', True)])
@@ -21,8 +21,8 @@ def test_audit_readonly_report_and_failure_exit(monkeypatch, tmp_path, job_id, f
         seen['scopes'] = scopes
         return object()
 
-    monkeypatch.setattr(audit.Credentials, 'from_service_account_info', credentials)
-    monkeypatch.setattr(audit.gspread, 'authorize', lambda *a, **k: SimpleNamespace(open_by_key=lambda key: sheet))
+    monkeypatch.setattr(writer.Credentials, 'from_service_account_info', credentials)
+    monkeypatch.setattr(writer.gspread, 'authorize', lambda *a, **k: SimpleNamespace(open_by_key=lambda key: sheet))
     monkeypatch.setattr(audit, 'CATEGORIES', [('SWE/DE', ())])
     monkeypatch.setattr(audit, 'REGIONS', ('PAC',))
     monkeypatch.setattr(config, 'GOOGLE_SHEET_TITLE', 'Test')

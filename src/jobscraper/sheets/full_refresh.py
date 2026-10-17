@@ -32,9 +32,9 @@ from jobscraper.sheets.writer import (
 logger = logging.getLogger(__name__)
 
 
-def _classify(values: dict[str, str]) -> str | None:
-    """Classify a recomputed row."""
-    stub = Job(
+def _as_job(values: dict[str, str]) -> Job:
+    """Build the fields routing reads from a recomputed row."""
+    return Job(
         board=values["board"],
         job_id=values["job_id"],
         title=values["title"],
@@ -45,7 +45,6 @@ def _classify(values: dict[str, str]) -> str | None:
         scraped_date=datetime.date.today(),
         company_type=values["company_type"],
     )
-    return classify_job(stub)
 
 
 def _route(job: Job) -> str | None:
@@ -79,14 +78,16 @@ def _read_tab_rows(
         values = _recompute_row_values(
             row, url_cell, old_index, company_type_by_firm, source_by_firm, overrides
         )
-        category = _classify(values)
-        if category is None:
-            reason = "its title no longer matches any category"
-        elif is_excluded(values["location"]):
-            reason = f"every office in {values['location']!r} is an excluded country"
-        else:
-            rows.append((tab_name(category, classify_region(values["location"])), values))
+        job = _as_job(values)
+        dest_tab = _route(job)
+        if dest_tab is not None:
+            rows.append((dest_tab, values))
             continue
+        reason = (
+            "its title no longer matches any category"
+            if classify_job(job) is None
+            else f"every office in {values['location']!r} is an excluded country"
+        )
         logger.warning(
             "full_refresh: dropping %r (board=%s, job_id=%s) -- %s",
             values["title"],

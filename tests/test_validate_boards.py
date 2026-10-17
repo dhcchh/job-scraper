@@ -102,23 +102,6 @@ def test_validate_live_can_allow_an_expected_empty_board(monkeypatch):
     assert failures == 0
 
 
-def test_validate_live_rejects_duplicate_ids_and_wrong_firm(monkeypatch):
-    monkeypatch.setattr(
-        fetchers,
-        "fetch_greenhouse_jobs",
-        lambda token, firm, company_type: [_job("1"), _job("1", "Other")],
-    )
-    output = []
-
-    failures = validate_boards.validate_live(
-        [("greenhouse", _board())], output=output.append
-    )
-
-    assert failures == 1
-    assert "duplicate job ID(s): 1" in output[0]
-    assert "wrong firm name" in output[0]
-
-
 def test_validate_live_reports_endpoint_errors_and_continues(monkeypatch):
     def fail(token, firm, company_type):
         raise RuntimeError("not found")

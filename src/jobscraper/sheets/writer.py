@@ -19,6 +19,7 @@ from jobscraper.quality import validate_rows
 logger = logging.getLogger(__name__)
 
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+_READ_ONLY_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 HEADER = list(FIELDS)
 _BOARD_INDEX = HEADER.index("board")
@@ -88,11 +89,13 @@ class _RetryingHTTPClient(gspread.HTTPClient):
             time.sleep(wait)
 
 
-def get_spreadsheet() -> gspread.Spreadsheet:
+def get_spreadsheet(*, read_only: bool = False) -> gspread.Spreadsheet:
     """Open and validate the configured spreadsheet."""
     config.require_sheet_credentials()
     info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
-    credentials = Credentials.from_service_account_info(info, scopes=_SCOPES)
+    credentials = Credentials.from_service_account_info(
+        info, scopes=_READ_ONLY_SCOPES if read_only else _SCOPES
+    )
     client = gspread.authorize(credentials, http_client=_RetryingHTTPClient)
     spreadsheet = client.open_by_key(config.GOOGLE_SHEET_ID)
     _check_expected_title(spreadsheet)
@@ -213,17 +216,18 @@ def _sheet_metadata(worksheet: gspread.Worksheet) -> dict:
 def append_jobs(
     worksheet: gspread.Worksheet,
     jobs: list[Job],
-    existing_keys: Iterable[tuple[str, str]] | None = None,
+    existing_keys: Iterable[tuple[str, str]],
 ) -> list[Job]:
     """Append jobs not already tracked by `(board, job_id)`.
 
-    `existing_keys` saves rereading the tab when a `PrunePlan` just read it.
+    `existing_keys` comes from the tab's `PrunePlan`, whose read also
+    checked the header.
     """
     if not jobs:
         logger.info("no jobs to append")
         return []
 
-    existing = set(_existing_keys(worksheet) if existing_keys is None else existing_keys)
+    existing = set(existing_keys)
     new_jobs = []
     for job in jobs:
         key = (job.board, job.job_id)
@@ -244,22 +248,6 @@ def append_jobs(
         "appended %d new row(s), skipped %d already-tracked", len(rows), skipped
     )
     return new_jobs
-
-
-def _existing_keys(worksheet: gspread.Worksheet) -> set[tuple[str, str]]:
-    """(board, job_id) of every row already in the sheet."""
-    all_values = worksheet.get_all_values()
-    if not all_values:
-        _check_header(worksheet, [])
-
-    header, *data_rows = all_values
-    _check_header(worksheet, header)
-    keys = set()
-    for row in data_rows:
-        key = _row_key(row)
-        if key is not None:
-            keys.add(key)
-    return keys
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

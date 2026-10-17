@@ -40,14 +40,15 @@ def board_sources() -> list[tuple[str, list[dict], Fetcher]]:
     ]
 
 
-def fetch_board(source: str, board: dict, fetch: Fetcher) -> list[Job]:
-    """Apply optional provider settings consistently in every command."""
-    kwargs = (
-        {"location_scope": board["location_scope"]}
-        if source == "workday" and board.get("location_scope")
-        else {}
-    )
-    return fetch(board["token"], board["firm"], board["company_type"], **kwargs)
+def selected_board_sources() -> list[tuple[str, list[dict], Fetcher]]:
+    """Return `board_sources()` limited to `ONLY_FIRMS` when it's set."""
+    return [
+        (source, [
+            board for board in boards
+            if not config.ONLY_FIRMS or board["firm"] in config.ONLY_FIRMS
+        ], fetch)
+        for source, boards, fetch in board_sources()
+    ]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -116,7 +117,13 @@ def _fetch_all(tasks: list[tuple[str, dict, Fetcher]]) -> list[BoardFetch]:
 
 
 def _fetch_one(source: str, board: dict, fetch: Fetcher) -> BoardFetch:
+    kwargs = (
+        {"location_scope": board["location_scope"]}
+        if source == "workday" and board.get("location_scope")
+        else {}
+    )
     try:
-        return BoardFetch(source, board, fetch_board(source, board, fetch))
+        jobs = fetch(board["token"], board["firm"], board["company_type"], **kwargs)
     except Exception as exc:
         return BoardFetch(source, board, [], exc)
+    return BoardFetch(source, board, jobs)
