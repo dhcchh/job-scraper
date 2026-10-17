@@ -106,11 +106,6 @@ firm = "Modal"
 company_type = "Data/Cloud Infrastructure"
 
 [[boards]]
-token = "confluent"
-firm = "Confluent"
-company_type = "Data/Cloud Infrastructure"
-
-[[boards]]
 token = "pinecone"
 firm = "Pinecone"
 company_type = "Data/Cloud Infrastructure"
