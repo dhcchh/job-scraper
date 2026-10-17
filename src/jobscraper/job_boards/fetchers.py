@@ -1,6 +1,8 @@
 """Public fetch functions for every supported board provider."""
 
 import dataclasses
+import logging
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
@@ -14,6 +16,8 @@ from jobscraper.job_boards.recruitee.client import fetch_recruitee_jobs
 from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
 from jobscraper.job_boards.workday.client import fetch_workday_jobs
 from jobscraper.models import Job
+
+logger = logging.getLogger(__name__)
 
 Fetcher = Callable[..., list[Job]]
 
@@ -51,8 +55,48 @@ class BoardFetch:
     error: Exception | None = None
 
 
-def fetch_boards(sources: list[tuple[str, list[dict], Fetcher]]) -> list[BoardFetch]:
-    """Fetch every board concurrently; results keep configuration order."""
+def fetch_boards(
+    sources: list[tuple[str, list[dict], Fetcher]],
+    *,
+    retry_failed_after: float | None = None,
+) -> list[BoardFetch]:
+    """Fetch every board concurrently; results keep configuration order.
+
+    With `retry_failed_after`, each failed board is fetched once more that
+    many seconds after the first pass. A provider glitch such as an
+    inconsistent page can clear within minutes, and a later complete
+    snapshot is as valid as the first.
+    """
+    tasks = [(source, board, fetch) for source, boards, fetch in sources for board in boards]
+    results = _fetch_all(tasks)
+    failed = [index for index, result in enumerate(results) if result.error is not None]
+    if retry_failed_after is None or not failed:
+        return results
+
+    for index in failed:
+        result = results[index]
+        logger.warning(
+            "%s[%s]: failed (%s), retrying once in %.0fs",
+            result.source,
+            result.board["firm"],
+            describe_error(result.error),
+            retry_failed_after,
+        )
+    time.sleep(retry_failed_after)
+    for index, retried in zip(failed, _fetch_all([tasks[index] for index in failed])):
+        if retried.error is None:
+            logger.info("%s[%s]: succeeded on retry", retried.source, retried.board["firm"])
+        results[index] = retried
+    return results
+
+
+def describe_error(error: Exception, limit: int = 300) -> str:
+    """One-line exception type and message for logs and run summaries."""
+    text = " ".join(f"{type(error).__name__}: {error}".split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _fetch_all(tasks: list[tuple[str, dict, Fetcher]]) -> list[BoardFetch]:
     with (
         ThreadPoolExecutor(BOARD_WORKERS, thread_name_prefix="board") as shared,
         ThreadPoolExecutor(WORKDAY_BOARD_WORKERS, thread_name_prefix="workday") as workday,
@@ -61,8 +105,7 @@ def fetch_boards(sources: list[tuple[str, list[dict], Fetcher]]) -> list[BoardFe
             (workday if source == "workday" else shared).submit(
                 _fetch_one, source, board, fetch
             )
-            for source, boards, fetch in sources
-            for board in boards
+            for source, board, fetch in tasks
         ]
         return [future.result() for future in futures]
 

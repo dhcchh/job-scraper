@@ -8,6 +8,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 
 import gspread
+import requests
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError
 
@@ -42,21 +43,49 @@ def _check_expected_title(spreadsheet: gspread.Spreadsheet) -> None:
 
 # Seconds to wait before each retry of a request Sheets rejected for quota.
 _QUOTA_RETRY_WAITS = (10, 20, 40, 60)
+# Seconds to wait before each retry of a read that failed transiently. Sheets
+# 5xx responses can be HTML error pages, which gspread reports as code -1.
+_READ_RETRY_WAITS = (5, 15, 30)
+_TRANSIENT_STATUSES = frozenset({500, 502, 503, 504})
+_TRANSIENT_CONNECTION_ERRORS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.ChunkedEncodingError,
+    requests.exceptions.Timeout,
+)
 
 
-class _QuotaRetryingHTTPClient(gspread.HTTPClient):
-    """Retry quota rejections. Do not retry ambiguous 5xx append outcomes."""
+class _RetryingHTTPClient(gspread.HTTPClient):
+    """Retry quota rejections, and transient 5xx or connection failures of reads.
 
-    def request(self, *args, **kwargs):
-        for wait in _QUOTA_RETRY_WAITS:
+    Writes are not retried after a 5xx or a dropped connection: an append
+    may already have landed, and retrying could duplicate rows.
+    """
+
+    def request(self, method, *args, **kwargs):
+        quota_waits = iter(_QUOTA_RETRY_WAITS)
+        read_waits = iter(_READ_RETRY_WAITS if method.lower() == "get" else ())
+        while True:
             try:
-                return super().request(*args, **kwargs)
+                return super().request(method, *args, **kwargs)
             except APIError as err:
-                if err.code != 429:
+                status = getattr(err.response, "status_code", None) or err.code
+                if status == 429:
+                    wait = next(quota_waits, None)
+                    reason = "quota hit"
+                elif status in _TRANSIENT_STATUSES:
+                    wait = next(read_waits, None)
+                    reason = f"read failed with HTTP {status}"
+                else:
                     raise
-                logger.warning("sheets write quota hit, retrying in %ds", wait)
-                time.sleep(wait)
-        return super().request(*args, **kwargs)
+                if wait is None:
+                    raise
+            except _TRANSIENT_CONNECTION_ERRORS as err:
+                wait = next(read_waits, None)
+                if wait is None:
+                    raise
+                reason = f"read failed ({type(err).__name__})"
+            logger.warning("sheets %s, retrying in %ds", reason, wait)
+            time.sleep(wait)
 
 
 def get_spreadsheet() -> gspread.Spreadsheet:
@@ -64,7 +93,7 @@ def get_spreadsheet() -> gspread.Spreadsheet:
     config.require_sheet_credentials()
     info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
     credentials = Credentials.from_service_account_info(info, scopes=_SCOPES)
-    client = gspread.authorize(credentials, http_client=_QuotaRetryingHTTPClient)
+    client = gspread.authorize(credentials, http_client=_RetryingHTTPClient)
     spreadsheet = client.open_by_key(config.GOOGLE_SHEET_ID)
     _check_expected_title(spreadsheet)
     return spreadsheet

@@ -100,7 +100,10 @@ fetched concurrently (eight at a time, with Workday boards in a separate
 pool of four) over shared keep-alive connections. Workday and Eightfold
 fetch pages, and Workday required detail records, with up to eight workers.
 
-A failed board is excluded from pruning. All configured tokens for a firm
+Daily Scrape refetches each failed board once more, 60 seconds after the
+first pass. Provider glitches such as Eightfold returning a duplicate ID
+across pages can clear within minutes. A board that fails again is
+excluded from pruning. All configured tokens for a firm
 must succeed before its rows can be removed. A failed Workday detail request
 fails the board, except a confirmed 404/410 for a closed posting. Workday
 also lists items with neither a title nor a link, such as
@@ -117,6 +120,16 @@ retries. Other firms continue, and the run fails after reporting the hold.
 If the closures are confirmed, rerun Daily Scrape with `force_prune_firms`
 set to those firm names, comma-separated. Locally, use `FORCE_PRUNE_FIRMS`
 for that run only. Use Full Refresh for intentional routing changes.
+A board that keeps returning 0 postings may have moved to another provider;
+probe the other provider APIs before forcing.
+
+The run summary and the final error name each failed board's error and
+each held-back firm's reason.
+
+Sheets requests retry quota rejections (HTTP 429) after 10, 20, 40 and 60
+seconds. Reads also retry 5xx responses, including HTML error pages, and
+dropped or timed-out connections after 5, 15 and 30 seconds. Writes are not
+retried after those failures, because an append may already have landed.
 
 Daily pruning is atomic per tab. A daily run can still partially complete
 across tabs. Full Refresh commits all job rows and grid sizes in one atomic

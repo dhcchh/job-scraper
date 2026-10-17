@@ -525,20 +525,38 @@ class _FakeResponse:
         return {"error": {"code": self._code, "message": "x", "status": "x"}}
 
 
-def _quota_client(monkeypatch, codes):
-    """A retrying client whose underlying requests fail with `codes`, then succeed."""
+class _FakeHTMLResponse:
+    """A Sheets 5xx error page: not JSON, so gspread reports code -1."""
+
+    text = "<!DOCTYPE html><title>Error 502 (Server Error)!!1</title>"
+
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+    def json(self):
+        raise ValueError("not JSON")
+
+
+def _quota_client(monkeypatch, failures):
+    """A retrying client whose underlying requests fail in turn, then succeed.
+
+    Each failure is an HTTP code for a JSON API error, or an exception to raise.
+    """
     calls = []
     sleeps = []
 
     def fake_request(self, *args, **kwargs):
         calls.append(args)
-        if len(calls) <= len(codes):
-            raise writer.APIError(_FakeResponse(codes[len(calls) - 1]))
+        if len(calls) <= len(failures):
+            failure = failures[len(calls) - 1]
+            if isinstance(failure, BaseException):
+                raise failure
+            raise writer.APIError(_FakeResponse(failure))
         return "ok"
 
     monkeypatch.setattr(writer.gspread.HTTPClient, "request", fake_request)
     monkeypatch.setattr(writer.time, "sleep", sleeps.append)
-    client = writer._QuotaRetryingHTTPClient.__new__(writer._QuotaRetryingHTTPClient)
+    client = writer._RetryingHTTPClient.__new__(writer._RetryingHTTPClient)
     return client, calls, sleeps
 
 
@@ -566,6 +584,71 @@ def test_quota_client_never_retries_other_errors(monkeypatch, code):
 
     with pytest.raises(writer.APIError):
         client.request("post", "url")
+    assert len(calls) == 1
+    assert sleeps == []
+
+
+def test_read_is_retried_after_an_html_5xx_page(monkeypatch):
+    # 2026-10-06: a 502 page while fetching sheet metadata failed the run.
+    error = writer.APIError(_FakeHTMLResponse(502))
+    assert error.code == -1
+    client, calls, sleeps = _quota_client(monkeypatch, [error])
+
+    assert client.request("get", "url") == "ok"
+    assert len(calls) == 2
+    assert sleeps == [5]
+
+
+@pytest.mark.parametrize("error", [
+    # 2026-10-03: a values read was cut off mid-body (IncompleteRead).
+    writer.requests.exceptions.ChunkedEncodingError("Connection broken"),
+    writer.requests.exceptions.ConnectionError("reset"),
+    writer.requests.exceptions.ReadTimeout("slow"),
+])
+def test_read_is_retried_after_a_dropped_connection(monkeypatch, error):
+    client, calls, sleeps = _quota_client(monkeypatch, [error, 503])
+
+    assert client.request("get", "url") == "ok"
+    assert len(calls) == 3
+    assert sleeps == [5, 15]
+
+
+def test_read_gives_up_after_its_last_wait(monkeypatch):
+    client, calls, sleeps = _quota_client(monkeypatch, [502] * 4)
+
+    with pytest.raises(writer.APIError):
+        client.request("get", "url")
+    assert len(calls) == 4
+    assert sleeps == list(writer._READ_RETRY_WAITS)
+
+
+def test_read_still_gets_its_quota_retries(monkeypatch):
+    client, calls, sleeps = _quota_client(monkeypatch, [429, 502, 429])
+
+    assert client.request("get", "url") == "ok"
+    assert sleeps == [10, 5, 20]
+
+
+@pytest.mark.parametrize("method", ["post", "put", "delete"])
+@pytest.mark.parametrize("failure", [
+    writer.APIError(_FakeHTMLResponse(502)),
+    writer.requests.exceptions.ChunkedEncodingError("Connection broken"),
+])
+def test_write_is_not_retried_after_a_transient_failure(monkeypatch, method, failure):
+    client, calls, sleeps = _quota_client(monkeypatch, [failure])
+
+    with pytest.raises(type(failure)):
+        client.request(method, "url")
+    assert len(calls) == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("code", [400, 403, 404])
+def test_read_is_not_retried_after_a_client_error(monkeypatch, code):
+    client, calls, sleeps = _quota_client(monkeypatch, [code])
+
+    with pytest.raises(writer.APIError):
+        client.request("get", "url")
     assert len(calls) == 1
     assert sleeps == []
 

@@ -21,6 +21,7 @@ class _FakeSpreadsheet:
 
 def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr(main, "BOARD_RETRY_DELAY_SECONDS", 0)
     monkeypatch.setattr(main, "get_spreadsheet", lambda: _FakeSpreadsheet())
     monkeypatch.setattr(main, "get_worksheet", lambda spreadsheet, name: name)
     # Empty by default so a test that only cares about Greenhouse behavior
@@ -110,7 +111,10 @@ def test_run_fails_after_updating_succeeded_boards(monkeypatch):
     append_calls: list[tuple] = []
     _patch_sheet_functions(monkeypatch, prune_calls, append_calls)
 
-    with pytest.raises(RuntimeError, match="BadCo"):
+    with pytest.raises(
+        RuntimeError,
+        match=r"failed board fetches: BadCo \(greenhouse: RuntimeError: greenhouse down\)",
+    ):
         main.run()
 
     assert prune_calls  # ran for every category
@@ -620,7 +624,11 @@ def test_run_holds_back_prune_for_a_board_that_returned_nothing(monkeypatch, tmp
     summary_path = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_path))
 
-    with pytest.raises(RuntimeError, match="prune held back for: Acme"):
+    with pytest.raises(
+        RuntimeError,
+        match=r"prune held back for: Acme \(board returned 0 postings; "
+        r"would prune all 12 tracked row\(s\)\)",
+    ):
         main.run()
 
     assert apply_calls  # every tab still gets its (possibly empty) prune
@@ -736,6 +744,49 @@ def test_run_writes_partial_summary_before_failing(monkeypatch, tmp_path):
     content = summary_path.read_text()
     assert "Job scraper run: partial failure" in content
     assert "Boards fetched: 1/2 -- failed: BadCo" in content
+    assert "### Failed boards" in content
+    assert "- BadCo: greenhouse: RuntimeError: greenhouse down" in content
+
+
+def test_run_retries_a_failed_board_before_giving_up_on_it(monkeypatch):
+    boards = [{"token": "flaky", "firm": "Flaky", "company_type": "Big Tech"}]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+    calls = []
+
+    def fake_fetch_greenhouse_jobs(token, firm, company_type):
+        calls.append(firm)
+        if len(calls) == 1:
+            raise RuntimeError("duplicate id: 1")
+        return [_job("Flaky", "1")]
+
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+    prune_calls: list[set[str]] = []
+    _patch_sheet_functions(monkeypatch, prune_calls)
+
+    main.run()  # the retry succeeded, so nothing is left to fail on
+
+    assert calls == ["Flaky", "Flaky"]
+    assert all(fetched_boards == {"Flaky"} for fetched_boards in prune_calls)
+
+
+def test_run_names_every_failed_token_of_a_firm(monkeypatch):
+    boards = [
+        {"token": "one", "firm": "Optiver", "company_type": "Prop Trading"},
+        {"token": "two", "firm": "Optiver", "company_type": "Prop Trading"},
+    ]
+    monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
+
+    def fake_fetch_greenhouse_jobs(token, firm, company_type):
+        raise RuntimeError(f"{token} down")
+
+    monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", fake_fetch_greenhouse_jobs)
+    _patch_sheet_functions(monkeypatch, [])
+
+    with pytest.raises(RuntimeError) as excinfo:
+        main.run()
+
+    assert "RuntimeError: one down" in str(excinfo.value)
+    assert "RuntimeError: two down" in str(excinfo.value)
 
 
 def test_run_skips_job_summary_without_github_step_summary(monkeypatch):
@@ -754,7 +805,7 @@ def test_build_summary_markdown_reports_failure_and_per_tab_counts():
         spreadsheet_title="Test Sheet",
         spreadsheet_url="https://example.com/sheet",
         succeeded_entries=1,
-        failed_firms={"BadCo"},
+        failed_firms={"BadCo": "eightfold: IncompleteBoardResponse: duplicate id: 42"},
         total_boards=2,
         total_jobs=10,
         noise_count=3,
@@ -765,6 +816,8 @@ def test_build_summary_markdown_reports_failure_and_per_tab_counts():
     assert "## Job scraper run: partial failure" in markdown
     assert "[Test Sheet](https://example.com/sheet)" in markdown
     assert "Boards fetched: 1/2 -- failed: BadCo" in markdown
+    assert "### Failed boards" in markdown
+    assert "- BadCo: eightfold: IncompleteBoardResponse: duplicate id: 42" in markdown
     assert "Jobs fetched: 10 (3 filtered as noise, 2 excluded by country)" in markdown
     assert "Appended: 5 new row(s)" in markdown
     assert "Pruned: 1 closed posting(s)" in markdown
@@ -777,7 +830,7 @@ def test_build_summary_markdown_lists_held_back_prunes():
         spreadsheet_title="Test Sheet",
         spreadsheet_url="https://example.com/sheet",
         succeeded_entries=1,
-        failed_firms=set(),
+        failed_firms={},
         total_boards=1,
         total_jobs=1,
         noise_count=0,
@@ -798,7 +851,7 @@ def test_build_summary_markdown_reports_success_when_nothing_failed():
         spreadsheet_title="Test Sheet",
         spreadsheet_url="https://example.com/sheet",
         succeeded_entries=1,
-        failed_firms=set(),
+        failed_firms={},
         total_boards=1,
         total_jobs=1,
         noise_count=0,

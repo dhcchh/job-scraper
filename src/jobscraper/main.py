@@ -3,6 +3,7 @@
 import logging
 import os
 from collections import Counter
+from collections.abc import Mapping
 
 from jobscraper import config
 from jobscraper.alerts import send_alerts
@@ -30,6 +31,10 @@ from jobscraper.telegram import DIGEST_CATEGORIES, send_digest
 
 logger = logging.getLogger(__name__)
 
+# Pause before refetching the boards that failed. Millennium's Eightfold
+# duplicate-ID failure on 2026-10-17 cleared on a run three minutes later.
+BOARD_RETRY_DELAY_SECONDS = 60
+
 
 def run() -> None:
     spreadsheet = get_spreadsheet()
@@ -50,9 +55,11 @@ def run() -> None:
 
     all_jobs: list[Job] = []
     succeeded_firms: set[str] = set()
-    failed_firms: set[str] = set()
+    failed_firms: dict[str, str] = {}
     succeeded_entries = 0
-    for result in fetchers.fetch_boards(board_sources):
+    for result in fetchers.fetch_boards(
+        board_sources, retry_failed_after=BOARD_RETRY_DELAY_SECONDS
+    ):
         firm = result.board["firm"]
         if result.error is not None:
             logger.error(
@@ -62,7 +69,10 @@ def run() -> None:
                 firm,
                 exc_info=result.error,
             )
-            failed_firms.add(firm)
+            reason = f"{result.source}: {fetchers.describe_error(result.error)}"
+            failed_firms[firm] = (
+                f"{failed_firms[firm]}; {reason}" if firm in failed_firms else reason
+            )
             continue
         all_jobs.extend(result.jobs)
         succeeded_firms.add(firm)
@@ -71,7 +81,7 @@ def run() -> None:
     total_boards = sum(len(boards) for _source, boards, _fetch in board_sources)
 
     # Any failed token makes that firm's postings unsafe to prune.
-    fetched_boards = succeeded_firms - failed_firms
+    fetched_boards = succeeded_firms - failed_firms.keys()
 
     logger.info(
         "fetched %d jobs total across %d/%d board(s)%s",
@@ -189,11 +199,15 @@ def run() -> None:
 
     problems = []
     if failed_firms:
-        problems.append("failed board fetches: " + ", ".join(sorted(failed_firms)))
+        problems.append("failed board fetches: " + _with_reasons(failed_firms))
     if held_back:
-        problems.append("prune held back for: " + ", ".join(sorted(held_back)))
+        problems.append("prune held back for: " + _with_reasons(held_back))
     if problems:
         raise RuntimeError("scrape completed with " + "; ".join(problems))
+
+
+def _with_reasons(reasons: Mapping[str, str]) -> str:
+    return ", ".join(f"{firm} ({reason})" for firm, reason in sorted(reasons.items()))
 
 
 def _build_summary_markdown(
@@ -201,7 +215,7 @@ def _build_summary_markdown(
     spreadsheet_title: str,
     spreadsheet_url: str,
     succeeded_entries: int,
-    failed_firms: set[str],
+    failed_firms: Mapping[str, str],
     total_boards: int,
     total_jobs: int,
     noise_count: int,
@@ -234,6 +248,19 @@ def _build_summary_markdown(
     for tab, (job_count, appended, pruned) in sorted(tab_stats.items()):
         lines.append(f"| {tab} | {job_count} | {appended} | {pruned} |")
 
+    if failed_firms:
+        lines += [
+            "",
+            "### Failed boards",
+            "",
+            "These boards failed again on a delayed retry. Their firms' rows were "
+            "kept, and nothing was appended or pruned for them. A one-off failure "
+            "usually clears on the next run. If a board fails several runs in a "
+            "row, check its token and whether the firm changed provider.",
+            "",
+        ]
+        lines += [f"- {firm}: {reason}" for firm, reason in sorted(failed_firms.items())]
+
     if held_back:
         lines += [
             "",
@@ -241,7 +268,9 @@ def _build_summary_markdown(
             "",
             "These firms' existing rows were kept and new rows were held back: "
             "the drop looks more "
-            "like a broken fetch than real closures. If the closures are real, "
+            "like a broken fetch than real closures. A board that keeps returning "
+            "0 postings may have moved to another provider or stopped listing "
+            "jobs. If the closures are real, "
             'rerun "Daily Scrape (Append)" with `force_prune_firms` set to the '
             "firm name(s).",
             "",
