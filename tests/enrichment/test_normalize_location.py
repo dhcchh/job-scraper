@@ -576,3 +576,95 @@ def test_structured_country_does_not_duplicate_existing_country():
     assert normalize_office("Taipei, Taiwan", "tw") == "Taipei, Taiwan"
     assert normalize_office("Taipei", "tw") == "Taipei, Taiwan"
     assert normalize_office("Melbourne", "us") == "Melbourne, United States"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Wintermute, GitLab, Old Mission and Cantina write several offices
+        # into one label.
+        ("London / Singapore", "London, United Kingdom | Singapore"),
+        ("London/New York/Singapore", "London, United Kingdom | New York, NY | Singapore"),
+        ("Remote, Canada; Remote, United States", "Remote, Canada | Remote, United States"),
+        ("Chicago, IL or New York, NY", "Chicago, IL | New York, NY"),
+        ("U.S. or Canada", "U.S. | Canada"),
+        # A part that names no known place means it isn't a list.
+        ("Others / Remote", "Others / Remote"),
+        ("EMEA - Croatia - Offsite/Home", "EMEA - Croatia - Offsite/Home"),
+        ("Los Angeles or San Francisco", "Los Angeles or San Francisco"),
+    ],
+)
+def test_normalize_location_splits_an_office_list_of_known_places(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+def test_normalize_locations_deduplicates_offices_split_from_a_list():
+    from jobscraper.enrichment.normalize_location import normalize_locations
+
+    assert (
+        normalize_locations(["Chicago, IL or New York, NY", "New York, NY"])
+        == "Chicago, IL | New York, NY"
+    )
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Workday's own Workday board: "<Country>, [<State>,] <City>".
+        ("Australia, QLD, Brisbane", "Brisbane, Australia"),
+        ("Canada, BC, Vancouver", "Vancouver, Canada"),
+        ("USA, CA, Pleasanton", "Pleasanton, CA"),
+        ("Ireland, Dublin", "Dublin, Ireland"),
+        ("Israel, Tel Aviv", "Tel Aviv, Israel"),
+        ("India, KA, Bangalore", "Bangalore, India"),
+        ("Australia, NSW, North Sydney", "North Sydney, Australia"),
+        ("Malaysia, Kuala Lumpur", "Kuala Lumpur, Malaysia"),
+    ],
+)
+def test_normalize_location_reads_a_country_first_office_with_a_state(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Barclays and BlackRock: "<building or street>, <City>".
+        ("Prestige Meridian, Bengaluru", "Bangalore, India"),
+        (
+            "M11 - Commers III, 43, 44 & 45 Fl, Internat'l Business Park, Oberoi Garden City",
+            "Mumbai, India",
+        ),
+        (
+            "BU3-Budapest-GTC White House, Vaci ut 47, District XIII, Budapest",
+            "Budapest, Hungary",
+        ),
+        # Already ends in a country, or lists other places: left alone.
+        ("Marina One, Singapore", "Marina One, Singapore"),
+        ("Jersey, Montreal, Warsaw", "Jersey, Montreal, Warsaw"),
+    ],
+)
+def test_normalize_location_reads_a_trailing_city_after_a_building(raw, expected):
+    assert normalize_location(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "location,route",
+    [
+        # Live rows that landed in RoW before these rules.
+        ("London / Singapore", "PAC"),
+        ("Chaoyang", "PAC"),
+        ("Bangalore, India | Prestige Meridian, Bengaluru", "excluded"),
+        (
+            "M11 - Commers III, 43, 44 & 45 Fl, Internat'l Business Park, Oberoi Garden City",
+            "excluded",
+        ),
+        # A hidden PAC office keeps a mixed list out of exclusion.
+        ("Remote, Singapore; Remote, India", "PAC"),
+    ],
+)
+def test_normalized_live_locations_route_to_the_right_region(location, route):
+    from jobscraper.enrichment.classify_region import classify_region, is_excluded
+    from jobscraper.enrichment.normalize_location import normalize_locations
+
+    normalized = normalize_locations(location.split(" | "))
+    assert ("excluded" if is_excluded(normalized) else classify_region(normalized)) == route

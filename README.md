@@ -73,7 +73,8 @@ integration settings, disable dotenv loading, and block unmocked HTTP requests.
   excluded. Other locations go to RoW. A posting with any PAC office goes
   to PAC unless excluded.
 - **Locations:** normalize each provider's office separately, deduplicate,
-  and join with ` | `. Free-text lists are not comma-split. Eightfold's
+  and join with ` | `. A label is split on `/`, `;` or ` or ` only when
+  every part names a known place; free-text lists are not comma-split. Eightfold's
   hierarchical locations retain their country; SmartRecruiters' separate
   country field is retained, as is Recruitee's. Unresolved offices in newly
   appended rows appear in the coverage report.

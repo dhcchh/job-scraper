@@ -64,6 +64,7 @@ _ALPHA2_COUNTRIES = {
 }
 _COUNTRY_PREFIX_RE = re.compile(r"^([^-]+?)\s*-\s*(.+)$")
 _HYPHEN_SPLIT_RE = re.compile(r"\s*-\s*")
+_OFFICE_LIST_RE = re.compile(r"\s*[/;]\s*|\s+or\s+")
 _TRAILING_PAREN_RE = re.compile(r"\s*\([^()]*\)$")
 
 _CANONICAL_LOCATIONS: dict[str, str] = {
@@ -142,6 +143,7 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "changhua": "Changhua, Taiwan",
     "shenzhen": "Shenzhen, China",
     "yanji": "Yanji, China",
+    "chaoyang": "Beijing, China",
     "aichi": "Aichi, Japan",
     "chiba": "Chiba, Japan",
     "fukuoka": "Fukuoka, Japan",
@@ -216,6 +218,7 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "new delhi": "New Delhi, India",
     "noida": "Noida, India",
     "mumbai - india": "Mumbai, India",
+    "oberoi garden city": "Mumbai, India",
     "pune": "Pune, India",
     "chennai": "Chennai, India",
     "jakarta": "Jakarta, Indonesia",
@@ -283,17 +286,7 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
     "salt lake city, utah": "Salt Lake City, UT",
     "boston, massachusetts": "Boston, MA",
     "austin, texas": "Austin, TX",
-    "japan, tokyo": "Tokyo, Japan",
-    "south korea, seoul": "Seoul, South Korea",
-    "france, paris": "Paris, France",
-    "united kingdom, london": "London, United Kingdom",
     "united states, new york": "New York, NY",
-    "korea, seoul": "Seoul, South Korea",
-    "india, mumbai": "Mumbai, India",
-    "malaysia, kuala lumpur": "Kuala Lumpur, Malaysia",
-    "new zealand, auckland": "Auckland, New Zealand",
-    "australia, nsw, north sydney": "North Sydney, Australia",
-    "australia, vic, melbourne": "Melbourne, Australia",
 }
 
 
@@ -369,6 +362,44 @@ def _leading_city_location(cleaned: str) -> str | None:
     return location if location != "Remote" else None
 
 
+def _trailing_city_location(cleaned: str) -> str | None:
+    """Normalize "<building or street>, <Known city>", e.g. "Prestige Meridian,
+    Bengaluru". Skipped when the last part already names a country or state,
+    or an earlier part names a place ("Jersey, Montreal, Warsaw")."""
+    *rest, city = (part.strip() for part in cleaned.split(","))
+    if not rest or names_a_country(city):
+        return None
+    if any(names_a_country(part) or part.lower() in _CANONICAL_LOCATIONS for part in rest):
+        return None
+    location = _CANONICAL_LOCATIONS.get(city.lower())
+    return location if location != "Remote" else None
+
+
+def _country_first_location(cleaned: str) -> str | None:
+    """Normalize "<Country>, [<State>,] <City>", e.g. "Japan, Tokyo",
+    "Australia, QLD, Brisbane", "USA, CA, Pleasanton"."""
+    first, *rest = (part.strip() for part in cleaned.split(","))
+    country = _ALPHA3_COUNTRIES.get(first) or _SITE_COUNTRIES.get(first.casefold())
+    if country is None or not rest or names_a_country(rest[-1]):
+        return None
+    if country == "United States" and len(rest) == 2 and names_a_country(rest[0]):
+        return normalize_location(f"{rest[1]}, {rest[0]}")
+    return _place_in(country, rest[::-1]) or _alpha3_location(country, rest[-1])
+
+
+def _office_list_location(cleaned: str) -> str | None:
+    """Split "London / Singapore", "Remote, Canada; Remote, US" or "U.S. or
+    Canada" into pipe-joined offices, but only when every part names a known
+    place ("Offsite/Home" is no list). Commas stay unsplit."""
+    parts = _OFFICE_LIST_RE.split(cleaned)
+    if len(parts) < 2:
+        return None
+    offices = [normalize_location(part) for part in parts]
+    if not all(names_a_country(office) for office in offices):
+        return None
+    return " | ".join(dict.fromkeys(offices))
+
+
 def normalize_location(raw: str) -> str:
     """Return a canonical location or a cleaned, unchanged fallback."""
     alpha3 = _ALPHA3_PREFIX_RE.match(raw.strip())
@@ -402,14 +433,21 @@ def normalize_location(raw: str) -> str:
     cleaned = _WORK_MODE_SUFFIX_RE.sub("", cleaned).strip()
     cleaned = _BUILDING_SUFFIX_RE.sub(r"\1", cleaned).strip()
     cleaned = _DUPLICATE_NAME_RE.sub(r"\1", cleaned).strip()
-    canonical = _CANONICAL_LOCATIONS.get(cleaned.lower())
-    return canonical or _leading_city_location(cleaned) or cleaned
+    return (
+        _CANONICAL_LOCATIONS.get(cleaned.lower())
+        or _office_list_location(cleaned)
+        or _leading_city_location(cleaned)
+        or _country_first_location(cleaned)
+        or _trailing_city_location(cleaned)
+        or cleaned
+    )
 
 
 def normalize_locations(locations: list[str | None]) -> str:
     """Normalize, deduplicate, and pipe-join locations in input order."""
     normalized = (normalize_location(location or "") for location in locations)
-    return " | ".join(dict.fromkeys(filter(None, normalized)))
+    offices = (office for location in normalized for office in location.split(" | "))
+    return " | ".join(dict.fromkeys(filter(None, offices)))
 
 
 def normalize_office(city: str, country: str) -> str:
