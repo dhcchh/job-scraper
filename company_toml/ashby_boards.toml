@@ -164,3 +164,8 @@ company_type = "Applied AI Products"
 token = "hoyoverse"
 firm = "HoYoverse"
 company_type = "Gaming"
+
+[[boards]]
+token = "old-mission-capital"
+firm = "Old Mission"
+company_type = "Prop Trading/Hedge Fund"

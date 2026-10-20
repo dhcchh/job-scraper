@@ -206,11 +206,6 @@ firm = "DV Trading"
 company_type = "Prop Trading/Hedge Fund"
 
 [[boards]]
-token = "oldmissioncapital"
-firm = "Old Mission"
-company_type = "Prop Trading/Hedge Fund"
-
-[[boards]]
 token = "pdtpartners"
 firm = "PDT Partners"
 company_type = "Prop Trading/Hedge Fund"
