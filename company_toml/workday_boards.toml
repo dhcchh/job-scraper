@@ -53,11 +53,6 @@ firm = "Trafigura"
 company_type = "Commodities Trading"
 
 [[boards]]
-token = "autodesk.wd1/Ext"
-firm = "Autodesk"
-company_type = "Enterprise/Productivity Software"
-
-[[boards]]
 token = "snapchat.wd1/snap"
 firm = "Snap"
 company_type = "Consumer Comms/Social"
