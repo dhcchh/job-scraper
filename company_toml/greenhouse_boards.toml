@@ -349,3 +349,8 @@ company_type = "Crypto Exchange"
 token = "twitch"
 firm = "Twitch"
 company_type = "Gaming"
+
+[[boards]]
+token = "doordashusa"
+firm = "DoorDash"
+company_type = "Consumer/Marketplace"
