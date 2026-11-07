@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
 
-_OFFICES_ARE_TEAMS: frozenset[str] = frozenset({"govtech", "twitch"})
+_OFFICES_ARE_TEAMS: frozenset[str] = frozenset({"govtech", "lyft", "scaleai", "twitch"})
 
 
 def fetch_greenhouse_jobs(

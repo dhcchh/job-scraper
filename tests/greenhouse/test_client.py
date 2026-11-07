@@ -240,6 +240,52 @@ def test_fetch_greenhouse_jobs_reads_location_name_for_twitch_placeholder_office
     assert job.location == "Sydney, Australia"
 
 
+def test_fetch_greenhouse_jobs_reads_location_name_for_scaleai_placeholder_offices(monkeypatch):
+    # Scale AI tags its remote fellowships with a "Remote (Growth only)"
+    # office, which would replace the real country with "Growth only".
+    payload = {
+        "jobs": [
+            {
+                "id": 3,
+                "title": "Machine Learning Fellow",
+                "updated_at": "",
+                "absolute_url": "https://x/3",
+                "location": {"name": "United Kingdom"},
+                "departments": [],
+                "offices": [{"name": "Remote (Growth only)"}],
+            }
+        ]
+    }
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(payload))
+
+    (job,) = client.fetch_greenhouse_jobs("scaleai", "Scale AI", "Applied AI Products")
+
+    assert job.location == "United Kingdom"
+
+
+def test_fetch_greenhouse_jobs_reads_location_name_for_lyft_workspace_offices(monkeypatch):
+    # Lyft's offices[] names workspaces ("Toronto Coworking") and often
+    # disagrees with the posting's real location.
+    payload = {
+        "jobs": [
+            {
+                "id": 4,
+                "title": "Software Engineer",
+                "updated_at": "",
+                "absolute_url": "https://x/4",
+                "location": {"name": "Toronto, Canada"},
+                "departments": [],
+                "offices": [{"name": "Toronto Coworking"}, {"name": "San Francisco Office"}],
+            }
+        ]
+    }
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(payload))
+
+    (job,) = client.fetch_greenhouse_jobs("lyft", "Lyft", "Consumer/Marketplace")
+
+    assert job.location == "Toronto, Canada"
+
+
 def test_fetch_greenhouse_jobs_still_uses_offices_for_every_other_board(monkeypatch):
     # Opt-in per board only: location.name is free text that often
     # disagrees with offices on other boards, so they keep using offices.

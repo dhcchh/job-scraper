@@ -354,3 +354,8 @@ company_type = "Gaming"
 token = "doordashusa"
 firm = "DoorDash"
 company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "lyft"
+firm = "Lyft"
+company_type = "Consumer/Marketplace"
