@@ -81,7 +81,8 @@ live writes.
   intentional formulas. Dates use ISO display formatting.
 - Preserve provider country information. Normalize separate offices and join
   with ` | `; do not split an ambiguous free-text office list on commas.
-  GovTech explicitly uses its location label because its office list names teams.
+  GovTech explicitly uses its location label because its office list names teams;
+  Twitch does too because every posting lists the same placeholder office.
 - Region decisions live in `classify_region.py`; keep its country sets
   disjoint. Exclude a posting only if every office is excluded. Unknown
   locations remain visible in coverage reports.

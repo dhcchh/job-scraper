@@ -344,3 +344,8 @@ company_type = "Data/Cloud Infrastructure"
 token = "binance"
 firm = "Binance"
 company_type = "Crypto Exchange"
+
+[[boards]]
+token = "twitch"
+firm = "Twitch"
+company_type = "Gaming"

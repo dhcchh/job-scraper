@@ -217,6 +217,29 @@ def test_fetch_greenhouse_jobs_reads_location_name_for_a_board_whose_offices_are
     assert job.location == "Singapore"
 
 
+def test_fetch_greenhouse_jobs_reads_location_name_for_twitch_placeholder_offices(monkeypatch):
+    # Twitch lists the same "San Francisco, CA" office on every posting
+    # whatever its real location, so a Sydney role would land in RoW.
+    payload = {
+        "jobs": [
+            {
+                "id": 2,
+                "title": "Software Engineer",
+                "updated_at": "",
+                "absolute_url": "https://x/2",
+                "location": {"name": "Sydney, Australia"},
+                "departments": [],
+                "offices": [{"name": "San Francisco, CA"}],
+            }
+        ]
+    }
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(payload))
+
+    (job,) = client.fetch_greenhouse_jobs("twitch", "Twitch", "Gaming")
+
+    assert job.location == "Sydney, Australia"
+
+
 def test_fetch_greenhouse_jobs_still_uses_offices_for_every_other_board(monkeypatch):
     # Opt-in per board only: location.name is free text that often
     # disagrees with offices on other boards, so they keep using offices.
