@@ -52,6 +52,24 @@ def test_load_boards_accepts_fixed_citadel_token(tmp_path):
     assert load_boards(path)[0]["token"] == "citadel"
 
 
+def test_load_boards_accepts_amazon_category_slugs_under_one_firm(tmp_path):
+    path = _write(tmp_path, "amazon_boards.toml", '''
+        [[boards]]
+        token = "software-development"
+        firm = "Amazon"
+        company_type = "Consumer/Marketplace"
+
+        [[boards]]
+        token = "systems-quality-security-engineering"
+        firm = "Amazon"
+        company_type = "Consumer/Marketplace"
+    ''')
+    assert [board["token"] for board in load_boards(path)] == [
+        "software-development",
+        "systems-quality-security-engineering",
+    ]
+
+
 def test_load_boards_rejects_unknown_fields(tmp_path):
     path = _write(
         tmp_path,
@@ -115,6 +133,9 @@ def test_load_boards_rejects_blank_workday_location_scope(tmp_path):
         ("greenhouse_boards.toml", "not a slug"),
         ("workday_boards.toml", "acme/External_Careers"),
         ("citadel_boards.toml", "citadel-securities"),
+        ("amazon_boards.toml", "Software-Development"),
+        ("amazon_boards.toml", "software_development"),
+        ("amazon_boards.toml", "software-development-"),
     ],
 )
 def test_load_boards_rejects_malformed_provider_tokens(tmp_path, filename, token):

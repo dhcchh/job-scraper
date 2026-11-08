@@ -5,7 +5,7 @@ The scraper reads open postings from company career boards, keeps the roles it c
 ## The daily run
 
 1. **Open the sheet.** Stop if its title differs from `GOOGLE_SHEET_TITLE` (when set). Add newly configured firms to the Supported companies tab and announce them.
-2. **Fetch every board.** Boards are fetched concurrently (8 workers, with Workday in its own pool of 4). Workday and Eightfold also fetch their pages, and Workday its detail records, with up to 8 workers. A failed board is fetched once more after 60 seconds.
+2. **Fetch every board.** Boards are fetched concurrently (8 workers, with Workday in its own pool of 4). Workday and Eightfold also fetch their pages, and Workday its detail records, with up to 8 workers; Amazon fetches its pages 2 at a time. A failed board is fetched once more after 60 seconds.
 3. **Classify.** A title keyword picks one of five roles, or the posting is noise. Drop it if every office is in an excluded country. The rest go to PAC or RoW. Role and region name one of ten tabs.
 4. **Plan.** Read every tab, check headers, find rows no longer listed, run the prune guard.
 5. **Write.** Append unseen postings. Re-read tabs that grew, since a saved sort can reorder rows. Delete closed rows. Held-back firms skip both.

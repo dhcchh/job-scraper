@@ -18,6 +18,7 @@ _PROVIDER_LABELS = {
     "workday": "Workday",
     "recruitee": "Recruitee",
     "citadel": "Citadel",
+    "amazon": "Amazon",
 }
 
 
@@ -32,6 +33,7 @@ EIGHTFOLD_BOARDS = _BOARDS["eightfold"]
 WORKDAY_BOARDS = _BOARDS["workday"]
 RECRUITEE_BOARDS = _BOARDS["recruitee"]
 CITADEL_BOARDS = _BOARDS["citadel"]
+AMAZON_BOARDS = _BOARDS["amazon"]
 
 
 def board_sources() -> list[tuple[str, str, list[dict]]]:

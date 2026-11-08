@@ -283,6 +283,56 @@ _NOT_TECHNICAL_RESEARCH_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Amazon titles roles in its own words ("Software Dev Engineer", "SDE II",
+# "BIE", "System Development Engineer") and lists data-centre, QA and
+# consulting roles under the engineering categories it is fetched from.
+# These rules apply only to jobs from the Amazon provider, keyed by
+# `Job.source`, so every other firm keeps the shared rules above.
+# Each extra keyword joins its category in CATEGORIES order.
+_EXTRA_KEYWORDS_BY_SOURCE: dict[str, dict[str, tuple[str, ...]]] = {
+    "Amazon": {
+        "DS/ML/Algos": ("applied science", "research science"),
+        "DA/BI": ("bie", "business intel engineer"),
+        "SWE/DE": (
+            "software dev engineer",
+            "sde",
+            "software development manager",
+            "software dev manager",
+            "manager, software development",
+            "network development engineer",
+            "network dev engineer",
+        ),
+        "SRE/DevOps": (
+            "system development engineer",
+            "systems development engineer",
+            "system dev engineer",
+            "systems dev engineer",
+            "sysdev engineer",
+            "sys dev engineer",
+        ),
+    },
+}
+
+# Amazon noise: every data-centre role, software ones included;
+# Infrastructure Reliability & Quality (IRQ) hardware-reliability roles; QA
+# and SDET roles; technicians; ProServe delivery consultants; physical
+# security; and program, project and product managers. Data-centre team
+# codes are matched case-sensitively and only as seen on data-centre titles:
+# "DCSX" (Devices Sales & Customer Experience) is not one.
+_NOISE_TITLE_RE_BY_SOURCE: dict[str, re.Pattern[str]] = {
+    "Amazon": re.compile(
+        r"\bdata ?cent(?:er|re)s?\b|\bdatacent(?:er|re)s?\b"
+        r"|(?-i:\b(?:Inter)?DC(?:C|CD|E|EO|LC|NE|O|OSE|PD)?\b|\bDRES\b)"
+        r"|\binfrastructure reliability (?:&|and) quality\b|\bIRQ\b"
+        r"|\bhardware reliability\b|\btechnician\b"
+        r"|\bSDET\b|\bengineers? in test\b|\bquality assurance\b|\bQAE\b"
+        r"|\bquality engineer|\btest engineer|\btester\b|\bsoftware quality\b"
+        r"|\bdelivery consultant\b|\bphysical security\b"
+        r"|\b(?:program|project|product) manag(?:er|ement)\b|\bTPM\b",
+        re.IGNORECASE,
+    ),
+}
+
 # Bare "analytics" is checked last too, so "Analytics Engineer" stays SWE/DE
 # and "Quantitative Analytics" stays DS/ML/Algos.
 _ANALYTICS_RE = re.compile(r"\banalytics\b", re.IGNORECASE)
@@ -296,13 +346,17 @@ def classify_job(job: Job) -> str | None:
     text = " ".join(job.title.split())
     if _NOISE_TITLE_RE.search(text):
         return None
+    source_noise = _NOISE_TITLE_RE_BY_SOURCE.get(job.source)
+    if source_noise is not None and source_noise.search(text):
+        return None
     skipped = frozenset().union(
         *(keywords for pattern, keywords in _KEYWORD_VETOES if pattern.search(text))
     )
+    extra_keywords = _EXTRA_KEYWORDS_BY_SOURCE.get(job.source, {})
     for category, keywords in CATEGORIES:
         if any(
             contains_keyword(text, keyword)
-            for keyword in keywords
+            for keyword in (*keywords, *extra_keywords.get(category, ()))
             if keyword not in skipped
         ):
             return category

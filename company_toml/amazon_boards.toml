@@ -1,0 +1,31 @@
+# Amazon job boards to scrape.
+
+[[boards]]
+token = "software-development"
+firm = "Amazon"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "machine-learning-science"
+firm = "Amazon"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "data-science"
+firm = "Amazon"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "research-science"
+firm = "Amazon"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "business-intelligence"
+firm = "Amazon"
+company_type = "Consumer/Marketplace"
+
+[[boards]]
+token = "systems-quality-security-engineering"
+firm = "Amazon"
+company_type = "Consumer/Marketplace"
