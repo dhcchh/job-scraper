@@ -15,6 +15,7 @@ PROVIDERS: tuple[str, ...] = (
     "workday",
     "recruitee",
     "citadel",
+    "amazon",
 )
 
 _PACKAGE_BOARD_DIR = Path(__file__).resolve().parent / "company_toml"
@@ -33,6 +34,8 @@ _ALLOWED_FIELDS = {
 
 _SLUG_TOKEN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _WORKDAY_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]+\.wd\d+/[^/\s]+$")
+# An amazon.jobs category slug, such as "software-development".
+_AMAZON_TOKEN_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 class BoardConfig(TypedDict):
@@ -173,14 +176,18 @@ def _validate_token(
             f"{path.name}: [[boards]] entry {identifier!r} has invalid token "
             f"{token!r}; expected 'citadel'"
         )
-    pattern = _WORKDAY_TOKEN_RE if provider == "workday" else _SLUG_TOKEN_RE
+    pattern, expected = {
+        "workday": (_WORKDAY_TOKEN_RE, "'<tenant>.wd<number>/<site>'"),
+        "amazon": (
+            _AMAZON_TOKEN_RE,
+            "an amazon.jobs category slug such as 'software-development'",
+        ),
+    }.get(
+        provider,
+        (_SLUG_TOKEN_RE, "a URL slug containing only letters, numbers, '.', '_' or '-'"),
+    )
     if pattern.fullmatch(token):
         return
-    expected = (
-        "'<tenant>.wd<number>/<site>'"
-        if provider == "workday"
-        else "a URL slug containing only letters, numbers, '.', '_' or '-'"
-    )
     raise ValueError(
         f"{path.name}: [[boards]] entry {identifier!r} has invalid token "
         f"{token!r}; expected {expected}"

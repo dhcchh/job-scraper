@@ -13,6 +13,7 @@ def _set_boards(
     eightfold=(),
     workday=(),
     recruitee=(),
+    amazon=(),
 ):
     monkeypatch.setattr(supported_companies.config, "GREENHOUSE_BOARDS", list(greenhouse))
     monkeypatch.setattr(supported_companies.config, "LEVER_BOARDS", list(lever))
@@ -21,6 +22,7 @@ def _set_boards(
     monkeypatch.setattr(supported_companies.config, "EIGHTFOLD_BOARDS", list(eightfold))
     monkeypatch.setattr(supported_companies.config, "WORKDAY_BOARDS", list(workday))
     monkeypatch.setattr(supported_companies.config, "RECRUITEE_BOARDS", list(recruitee))
+    monkeypatch.setattr(supported_companies.config, "AMAZON_BOARDS", list(amazon))
 
 
 def _board(token, firm, company_type):

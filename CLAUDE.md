@@ -85,6 +85,10 @@ live writes.
   Twitch does too because every posting lists the same placeholder office.
   Scale AI and Lyft do as well: their office tags are placeholders or
   workspace names that disagree with the posting's real location.
+  Amazon builds offices from its structured `locations` entries, because
+  `normalized_location` ends in an ISO alpha-3 code. Each office uses the
+  shared alpha-3 table first, then Amazon's country name, whose own forms
+  for China and Hong Kong the region rules don't recognize.
 - Region decisions live in `classify_region.py`; keep its country sets
   disjoint. Exclude a posting only if every office is excluded. Unknown
   locations remain visible in coverage reports.
@@ -94,8 +98,12 @@ live writes.
   Manager"). Data-engineering keywords alone do not make a
   product/program/project manager an engineering role. QT/QR excludes
   discretionary, sales, OTC, floor and financing traders. Bare
-  research titles depend on `company_type`, so every caller of
-  `classify_job` must set it.
+  research titles depend on `company_type`, and Amazon's own keywords and
+  noise (every data-centre role, Infrastructure Reliability & Quality, QA
+  and SDET, delivery consultants, program managers) apply only when
+  `source` is Amazon. Every caller of `classify_job` must set both. Keep
+  provider-specific rules out of the shared lists, so other firms are
+  unaffected.
 - Greenhouse employment type is a seniority fallback. Refresh open jobs from
   current board data so metadata-only internships retain their level.
 - Description extraction remains limited to `FIRMS_NEEDING_DESCRIPTION`.

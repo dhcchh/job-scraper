@@ -28,7 +28,7 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     # doesn't also fetch the real, committed company_toml/lever_boards.toml
     # / company_toml/ashby_boards.toml / company_toml/smartrecruiters_boards.toml
     # / company_toml/eightfold_boards.toml / company_toml/workday_boards.toml
-    # / company_toml/recruitee_boards.toml
+    # / company_toml/recruitee_boards.toml / company_toml/amazon_boards.toml
     # over the network -- a test exercising one of those loops overrides it
     # itself.
     monkeypatch.setattr(main.config, "LEVER_BOARDS", [])
@@ -38,6 +38,7 @@ def _patch_sheet_functions(monkeypatch, prune_calls, append_calls=None):
     monkeypatch.setattr(main.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(main.config, "RECRUITEE_BOARDS", [])
     monkeypatch.setattr(main.config, "CITADEL_BOARDS", [])
+    monkeypatch.setattr(main.config, "AMAZON_BOARDS", [])
     # main.run() always syncs the supported-company tab before fetching jobs.
     # Keep orchestration tests isolated from gspread and Telegram unless a
     # test explicitly replaces this mock to inspect the call.

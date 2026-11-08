@@ -51,7 +51,7 @@ Backfill also clears descriptions of firms not on the allowlist, and blanks sala
 
 ## Rules in brief
 
-- **Roles:** the first matching title keyword wins, in the order DS/ML/Algos, DA/BI, SWE/DE, QT/QR, SRE/DevOps. Fallbacks: generic senior engineering titles go to SWE/DE; bare "research" to QT/QR at `Prop Trading/Hedge Fund` firms and DS/ML/Algos at `AI Lab` firms; bare "analytics" to DA/BI. Recruiter, solutions-architect, legal-engineer, developer-relations, customer-facing engineering-lead and non-systematic trader titles are noise, and so is anything unmatched. Seniority uses title and department, then Greenhouse's employment type.
+- **Roles:** the first matching title keyword wins, in the order DS/ML/Algos, DA/BI, SWE/DE, QT/QR, SRE/DevOps. Fallbacks: generic senior engineering titles go to SWE/DE; bare "research" to QT/QR at `Prop Trading/Hedge Fund` firms and DS/ML/Algos at `AI Lab` firms; bare "analytics" to DA/BI. Recruiter, solutions-architect, legal-engineer, developer-relations, customer-facing engineering-lead and non-systematic trader titles are noise, and so is anything unmatched. Amazon jobs alone get extra keywords for Amazon's own titles (SDE, Software Dev Engineer, System Development Engineer, BIE, Applied Science) and extra noise: every data-centre role, Infrastructure Reliability & Quality, QA and SDET, technicians, delivery consultants, physical security and program, project or product managers. Seniority uses title and department, then Greenhouse's employment type.
 - **Regions:** PAC is Singapore, Hong Kong, Australia, Japan, South Korea, China, Taiwan, New Zealand, Thailand, or a role listed for APAC or APJ; one PAC office is enough. A posting is excluded only if every office is in Vietnam, Malaysia, Indonesia, India, Armenia or Uruguay. All else is RoW.
 - **Locations:** each office is normalized separately and joined with ` | `, keeping provider country data. A label splits on `/`, `;` or ` or ` only when every part names a known place; free text is never comma-split. GovTech uses its location label (its offices name teams). Unresolved offices in new rows appear in the run summary.
 - **Dates:** `YYYY-MM-DD`; blank if the provider gives none. Workday's relative dates count back from one posting's exact start date, else the scrape date; "30+ days" stays blank unless a detail page gives a date.
@@ -73,7 +73,7 @@ The DM recipient must press Start on the bot first. A DM has an apply link, plus
 
 ## Adding or changing a board
 
-Add to `company_toml/<provider>_boards.toml` (Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday or Recruitee):
+Add to `company_toml/<provider>_boards.toml` (Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, Recruitee or Amazon):
 
 ```toml
 [[boards]]
@@ -82,7 +82,7 @@ firm = "Example"
 company_type = "Fintech"
 ```
 
-Take the token from the firm's real careers site. A firm in two files must use the same spelling and `company_type`. Workday tokens look like `"<tenant>.<wdN>/<site>"` and accept `location_scope = "Singapore"` to keep matching offices. Eightfold and Workday endpoints are undocumented; validate each tenant first.
+Take the token from the firm's real careers site. A firm in two files must use the same spelling and `company_type`. Workday tokens look like `"<tenant>.<wdN>/<site>"` and accept `location_scope = "Singapore"` to keep matching offices. Amazon tokens are amazon.jobs category slugs (`"software-development"`), all under the firm `Amazon`. A category the site doesn't know returns no postings and fails the board, and one with 10,000 or more postings fails as incomplete, because the endpoint stops there. Eightfold, Workday and Amazon endpoints are undocumented; validate each tenant or category first.
 
 ```bash
 uv run jobscraper-validate-boards
@@ -113,7 +113,7 @@ The four sheet writers run `pytest` first and share the `sheet-write` concurrenc
 
 ## Backlog
 
-- Dedicated integrations: Gojek, Shopify, Zoom, Meta, Amazon, Google, The Trade Desk, Apple, Atlassian. X runs through SmartRecruiters.
+- Dedicated integrations: Gojek, Shopify, Zoom, Meta, Google, The Trade Desk, Apple, Atlassian. X runs through SmartRecruiters. Endpoint notes for Google and Apple: [docs/google-apple.md](docs/google-apple.md).
 - Citadel SG/HK browser access ([docs/citadel.md](docs/citadel.md)).
 - A lock shared by local and Actions writers; numeric seniority such as Engineer II.
 - A searchable, mobile-friendly site on the Hetzner server, replacing the sheet: sign-in, approved users, revocable access on pages and data, first-seen dates kept, no duplicate alerts. Needs a database, scheduling, HTTPS and backups.

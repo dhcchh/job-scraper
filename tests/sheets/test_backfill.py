@@ -333,6 +333,7 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     monkeypatch.setattr(backfill.config, "EIGHTFOLD_BOARDS", [])
     monkeypatch.setattr(backfill.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
     monkeypatch.setattr(backfill, "get_spreadsheet", lambda: "SPREADSHEET")
     monkeypatch.setattr(backfill, "get_worksheet", lambda spreadsheet, name: name)
 
@@ -361,6 +362,7 @@ def test_fetch_overrides_keys_by_board_and_job_id(monkeypatch):
     monkeypatch.setattr(backfill.config, "EIGHTFOLD_BOARDS", [])
     monkeypatch.setattr(backfill.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
 
     fetched = [_job_stub("Acme", "1", "Singapore"), _job_stub("Acme", "2", "London, United Kingdom")]
     monkeypatch.setattr(
@@ -387,6 +389,7 @@ def test_fetch_overrides_skips_a_board_that_fails(monkeypatch):
     monkeypatch.setattr(backfill.config, "EIGHTFOLD_BOARDS", [])
     monkeypatch.setattr(backfill.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
 
     good_job = _job_stub("GoodCo", "1", "Singapore")
 
@@ -449,6 +452,11 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         "RECRUITEE_BOARDS",
         [{"token": "rc", "firm": "RecruiteeCo", "company_type": "Big Tech"}],
     )
+    monkeypatch.setattr(
+        backfill.config,
+        "AMAZON_BOARDS",
+        [{"token": "software-development", "firm": "AmazonCo", "company_type": "Big Tech"}],
+    )
 
     gh_job = _job_stub("GreenhouseCo", "1", "Singapore")
     lever_job = _job_stub("LeverCo", "2", "London, United Kingdom")
@@ -457,6 +465,7 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
     eightfold_job = _job_stub("EightfoldCo", "5", "Tokyo, Japan")
     workday_job = _job_stub("WorkdayCo", "R-6", "Seoul, South Korea")
     recruitee_job = _job_stub("RecruiteeCo", "7", "Singapore")
+    amazon_job = _job_stub("AmazonCo", "8", "Seattle, United States")
 
     monkeypatch.setattr(backfill.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     monkeypatch.setattr(
@@ -487,6 +496,11 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         "fetch_recruitee_jobs",
         lambda token, firm, company_type: [recruitee_job],
     )
+    monkeypatch.setattr(
+        backfill.fetchers,
+        "fetch_amazon_jobs",
+        lambda token, firm, company_type: [amazon_job],
+    )
 
     overrides = backfill._fetch_overrides()
 
@@ -498,6 +512,7 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         ("EightfoldCo", "5"): eightfold_job,
         ("WorkdayCo", "R-6"): workday_job,
         ("RecruiteeCo", "7"): recruitee_job,
+        ("AmazonCo", "8"): amazon_job,
     }
     assert workday_scopes == ["Singapore"]
 

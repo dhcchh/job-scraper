@@ -417,3 +417,90 @@ def test_classify_job_keeps_developer_audience_titles_as_noise(title):
 )
 def test_classify_job_still_routes_real_developer_titles(title):
     assert classify_job(_job(title)) == "SWE/DE"
+
+
+def _amazon_job(title):
+    return Job(
+        "Amazon", "1", title, "", "Seattle, United States", "https://x", "", _TODAY,
+        company_type="Consumer/Marketplace", source="Amazon",
+    )
+
+
+# Real amazon.jobs titles (2026-11-08) that only Amazon's keywords match.
+_AMAZON_ONLY_TITLES = [
+    ("Software Dev Engineer II, Finance Technology", "SWE/DE"),
+    ("SDE II", "SWE/DE"),
+    ("Software Development Manager", "SWE/DE"),
+    ("Manager, Software Development, Private Brands", "SWE/DE"),
+    ("Network Dev Engineer II, Corporate Network Core Engineering", "SWE/DE"),
+    ("System Development Engineer, ESCAPE", "SRE/DevOps"),
+    ("Sr. Systems Development Engineer, Region Services", "SRE/DevOps"),
+    ("SysDev Engineer, Amazon Leo", "SRE/DevOps"),
+    ("Sr. Manager, Applied Science, Sponsored Products and Brands", "DS/ML/Algos"),
+    ("2027 Research Science Internship - United States, PhD Student Science Recruiting", "DS/ML/Algos"),
+    ("BIE II, Tax", "DA/BI"),
+    ("Business Intel Engineer III, Strategic Initiatives", "DA/BI"),
+]
+
+
+@pytest.mark.parametrize("title,expected", _AMAZON_ONLY_TITLES + [
+    # Shared keywords still apply to Amazon jobs.
+    ("Software Development Engineer, Prime Video", "SWE/DE"),
+    ("Applied Scientist III, AWS Account Management and Governance", "DS/ML/Algos"),
+    ("Data Scientist, Leo Customer Terminal", "DS/ML/Algos"),
+    ("Business Intelligence Engineer, Amazon Ads", "DA/BI"),
+    ("Data Engineer II, Sales Data Services (SDS)", "SWE/DE"),
+    ("Security Engineer, AWS Security", "SWE/DE"),
+    # "DCSX" is Devices Sales & Customer Experience, not a data centre.
+    ("Software Development Manager, Devices Sales & Customer Experience (DCSX)", "SWE/DE"),
+])
+def test_classify_job_routes_amazon_titles(title, expected):
+    assert classify_job(_amazon_job(title)) == expected
+
+
+@pytest.mark.parametrize("title", [
+    # Data centre, software roles included.
+    "Software Development Engineer II, Data Center Software (DC BRIDGE)",
+    "Senior Applied Scientist, Amazon Global Data Center Ops Central Insight and Analytics Team",
+    "Business Intelligence Engineer, Data Center Capacity Delivery Tooling",
+    "Software Development Engineer, Inter Datacenter Network Engineering",
+    "Sr. Software Development Engineer, DC Console",
+    "Network Development Engineer, Data Center Life Cycle( DCLC)",
+    "Optical Network Development Engineer, DCNE",
+    "Network Dev Engineer III, InterDC services",
+    "Optical Network Development Engineer, DRES",
+    "DCOSE Manager, Data Center Operations Support Engineering, ADC-DCOSE",
+    "Data Center Engineering Technician, DCEO",
+    # Infrastructure Reliability & Quality.
+    "Sr. Infrastructure Reliability Engineer, Infrastructure Reliability & Quality",
+    "Sr. Hardware Reliability Engineer, Infrastructure Reliability & Quality",
+    "Infra Quality Engineer, IRQ (Infrastructure Reliability & Quality)",
+    # QA and SDET.
+    "Software Engineer in Test , Graviton Team",
+    "Software Development Engineer in Test II",
+    "SDET, Alexa Shopping",
+    "Quality Assurance Engineer II, Amazon Leo",
+    "Sr Software Quality Engineering Manager, Quality Team",
+    "Software Tester Apprentice (24-month fixed term contract)",
+    # Customer-facing, physical security and program management.
+    "Delivery Consultant - AI/ML, AWS Professional Services",
+    "Senior Delivery Consultant- DevOps, AWS Professional Services",
+    "Physical Security Engineer (Design) , Data Center Engineering",
+    "Program Manager, Software Development Tools",
+    "Senior Technical Program Manager, Leo Commerce TPM",
+    "Sr. TPM, Verification Services",
+])
+def test_classify_job_keeps_amazon_noise_titles_as_noise(title):
+    assert classify_job(_amazon_job(title)) is None
+
+
+@pytest.mark.parametrize("title,expected", [
+    (title, None) for title, _category in _AMAZON_ONLY_TITLES
+] + [
+    # Amazon's noise rules don't apply to other providers either.
+    ("Software Development Engineer II, Data Center Software (DC BRIDGE)", "SWE/DE"),
+    ("Software Engineer in Test , Graviton Team", "SWE/DE"),
+    ("Delivery Consultant - AI/ML, AWS Professional Services", "DS/ML/Algos"),
+])
+def test_classify_job_applies_amazon_rules_only_to_amazon(title, expected):
+    assert classify_job(_job(title)) == expected

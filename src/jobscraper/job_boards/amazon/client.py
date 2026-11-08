@@ -1,0 +1,176 @@
+"""Amazon careers-site (amazon.jobs) client.
+
+amazon.jobs has no public API. Its own search page calls `/en/search.json`,
+an undocumented, unauthenticated JSON endpoint; this client uses the same
+endpoint. Each board token is one Amazon job category slug (for example
+"software-development"), and every posting belongs to exactly one category.
+"""
+
+import datetime
+import json
+import logging
+import urllib.parse
+
+from jobscraper.enrichment.classify_region import names_a_country
+from jobscraper.enrichment.classify_seniority import classify_seniority
+from jobscraper.enrichment.normalize_location import normalize_locations, normalize_office
+from jobscraper.job_boards._http import IncompleteBoardResponse, paginate_with_retries
+from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, strip_html
+
+logger = logging.getLogger(__name__)
+
+_BASE_URL = "https://www.amazon.jobs"
+_SEARCH_URL = f"{_BASE_URL}/en/search.json"
+
+# The largest page the endpoint serves; a larger result_limit returned no
+# jobs (checked 2026-11-08).
+_PAGE_SIZE = 100
+
+# The endpoint reports at most this many hits and returns no jobs at or past
+# this offset, so a category this large cannot be fetched completely.
+_HIT_CAP = 10_000
+
+_WORKERS = 2
+
+
+def fetch_amazon_jobs(
+    category: str,
+    firm: str,
+    company_type: str,
+    *,
+    scraped_date: datetime.date | None = None,
+) -> list[Job]:
+    """Fetch and normalize every open Amazon posting in one job category."""
+    if scraped_date is None:
+        scraped_date = datetime.date.today()
+
+    query = urllib.parse.urlencode({"category[]": category, "sort": "recent"})
+    raw_jobs = paginate_with_retries(
+        "amazon",
+        category,
+        f"{_SEARCH_URL}?{query}",
+        cursor_param="offset",
+        page_size_param="result_limit",
+        page_size=_PAGE_SIZE,
+        total_key="hits",
+        items_key="jobs",
+        id_key="id_icims",
+        workers=_WORKERS,
+    )
+    # An unknown or renamed category slug returns zero hits, not an error.
+    if not raw_jobs:
+        raise IncompleteBoardResponse(
+            f"amazon[{category}]: no postings; check that the category slug exists"
+        )
+    if len(raw_jobs) >= _HIT_CAP:
+        raise IncompleteBoardResponse(
+            f"amazon[{category}]: {len(raw_jobs)} postings reach the endpoint's "
+            f"{_HIT_CAP}-result cap, so the snapshot may be incomplete"
+        )
+
+    jobs = [_to_job(raw, firm, company_type, scraped_date) for raw in raw_jobs]
+    logger.info("amazon[%s]: fetched %d jobs", category, len(jobs))
+    return jobs
+
+
+def _to_job(
+    raw: dict, firm: str, company_type: str, scraped_date: datetime.date
+) -> Job:
+    job_id = normalize_job_id(raw["id_icims"])
+    title = raw.get("title") or ""
+    department = raw.get("job_family") or ""
+    return Job(
+        board=firm,
+        job_id=job_id,
+        title=title,
+        department=department,
+        location=_location(raw, job_id),
+        url=_url(raw, job_id),
+        updated_at="",
+        first_published=_posted_date(raw.get("posted_date")),
+        scraped_date=scraped_date,
+        seniority=classify_seniority(title, department),
+        company_type=company_type,
+        source="Amazon",
+        description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
+        salary=None,
+    )
+
+
+def _url(raw: dict, job_id: str) -> str:
+    """Link the posting's own page, which carries the apply button."""
+    path = raw.get("job_path") or ""
+    if path.startswith("/"):
+        return f"{_BASE_URL}{path}"
+    return f"{_BASE_URL}/en/jobs/{job_id}"
+
+
+def _posted_date(value: str | None) -> str:
+    """Convert "November  6, 2026" (note the padded day) to an ISO date."""
+    if not value:
+        return ""
+    try:
+        return datetime.datetime.strptime(" ".join(value.split()), "%B %d, %Y").date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _description(raw: dict) -> str:
+    """Combine the description and both qualification lists as plain text."""
+    fields = ("description", "basic_qualifications", "preferred_qualifications")
+    parts = (strip_html(raw.get(field) or "") for field in fields)
+    return "\n\n".join(part for part in parts if part)
+
+
+def _location(raw: dict, job_id: str) -> str:
+    """Normalize and join every listed office.
+
+    `normalized_location` ends in an ISO alpha-3 code ("Hyderabad, Telangana,
+    IND", or just "SGP"), so offices come from the structured `locations`
+    entries instead.
+    """
+    location = normalize_locations([_office(entry) for entry in _location_entries(raw, job_id)])
+    return location or normalize_office(raw.get("city") or "", raw.get("country_code") or "")
+
+
+def _location_entries(raw: dict, job_id: str) -> list[dict]:
+    """Decode `locations`, a list of JSON-encoded objects."""
+    entries = []
+    for item in raw.get("locations") or []:
+        try:
+            entry = json.loads(item) if isinstance(item, str) else item
+        except json.JSONDecodeError as exc:
+            raise IncompleteBoardResponse(
+                f"amazon job {job_id}: malformed location entry"
+            ) from exc
+        if not isinstance(entry, dict):
+            raise IncompleteBoardResponse(f"amazon job {job_id}: malformed location entry")
+        entries.append(entry)
+    return entries
+
+
+def _office(entry: dict) -> str:
+    """One office, preferring the shared ISO alpha-3 table over Amazon's name.
+
+    Amazon's country names include "People's Republic of China" and "Hong
+    Kong SAR", which the region rules don't know; its codes cover those.
+    Codes missing from the shared table fall back to the country name.
+    """
+    city = _city(entry)
+    office = normalize_office(city, entry.get("countryIso3a") or "")
+    if names_a_country(office):
+        return office
+    return normalize_office(city, entry.get("normalizedCountryName") or "") or office
+
+
+def _city(entry: dict) -> str:
+    """Use Amazon's normalized city only to fix capitals ("SEATTLE").
+
+    Its other substitutions can name a different place ("Arizona" becomes
+    "Arizona City"), so the posted city is kept otherwise.
+    """
+    city = entry.get("city") or ""
+    normalized = entry.get("normalizedCityName") or ""
+    if normalized and normalized.casefold() == city.casefold():
+        return normalized
+    return city
