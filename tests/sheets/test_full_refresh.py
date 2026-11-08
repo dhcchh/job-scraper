@@ -140,6 +140,7 @@ def test_route_sends_a_normal_title_to_its_tab():
         "department": "Eng",
         "location": "Singapore",
         "company_type": "",
+        "source": "",
     }
     assert full_refresh._route(full_refresh._as_job(values)) == "SWE/DE - PAC"
 
@@ -153,6 +154,7 @@ def test_route_uses_the_rows_company_type():
         "department": "",
         "location": "Greenwich, CT",
         "company_type": "Prop Trading/Hedge Fund",
+        "source": "",
     }
     assert full_refresh._route(full_refresh._as_job(values)) == "QT/QR - RoW"
     fintech = {**values, "company_type": "Fintech"}
@@ -181,6 +183,7 @@ def test_route_drops_a_recruiter_title():
         "department": "People",
         "location": "Singapore",
         "company_type": "",
+        "source": "",
     }
     assert full_refresh._route(full_refresh._as_job(values)) is None
 
@@ -462,3 +465,37 @@ def test_refresh_all_adds_untracked_open_postings_that_now_route(monkeypatch, ca
     written = sum(len(ws.updated_with) - 1 for ws in worksheets.values() if ws.updated_with)
     assert written == 2
     assert "1 untracked open posting(s) added" in caplog.text
+
+
+def _amazon_values(title, department="Software Development", location="Seattle, United States"):
+    return {
+        "board": "Amazon",
+        "job_id": "1",
+        "title": title,
+        "department": department,
+        "location": location,
+        "company_type": "Consumer/Marketplace",
+        "source": "Amazon",
+    }
+
+
+def test_route_applies_amazon_title_keywords_to_a_rows_source():
+    # "SDE II" is SWE/DE only through Amazon's keywords, so routing must see
+    # the row's source or Full Refresh would drop every such row.
+    values = _amazon_values("SDE II, Amazon Business")
+    assert full_refresh._route(full_refresh._as_job(values)) == "SWE/DE - RoW"
+    assert full_refresh._route(full_refresh._as_job({**values, "source": ""})) is None
+
+
+def test_route_applies_amazon_noise_rules_to_a_rows_source():
+    values = _amazon_values("Software Development Engineer II, DC Bridge")
+    assert full_refresh._route(full_refresh._as_job(values)) is None
+    consultant = _amazon_values("Delivery Consultant - AI/ML, Professional Services")
+    assert full_refresh._route(full_refresh._as_job(consultant)) is None
+
+
+def test_route_applies_the_amazon_job_family_rule_to_a_row_s_department():
+    values = _amazon_values("Kernel / Hypervisor Engineer, Firecracker")
+    assert full_refresh._route(full_refresh._as_job(values)) == "SWE/DE - RoW"
+    other_family = {**values, "department": "Professional Services"}
+    assert full_refresh._route(full_refresh._as_job(other_family)) is None

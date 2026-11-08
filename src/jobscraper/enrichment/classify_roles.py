@@ -284,7 +284,7 @@ _NOT_TECHNICAL_RESEARCH_RE = re.compile(
 )
 
 # Amazon titles roles in its own words ("Software Dev Engineer", "SDE II",
-# "BIE", "System Development Engineer") and lists data-centre, QA and
+# "SDM", "BIE", "System Development Engineer") and lists data-centre, QA and
 # consulting roles under the engineering categories it is fetched from.
 # These rules apply only to jobs from the Amazon provider, keyed by
 # `Job.source`, so every other firm keeps the shared rules above.
@@ -294,11 +294,23 @@ _EXTRA_KEYWORDS_BY_SOURCE: dict[str, dict[str, tuple[str, ...]]] = {
         "DS/ML/Algos": ("applied science", "research science"),
         "DA/BI": ("bie", "business intel engineer"),
         "SWE/DE": (
-            "software dev engineer",
+            # "Software Dev Eng", "Manager III, Software Development",
+            # "Software Development II" and "Director, Software Development"
+            # all omit or abbreviate "Engineer", so match the bare phrase.
+            "software dev",
+            "software development",
+            # A live title misspells it ("Software Devevelopment Manager").
+            "software devevelopment",
             "sde",
-            "software development manager",
-            "software dev manager",
-            "manager, software development",
+            # Level suffixes fuse onto the abbreviation ("SDE2", "SDEII").
+            "sde1",
+            "sde2",
+            "sde3",
+            "sdei",
+            "sdeii",
+            "sdeiii",
+            "esde",
+            "sdm",
             "network development engineer",
             "network dev engineer",
         ),
@@ -332,6 +344,14 @@ _NOISE_TITLE_RE_BY_SOURCE: dict[str, re.Pattern[str]] = {
         re.IGNORECASE,
     ),
 }
+
+# Amazon files every posting under a job family (carried in `Job.department`),
+# and "Software Development" is its engineering one. Titles there often name
+# neither "software" nor a keyword ("Kernel/Hypervisor Engineer",
+# "Application Builder", "Tech Lead Eng"), so a posting filed under that family
+# is SWE/DE once the noise rules and every title keyword have had their say.
+# Keyed by `Job.source`, so no other firm's department is read this way.
+_SWE_DEPARTMENT_BY_SOURCE: dict[str, str] = {"Amazon": "Software Development"}
 
 # Bare "analytics" is checked last too, so "Analytics Engineer" stays SWE/DE
 # and "Quantitative Analytics" stays DS/ML/Algos.
@@ -377,4 +397,7 @@ def classify_job(job: Job) -> str | None:
         and not _NOT_DATA_ANALYTICS_RE.search(text)
     ):
         return "DA/BI"
+    swe_department = _SWE_DEPARTMENT_BY_SOURCE.get(job.source)
+    if swe_department is not None and job.department == swe_department:
+        return "SWE/DE"
     return None

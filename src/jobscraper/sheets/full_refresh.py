@@ -44,6 +44,9 @@ def _as_job(values: dict[str, str]) -> Job:
         updated_at="",
         scraped_date=datetime.date.today(),
         company_type=values["company_type"],
+        # Source-specific classifier rules (Amazon's) key off it, so routing
+        # without it disagrees with the daily scrape.
+        source=values["source"],
     )
 
 

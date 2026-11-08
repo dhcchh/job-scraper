@@ -419,9 +419,9 @@ def test_classify_job_still_routes_real_developer_titles(title):
     assert classify_job(_job(title)) == "SWE/DE"
 
 
-def _amazon_job(title):
+def _amazon_job(title, department=""):
     return Job(
-        "Amazon", "1", title, "", "Seattle, United States", "https://x", "", _TODAY,
+        "Amazon", "1", title, department, "Seattle, United States", "https://x", "", _TODAY,
         company_type="Consumer/Marketplace", source="Amazon",
     )
 
@@ -432,6 +432,22 @@ _AMAZON_ONLY_TITLES = [
     ("SDE II", "SWE/DE"),
     ("Software Development Manager", "SWE/DE"),
     ("Manager, Software Development, Private Brands", "SWE/DE"),
+    # Level suffixes fuse onto the abbreviation.
+    ("SDE2, Amazon Business - External Integrations", "SWE/DE"),
+    ("SDEII - Amazon Linux, EC2 OS - Amazon Linux", "SWE/DE"),
+    ("Sr. eSDE - BSPLinux, HW Compute Group", "SWE/DE"),
+    ("Sr SDM, AWS Governance", "SWE/DE"),
+    # "Engineer" is abbreviated, pluralised, misspelled or left out.
+    ("Software Dev Eng, Digital Twin, Amazon Leo", "SWE/DE"),
+    ("Software Development Engr II, AWS Kumo - US, AWS Kumo Gaia", "SWE/DE"),
+    ("【Class of 2028 & 2029／Internship】Software Development Engineers , Amazon International Stores", "SWE/DE"),
+    ("Software Development II", "SWE/DE"),
+    ("Software Development Graduate, AWS, 2027 Sydney", "SWE/DE"),
+    ("Software Devevelopment Manager, AWS Tax Engine, AWS Invoicing", "SWE/DE"),
+    # Management levels precede or replace the function.
+    ("Manager III, Software Development, Price Memory", "SWE/DE"),
+    ("Sr Manager, Software Dev, Elastic Container Service", "SWE/DE"),
+    ("Director, Software Development - Language Foundations, Amazon SW Builder Experience", "SWE/DE"),
     ("Network Dev Engineer II, Corporate Network Core Engineering", "SWE/DE"),
     ("System Development Engineer, ESCAPE", "SRE/DevOps"),
     ("Sr. Systems Development Engineer, Region Services", "SRE/DevOps"),
@@ -465,6 +481,8 @@ def test_classify_job_routes_amazon_titles(title, expected):
     "Business Intelligence Engineer, Data Center Capacity Delivery Tooling",
     "Software Development Engineer, Inter Datacenter Network Engineering",
     "Sr. Software Development Engineer, DC Console",
+    # The bare "software development" keyword doesn't outrank the noise rules.
+    "Manager, Software Development - Data Center Systems, DC Console",
     "Network Development Engineer, Data Center Life Cycle( DCLC)",
     "Optical Network Development Engineer, DCNE",
     "Network Dev Engineer III, InterDC services",
@@ -504,3 +522,55 @@ def test_classify_job_keeps_amazon_noise_titles_as_noise(title):
 ])
 def test_classify_job_applies_amazon_rules_only_to_amazon(title, expected):
     assert classify_job(_job(title)) == expected
+
+
+# Real amazon.jobs titles (2026-11-08) filed under the "Software Development"
+# job family that name neither "software" nor "engineer" in a way any title
+# keyword matches.
+_AMAZON_FAMILY_TITLES = [
+    "Kernel / Hypervisor Engineer, Firecracker",
+    "Senior Kernel/Hypervisor Engineer, EC2 Core Compute",
+    "Application Builder, Mobile Applications",
+    "Tech Lead Eng, AWS Transform, Agentic AI",
+    "Programmer/Analyst II, Ship With Amazon",
+    "Desenvolvedor de Software II, IES LATECH & GIS",
+    "软件开发工程师, 上海, (New graduate or Entry-level Engineer, 0-2 Years)",
+]
+
+
+@pytest.mark.parametrize("title", _AMAZON_FAMILY_TITLES)
+def test_classify_job_routes_amazon_software_development_family_to_swe(title):
+    assert classify_job(_amazon_job(title, "Software Development")) == "SWE/DE"
+
+
+@pytest.mark.parametrize("title", _AMAZON_FAMILY_TITLES)
+def test_classify_job_needs_the_software_development_family_for_these_titles(title):
+    assert classify_job(_amazon_job(title)) is None
+    assert classify_job(_amazon_job(title, "Professional Services")) is None
+
+
+@pytest.mark.parametrize("title,expected", [
+    # A title keyword for a more specific category outranks the job family.
+    ("Applied Scientist II, Alexa AI", "DS/ML/Algos"),
+    ("Business Intelligence Engineer, Amazon Ads", "DA/BI"),
+    ("System Development Engineer, ESCAPE", "SRE/DevOps"),
+])
+def test_classify_job_lets_amazon_title_keywords_outrank_the_family(title, expected):
+    assert classify_job(_amazon_job(title, "Software Development")) == expected
+
+
+@pytest.mark.parametrize("title", [
+    "Software Development Engineer II, Data Center Software (DC BRIDGE)",
+    "Kernel Engineer, Data Center Operating Systems",
+    "SDET - Audio, SSG",
+    "Software Dev. Engineer in Test, Conversational shopping",
+    "Delivery Consultant - AI/ML, AWS Professional Services",
+])
+def test_classify_job_lets_amazon_noise_outrank_the_family(title):
+    assert classify_job(_amazon_job(title, "Software Development")) is None
+
+
+@pytest.mark.parametrize("title", _AMAZON_FAMILY_TITLES)
+def test_classify_job_reads_the_family_only_for_amazon(title):
+    # Another provider's "Software Development" department is just a label.
+    assert classify_job(_job(title, "Software Development")) is None
