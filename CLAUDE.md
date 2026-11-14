@@ -96,12 +96,16 @@ live writes.
   and legal-engineer titles are noise, as are developer relations/advocacy
   titles and leads of customer-facing engineering teams ("Sales Engineering
   Manager"). Data-engineering keywords alone do not make a
-  product/program/project manager an engineering role. QT/QR excludes
+  product/program/project manager, technical writer or service delivery
+  manager an engineering role. QT/QR excludes
   discretionary, sales, OTC, floor and financing traders. Bare
   research titles depend on `company_type`, and Amazon's own keywords and
   noise (every data-centre role, Infrastructure Reliability & Quality, QA
   and SDET, delivery consultants, program managers) apply only when
-  `source` is Amazon. Every caller of `classify_job` must set both. Keep
+  `source` is Amazon. Amazon's "Software Development" job-family fallback
+  runs last and never overrides a veto or a title naming a non-software
+  job. Every caller of `classify_job` must set `company_type`, `source`
+  and `department`. Keep
   provider-specific rules out of the shared lists, so other firms are
   unaffected.
 - Greenhouse employment type is a seniority fallback. Refresh open jobs from

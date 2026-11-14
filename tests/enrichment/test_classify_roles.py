@@ -574,3 +574,86 @@ def test_classify_job_lets_amazon_noise_outrank_the_family(title):
 def test_classify_job_reads_the_family_only_for_amazon(title):
     # Another provider's "Software Development" department is just a label.
     assert classify_job(_job(title, "Software Development")) is None
+
+
+@pytest.mark.parametrize("title", [
+    # A veto removed one of the title's keywords.
+    "Developer Advocate, AWS",
+    "Developer Relations Engineer, Amazon Q",
+    "Sales Engineering Manager, AWS",
+    "Support Engineering Manager, AWS Support",
+    "Hardware Product Engineer, Project Kuiper",
+    "Product Owner, Data Engineering",
+    # A non-engineering role or a customer-facing engineering team.
+    "Product Owner, Payments",
+    "Solutions Engineering Lead, AWS",
+    "Service Delivery Manager, AWS Managed Services",
+    "Technical Writer, AWS SDKs",
+    # A customer-facing engineer, researcher, designer or writer.
+    "Cloud Support Engineer, AWS Support",
+    "Sr. Solutions Engineer, AWS Industries",
+    "UX Researcher, Alexa",
+    "User Experience Researcher II, Prime Video",
+    "Content Designer, AWS Console",
+])
+def test_classify_job_keeps_non_software_titles_out_of_the_amazon_family(title):
+    # The job family is the weakest signal; it never overrides the title.
+    assert classify_job(_amazon_job(title, "Software Development")) is None
+
+
+@pytest.mark.parametrize("title", [
+    # Amazon's bare phrases name the team on these titles, and "SDM" is
+    # Service Delivery Manager.
+    "Product Owner, Software Development Tools",
+    "Technical Writer, Software Development Kits",
+    "Service Delivery Manager (SDM), AWS Managed Services",
+    "Product Owners, Software Dev Productivity",
+])
+def test_classify_job_treats_amazon_bare_phrases_as_team_names_on_non_engineering_titles(title):
+    assert classify_job(_amazon_job(title)) is None
+    assert classify_job(_amazon_job(title, "Software Development")) is None
+
+
+@pytest.mark.parametrize("title", [
+    "Software Development Engineer, Washington DC",
+    "Software Development Engineer - TS/SCI, Washington, DC",
+    "SDE II, Washington,DC",
+    "Sr. SDE, AWS ProServe Federal, Washington DC Metro",
+])
+def test_classify_job_reads_washington_dc_as_the_city_not_a_data_centre(title):
+    assert classify_job(_amazon_job(title)) == "SWE/DE"
+
+
+@pytest.mark.parametrize("title", [
+    # Plural and hyphenated forms of Amazon's noise.
+    "Senior Program Managers, Builder Tools",
+    "Network Technicians, Infrastructure",
+    "Delivery Consultants - AWS Professional Services",
+    "Data-Center Software Engineer",
+    "Software Engineer, Data-Centre Automation",
+    "SDETs, Alexa Shopping",
+    "Software Testers, Kindle",
+    "TPMs, Builder Tools",
+])
+def test_classify_job_keeps_plural_and_hyphenated_amazon_noise_as_noise(title):
+    assert classify_job(_amazon_job(title)) is None
+    assert classify_job(_amazon_job(title, "Software Development")) is None
+
+
+@pytest.mark.parametrize("title", [
+    "Technical Writer, Developer Documentation",
+    "Technical Writer, Data Engineering Platform",
+    "Product Managers, Data Engineering",
+    "Service Delivery Manager, Platform Engineering",
+])
+def test_classify_job_doesnt_match_team_keywords_on_non_engineering_titles(title):
+    assert classify_job(_job(title)) is None
+
+
+@pytest.mark.parametrize("title", [
+    "Software Development Manager, Devices",  # "Manager" alone isn't a veto
+    "Kernel Engineer, Hardware Platforms",  # hardware names the team here
+    "Programmer/Analyst II, Customer Service Technology",
+])
+def test_classify_job_still_routes_amazon_family_titles_without_a_non_software_role(title):
+    assert classify_job(_amazon_job(title, "Software Development")) == "SWE/DE"

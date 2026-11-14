@@ -174,11 +174,12 @@ _NOISE_TITLE_RE = re.compile(
     r"\brecruiter\b|\bsolutions architect|\blegal engineer", re.IGNORECASE
 )
 
-# On a product/program manager or pre-sales title, a data-engineering keyword
-# names the team, not the job ("Sr. Product Manager, Data Engineering") --
-# DE is meant for proper data-engineering roles only. The same goes for the
-# other team-name "... engineering" keywords, and for "developer" on a
-# "Product Manager, Developer Productivity" title.
+# On a product/program manager, technical writer, service delivery or
+# pre-sales title, a data-engineering keyword names the team, not the job
+# ("Sr. Product Manager, Data Engineering") -- DE is meant for proper
+# data-engineering roles only. The same goes for the other team-name
+# "... engineering" keywords, and for "developer" on a "Product Manager,
+# Developer Productivity" title.
 _TEAM_KEYWORDS = frozenset(
     {
         "developer",
@@ -195,8 +196,9 @@ _TEAM_KEYWORDS = frozenset(
     }
 )
 _NOT_AN_ENGINEERING_ROLE_RE = re.compile(
-    r"\b(?:product|program|project) manager\b|\bproduct owner\b"
-    r"|\bsolutions specialist\b",
+    r"\b(?:product|program|project) managers?\b|\bproduct owners?\b"
+    r"|\bsolutions specialists?\b|\btechnical writers?\b"
+    r"|\bservice delivery managers?\b",
     re.IGNORECASE,
 )
 
@@ -244,13 +246,32 @@ _NOT_SOFTWARE_ENGINEERING_RE = re.compile(
     re.IGNORECASE,
 )
 
-_KEYWORD_VETOES: list[tuple[re.Pattern[str], frozenset[str]]] = [
-    (_NOT_AN_ENGINEERING_ROLE_RE, _TEAM_KEYWORDS),
-    (_NOT_A_QUANT_TRADER_RE, _TRADER_KEYWORDS),
-    (_HARDWARE_RE, frozenset({"product engineer"})),
-    (_NOT_A_SOFTWARE_DEVELOPER_RE, frozenset({"developer"})),
-    (_NOT_SOFTWARE_ENGINEERING_RE, frozenset({"engineering manager"})),
-]
+def _keyword_vetoes(
+    team_keywords: frozenset[str],
+) -> tuple[tuple[re.Pattern[str], frozenset[str]], ...]:
+    """Pair each veto pattern with the keywords it removes from a title."""
+    return (
+        (_NOT_AN_ENGINEERING_ROLE_RE, team_keywords),
+        (_NOT_A_QUANT_TRADER_RE, _TRADER_KEYWORDS),
+        (_HARDWARE_RE, frozenset({"product engineer"})),
+        (_NOT_A_SOFTWARE_DEVELOPER_RE, frozenset({"developer"})),
+        (_NOT_SOFTWARE_ENGINEERING_RE, frozenset({"engineering manager"})),
+    )
+
+
+# A provider's job family is the weakest signal, so it never makes a title
+# SWE/DE when the title says the job isn't software engineering: a veto
+# removed one of its keywords ("Developer Advocate", "Sales Engineering
+# Manager", "Hardware Product Engineer"), it names a non-engineering role
+# ("Product Owner, Payments") or a customer-facing engineering team
+# ("Solutions Engineering Lead"), or it names a customer-facing engineer,
+# a user researcher, a designer or a writer.
+_NOT_A_SOFTWARE_ROLE_RE = re.compile(
+    r"\b(?:support|solutions?|sales|pre-?sales|field|customer|partner)"
+    r" engineers?\b"
+    r"|\b(?:ux|user experience|user) research|\bdesigners?\b|\bwriters?\b",
+    re.IGNORECASE,
+)
 
 # Generic senior titles name no specialism, so they count only after every
 # category's keywords: "Distinguished Engineer, Core DevOps" and "Staff
@@ -310,12 +331,15 @@ class _SourceRules:
 def _source_rules(
     extra_keywords: dict[str, tuple[str, ...]] | None = None,
     *,
+    team_keywords: frozenset[str] = frozenset(),
     noise: re.Pattern[str] | None = None,
     swe_department: str | None = None,
 ) -> _SourceRules:
     """Merge a provider's own keywords into the shared rules, built once.
 
-    Each extra keyword joins its category in CATEGORIES order.
+    Each extra keyword joins its category in CATEGORIES order. Extra
+    keywords that can name a team rather than the job go in `team_keywords`
+    too, so a product owner's or writer's title doesn't match on them.
     """
     extra_keywords = extra_keywords or {}
     unknown = set(extra_keywords) - {category for category, _keywords in CATEGORIES}
@@ -326,7 +350,7 @@ def _source_rules(
             (category, (*keywords, *extra_keywords.get(category, ())))
             for category, keywords in CATEGORIES
         ),
-        keyword_vetoes=tuple(_KEYWORD_VETOES),
+        keyword_vetoes=_keyword_vetoes(_TEAM_KEYWORDS | team_keywords),
         noise=noise,
         swe_department=swe_department,
     )
@@ -373,21 +397,29 @@ _AMAZON_RULES = _source_rules(
             "sys dev engineer",
         ),
     },
+    # The bare phrases also name teams ("Product Owner, Software Development
+    # Tools"), and "SDM" also abbreviates Service Delivery Manager.
+    team_keywords=frozenset(
+        {"software dev", "software development", "software devevelopment", "sdm"}
+    ),
     # Amazon noise: every data-centre role, software ones included;
     # Infrastructure Reliability & Quality (IRQ) hardware-reliability roles;
     # QA and SDET roles; technicians; ProServe delivery consultants; physical
     # security; and program, project and product managers. Data-centre team
     # codes are matched case-sensitively and only as seen on data-centre
-    # titles: "DCSX" (Devices Sales & Customer Experience) is not one.
+    # titles: "DCSX" (Devices Sales & Customer Experience) is not one, and
+    # "DC" after "Washington" is the city.
     noise=re.compile(
-        r"\bdata ?cent(?:er|re)s?\b|\bdatacent(?:er|re)s?\b"
-        r"|(?-i:\b(?:Inter)?DC(?:C|CD|E|EO|LC|NE|O|OSE|PD)?\b|\bDRES\b)"
+        r"\bdata[ -]?cent(?:er|re)s?\b"
+        r"|(?<!washington )(?<!washington, )(?<!washington,)"
+        r"(?-i:\b(?:Inter)?DC(?:C|CD|E|EO|LC|NE|O|OSE|PD)?\b)"
+        r"|(?-i:\bDRES\b)"
         r"|\binfrastructure reliability (?:&|and) quality\b|\bIRQ\b"
-        r"|\bhardware reliability\b|\btechnician\b"
-        r"|\bSDET\b|\bengineers? in test\b|\bquality assurance\b|\bQAE\b"
-        r"|\bquality engineer|\btest engineer|\btester\b|\bsoftware quality\b"
-        r"|\bdelivery consultant\b|\bphysical security\b"
-        r"|\b(?:program|project|product) manag(?:er|ement)\b|\bTPM\b",
+        r"|\bhardware reliability\b|\btechnicians?\b"
+        r"|\bSDETs?\b|\bengineers? in test\b|\bquality assurance\b|\bQAEs?\b"
+        r"|\bquality engineer|\btest engineer|\btesters?\b|\bsoftware quality\b"
+        r"|\bdelivery consultants?\b|\bphysical security\b"
+        r"|\b(?:program|project|product) manag(?:ers?|ement)\b|\bTPMs?\b",
         re.IGNORECASE,
     ),
     # Amazon files every posting under a job family (carried in
@@ -395,7 +427,8 @@ _AMAZON_RULES = _source_rules(
     # Titles there often name neither "software" nor a keyword
     # ("Kernel/Hypervisor Engineer", "Application Builder", "Tech Lead Eng"),
     # so a posting filed under that family is SWE/DE once the noise rules
-    # and every title keyword have had their say.
+    # and every title keyword have had their say, unless its title names a
+    # job that isn't software engineering (see _NOT_A_SOFTWARE_ROLE_RE).
     swe_department="Software Development",
 )
 
@@ -439,6 +472,13 @@ def classify_job(job: Job) -> str | None:
         and not _NOT_DATA_ANALYTICS_RE.search(text)
     ):
         return "DA/BI"
-    if rules.swe_department is not None and job.department == rules.swe_department:
+    if (
+        rules.swe_department is not None
+        and job.department == rules.swe_department
+        and not any(contains_keyword(text, keyword) for keyword in skipped)
+        and not _NOT_AN_ENGINEERING_ROLE_RE.search(text)
+        and not _NOT_SOFTWARE_ENGINEERING_RE.search(text)
+        and not _NOT_A_SOFTWARE_ROLE_RE.search(text)
+    ):
         return "SWE/DE"
     return None
