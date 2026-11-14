@@ -83,7 +83,7 @@ firm = "Example"
 company_type = "Fintech"
 ```
 
-Take the token from the firm's real careers site. A firm in two files must use the same spelling and `company_type`. Workday tokens look like `"<tenant>.<wdN>/<site>"` and accept `location_scope = "Singapore"` to keep matching offices. Amazon tokens are amazon.jobs category slugs (`"software-development"`), all under the firm `Amazon`. A category the site doesn't know returns no postings and fails the board, and one with 10,000 or more postings fails as incomplete, because the endpoint stops there. Eightfold, Workday and Amazon endpoints are undocumented; validate each tenant or category first.
+Take the token from the firm's real careers site. A firm in two files must use the same spelling and `company_type`. Workday tokens look like `"<tenant>.<wdN>/<site>"` and accept `location_scope = "Singapore"` to keep matching offices. Amazon tokens are amazon.jobs category slugs (`"software-development"`), all under the firm `Amazon`. A slug the site doesn't recognise fails the board; a recognised category may be empty. One with 10,000 or more postings fails on its first page, because the endpoint stops there. Eightfold, Workday and Amazon endpoints are undocumented; validate each tenant or category first.
 
 ```bash
 uv run jobscraper-validate-boards

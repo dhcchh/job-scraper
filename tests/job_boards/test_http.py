@@ -510,3 +510,14 @@ def test_paginate_still_rejects_a_missing_id_without_a_placeholder_rule(monkeypa
             cursor_param="offset", page_size_param="limit", page_size=2,
             total_key="total", items_key="jobPostings",
         )
+
+
+@pytest.mark.parametrize("overlap", [0, -1, 4, 5])
+def test_paginate_with_overlap_rejects_an_overlap_that_cant_advance(overlap):
+    # A page must repeat at least one item and still move the cursor forward.
+    with pytest.raises(ValueError, match="overlap"):
+        _http.paginate_with_overlap(
+            "test", "board", "https://x", cursor_param="offset",
+            page_size_param="limit", page_size=4, overlap=overlap,
+            total_key="total", items_key="items",
+        )

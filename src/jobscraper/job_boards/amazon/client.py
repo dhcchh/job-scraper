@@ -7,6 +7,7 @@ endpoint. Each board token is one Amazon job category slug (for example
 """
 
 import datetime
+import functools
 import json
 import logging
 import urllib.parse
@@ -15,7 +16,7 @@ from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.enrichment.classify_region import names_a_country
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations, normalize_office
-from jobscraper.job_boards._http import IncompleteBoardResponse, paginate_with_retries
+from jobscraper.job_boards._http import IncompleteBoardResponse, paginate_with_overlap
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, strip_html
 
 logger = logging.getLogger(__name__)
@@ -27,11 +28,14 @@ _SEARCH_URL = f"{_BASE_URL}/en/search.json"
 # jobs (checked 2026-11-08).
 _PAGE_SIZE = 100
 
+# Postings are sorted newest first, so one added during a fetch shifts every
+# later page, and one closed shifts the pages after it. Each page repeats
+# this many of the previous page's postings to stitch across such a shift.
+_PAGE_OVERLAP = 10
+
 # The endpoint reports at most this many hits and returns no jobs at or past
 # this offset, so a category this large cannot be fetched completely.
 _HIT_CAP = 10_000
-
-_WORKERS = 2
 
 
 def fetch_amazon_jobs(
@@ -46,32 +50,66 @@ def fetch_amazon_jobs(
         scraped_date = datetime.date.today()
 
     query = urllib.parse.urlencode({"category[]": category, "sort": "recent"})
-    raw_jobs = paginate_with_retries(
+    raw_jobs = paginate_with_overlap(
         "amazon",
         category,
         f"{_SEARCH_URL}?{query}",
         cursor_param="offset",
         page_size_param="result_limit",
         page_size=_PAGE_SIZE,
+        overlap=_PAGE_OVERLAP,
         total_key="hits",
         items_key="jobs",
         id_key="id_icims",
-        workers=_WORKERS,
+        check_first_page=functools.partial(_check_first_page, category=category),
     )
-    # An unknown or renamed category slug returns zero hits, not an error.
     if not raw_jobs:
-        raise IncompleteBoardResponse(
-            f"amazon[{category}]: no postings; check that the category slug exists"
-        )
-    if len(raw_jobs) >= _HIT_CAP:
-        raise IncompleteBoardResponse(
-            f"amazon[{category}]: {len(raw_jobs)} postings reach the endpoint's "
-            f"{_HIT_CAP}-result cap, so the snapshot may be incomplete"
-        )
+        logger.warning("amazon[%s]: the category lists no postings", category)
 
     jobs = [_to_job(raw, firm, company_type, scraped_date) for raw in raw_jobs]
     logger.info("amazon[%s]: fetched %d jobs", category, len(jobs))
     return jobs
+
+
+def _check_first_page(payload: dict, *, category: str) -> None:
+    """Fail before paging if the category can't be fetched completely.
+
+    An empty result is a valid snapshot only for a slug the endpoint knows:
+    an unknown or renamed slug also returns zero hits, not an error, and
+    would otherwise look like every posting in it closed.
+    """
+    hits = payload["hits"]  # an int; the paginator validated it
+    if hits >= _HIT_CAP:
+        raise IncompleteBoardResponse(
+            f"amazon[{category}]: {hits} postings reach the endpoint's "
+            f"{_HIT_CAP}-result cap, so the category can't be fetched completely"
+        )
+    if hits == 0 and not _is_known_category(payload, category):
+        raise IncompleteBoardResponse(
+            f"amazon[{category}]: no postings and the endpoint doesn't "
+            "recognise the category slug"
+        )
+
+
+def _is_known_category(payload: dict, category: str) -> bool:
+    """Whether the endpoint recognised the category slug.
+
+    The response echoes the search it ran as a JSON string, with a known
+    slug replaced by the category's name ("research-science" becomes
+    "Research Science"); an unknown slug is echoed unchanged (checked
+    2026-11-14). An echo that can't be read counts as unknown.
+    """
+    try:
+        request = json.loads(payload["job_posting_search_request"])
+        names = [
+            value["name"]
+            for facet in request["jobPostingSearchRequest"]["filterFacets"]
+            if facet["name"] == "category"
+            for value in facet["values"]
+        ]
+    except (KeyError, TypeError, ValueError):
+        return False
+    return bool(names) and category not in names
 
 
 def _to_job(
@@ -106,9 +144,9 @@ def _url(raw: dict, job_id: str) -> str:
     return f"{_BASE_URL}/en/jobs/{job_id}"
 
 
-def _posted_date(value: str | None) -> str:
+def _posted_date(value: object) -> str:
     """Convert "November  6, 2026" (note the padded day) to an ISO date."""
-    if not value:
+    if not value or not isinstance(value, str):
         return ""
     try:
         return datetime.datetime.strptime(" ".join(value.split()), "%B %d, %Y").date().isoformat()
@@ -135,17 +173,25 @@ def _location(raw: dict, job_id: str) -> str:
 
 
 def _location_entries(raw: dict, job_id: str) -> list[dict]:
-    """Decode `locations`, a list of JSON-encoded objects."""
+    """Decode `locations`, a list of JSON-encoded objects.
+
+    A malformed entry is skipped rather than failing the category: an office
+    isn't part of a posting's identity, and `_location` falls back to the
+    top-level city and country when no entry is usable.
+    """
+    items = raw.get("locations") or []
+    if not isinstance(items, list):
+        logger.warning("amazon job %s: skipping malformed locations", job_id)
+        return []
     entries = []
-    for item in raw.get("locations") or []:
+    for item in items:
         try:
             entry = json.loads(item) if isinstance(item, str) else item
-        except json.JSONDecodeError as exc:
-            raise IncompleteBoardResponse(
-                f"amazon job {job_id}: malformed location entry"
-            ) from exc
+        except json.JSONDecodeError:
+            entry = None
         if not isinstance(entry, dict):
-            raise IncompleteBoardResponse(f"amazon job {job_id}: malformed location entry")
+            logger.warning("amazon job %s: skipping a malformed location entry", job_id)
+            continue
         entries.append(entry)
     return entries
 

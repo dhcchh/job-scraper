@@ -271,6 +271,106 @@ def _paginate_in_parallel(
     return items if len(items) == total else None
 
 
+def paginate_with_overlap(
+    source: str,
+    identifier: str,
+    url: str,
+    *,
+    cursor_param: str,
+    page_size_param: str,
+    page_size: int,
+    overlap: int,
+    total_key: str,
+    items_key: str,
+    id_key: str = "id",
+    check_first_page: Callable[[dict], None] | None = None,
+) -> list[dict]:
+    """Fetch every page of a listing that may change while it is paged.
+
+    Pages are fetched one at a time, each starting `overlap` items before
+    the previous one ended. A posting added or removed ahead of the cursor
+    shifts every later page, so each page continues after the previous
+    page's last item, found again in the overlap, instead of at a fixed
+    offset: no posting listed throughout the fetch is skipped or repeated.
+    If that item isn't on the page (a shift toward the start of `overlap`
+    items or more), or an item repeats, the board is fetched once more and
+    then fails.
+
+    `check_first_page` sees the first response before any other page is
+    requested, to reject a listing that can't be fetched completely.
+    """
+    if not 0 < overlap < page_size:
+        raise ValueError("overlap must be positive and smaller than a page")
+
+    def fetch_page(cursor: int) -> dict:
+        response = get_with_retries(
+            source, identifier, url,
+            params={cursor_param: cursor, page_size_param: page_size},
+        )
+        return response.json()
+
+    for attempt in range(2):
+        try:
+            return _paginate_overlapping(
+                fetch_page, page_size, overlap, total_key, items_key, id_key,
+                check_first_page,
+            )
+        except IncompleteBoardResponse as exc:
+            if attempt:
+                raise
+            logger.warning(
+                "%s[%s]: incomplete page fetch (%s), retrying the whole "
+                "board once",
+                source,
+                identifier,
+                exc,
+            )
+    raise AssertionError("unreachable")
+
+
+def _paginate_overlapping(
+    fetch_page: Callable[[int], dict], page_size: int, overlap: int,
+    total_key: str, items_key: str, id_key: str,
+    check_first_page: Callable[[dict], None] | None,
+) -> list[dict]:
+    items: list[dict] = []
+    cursor = 0
+    while True:
+        payload = fetch_page(cursor)
+        total = _page_total(payload, total_key)
+        if cursor == 0 and check_first_page is not None:
+            check_first_page(payload)
+        page = require_job_list(
+            payload, "pagination", str(cursor), key=items_key, id_key=id_key
+        )
+        end = cursor + len(page)
+        if end > total:
+            raise IncompleteBoardResponse(
+                f"page at offset {cursor} ends at {end}, past its total {total}"
+            )
+        if items:
+            anchor = normalize_job_id(items[-1][id_key])
+            page_ids = [normalize_job_id(item[id_key]) for item in page]
+            if anchor not in page_ids:
+                raise IncompleteBoardResponse(
+                    f"listing shifted by {overlap} or more items before "
+                    f"offset {cursor}"
+                )
+            items.extend(page[page_ids.index(anchor) + 1:])
+        else:
+            items.extend(page)
+        if end == total:
+            break
+        if len(page) < page_size:
+            raise IncompleteBoardResponse(
+                f"short page at offset {cursor}: {len(page)} item(s), "
+                f"total {total}"
+            )
+        cursor = end - overlap
+    _validate_ids(items, id_key)
+    return items
+
+
 def _retry_after(exc: Exception) -> float | None:
     """Read a 429 response's Retry-After seconds, capped; ignore HTTP dates."""
     response = getattr(exc, "response", None)

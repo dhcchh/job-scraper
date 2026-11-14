@@ -74,8 +74,23 @@ _INDIA_JOB = {
 }
 
 
-def _page(jobs, hits=None):
-    return {"error": None, "hits": len(jobs) if hits is None else hits, "jobs": jobs}
+def _search_request(category_name):
+    # The endpoint echoes its search as a JSON string; a known slug is
+    # replaced by the category's name, an unknown one echoed unchanged.
+    return json.dumps({"jobPostingSearchRequest": {
+        "query": None,
+        "filterFacets": [{"name": "category", "values": [{"name": category_name}]}],
+        "sort": {"sortOrder": "DESCENDING", "sortType": "CREATED_DATE"},
+    }})
+
+
+def _page(jobs, hits=None, category_name="Software Development"):
+    return {
+        "error": None,
+        "hits": len(jobs) if hits is None else hits,
+        "jobs": jobs,
+        "job_posting_search_request": _search_request(category_name),
+    }
 
 
 class _FakeResponse:
@@ -96,6 +111,36 @@ def _serve(monkeypatch, pages_by_offset, calls=None):
         return _FakeResponse(pages_by_offset[params["offset"]])
 
     monkeypatch.setattr(_http._session, "get", fake_get)
+
+
+class _Listing:
+    """A fake search endpoint paging a listing that can change between calls."""
+
+    def __init__(self, monkeypatch, ids, after_call=None):
+        self.jobs = [dict(_SEATTLE_JOB, id_icims=str(job_id)) for job_id in ids]
+        self.offsets = []
+        self._after_call = after_call
+        monkeypatch.setattr(_http._session, "get", self._get)
+
+    def _get(self, url, params=None, timeout=None):
+        offset, limit = params["offset"], params["result_limit"]
+        self.offsets.append(offset)
+        payload = _page(self.jobs[offset:offset + limit], hits=len(self.jobs))
+        if self._after_call is not None:
+            self._after_call(self)
+        return _FakeResponse(payload)
+
+    def remove(self, *ids):
+        self.jobs = [job for job in self.jobs if job["id_icims"] not in map(str, ids)]
+
+
+def _small_pages(monkeypatch, size=4, overlap=2):
+    monkeypatch.setattr(client, "_PAGE_SIZE", size)
+    monkeypatch.setattr(client, "_PAGE_OVERLAP", overlap)
+
+
+def _ids(jobs):
+    return [job.job_id for job in jobs]
 
 
 def _fetch(category="software-development", firm="Amazon"):
@@ -145,39 +190,146 @@ def test_fetch_amazon_jobs_parses_response(monkeypatch):
     assert is_excluded(india.location)
 
 
-def test_fetch_amazon_jobs_pages_by_offset_until_hits(monkeypatch):
-    jobs = [dict(_SEATTLE_JOB, id_icims=str(n)) for n in range(250)]
-    pages = {offset: _page(jobs[offset:offset + 100], hits=250) for offset in (0, 100, 200)}
-    calls = []
-    _serve(monkeypatch, pages, calls)
+def test_fetch_amazon_jobs_pages_with_overlapping_offsets_until_hits(monkeypatch):
+    _small_pages(monkeypatch)
+    listing = _Listing(monkeypatch, range(10))
 
     fetched = _fetch()
 
-    assert [job.job_id for job in fetched] == [str(n) for n in range(250)]
-    assert sorted(params["offset"] for _url, params in calls) == [0, 100, 200]
+    assert _ids(fetched) == [str(n) for n in range(10)]
+    # Each page starts two postings before the previous one ended.
+    assert listing.offsets == [0, 2, 4, 6]
 
 
-def test_fetch_amazon_jobs_rejects_zero_hits(monkeypatch):
-    # An unknown or renamed category slug returns zero hits, not an error;
-    # an empty snapshot would otherwise look like every posting closed.
-    _serve(monkeypatch, {0: _page([])})
+def test_fetch_amazon_jobs_uses_the_real_page_size_and_overlap(monkeypatch):
+    listing = _Listing(monkeypatch, range(250))
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="no postings"):
-        _fetch("applied-science")
+    assert _ids(_fetch()) == [str(n) for n in range(250)]
+    assert listing.offsets == [0, 90, 180]
 
 
-def test_fetch_amazon_jobs_rejects_a_category_at_the_hit_cap(monkeypatch):
-    monkeypatch.setattr(client, "_HIT_CAP", 2)
-    _serve(monkeypatch, {0: _page([_SINGAPORE_JOB, _SEATTLE_JOB])})
+def test_fetch_amazon_jobs_stitches_across_a_posting_added_mid_fetch(monkeypatch):
+    # A new posting at the top shifts every later page down by one; with
+    # fixed offsets "3" would repeat and the total would change.
+    _small_pages(monkeypatch)
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="cap"):
+    def add_once(listing):
+        if len(listing.offsets) == 1:
+            listing.jobs.insert(0, dict(_SEATTLE_JOB, id_icims="new"))
+
+    _Listing(monkeypatch, range(10), add_once)
+
+    assert _ids(_fetch()) == [str(n) for n in range(10)]
+
+
+@pytest.mark.parametrize("closed, expected", [
+    # Already fetched: kept in this snapshot, pruned on the next run.
+    ("1", [str(n) for n in range(10)]),
+    # Not fetched yet: absent, as it should be.
+    ("5", [str(n) for n in range(10) if n != 5]),
+])
+def test_fetch_amazon_jobs_stitches_across_a_posting_closed_mid_fetch(
+    monkeypatch, closed, expected
+):
+    # A closed posting ahead of the cursor shifts later pages up by one;
+    # with fixed offsets a still-open posting would be skipped.
+    _small_pages(monkeypatch)
+
+    def close_once(listing):
+        if len(listing.offsets) == 1:
+            listing.remove(closed)
+
+    _Listing(monkeypatch, range(10), close_once)
+
+    assert _ids(_fetch()) == expected
+
+
+def test_fetch_amazon_jobs_retries_a_shift_larger_than_the_overlap(monkeypatch):
+    _small_pages(monkeypatch)
+
+    def close_two_once(listing):
+        if len(listing.offsets) == 1:
+            listing.remove(0, 1)
+
+    listing = _Listing(monkeypatch, range(10), close_two_once)
+
+    assert _ids(_fetch()) == [str(n) for n in range(2, 10)]
+    assert listing.offsets[:3] == [0, 2, 0]  # the second page lost "3"
+
+
+def test_fetch_amazon_jobs_fails_when_the_listing_keeps_shifting(monkeypatch):
+    _small_pages(monkeypatch)
+
+    def close_the_top_two(listing):
+        listing.jobs = listing.jobs[2:]
+
+    _Listing(monkeypatch, range(20), close_the_top_two)
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="shifted"):
         _fetch()
 
 
-def test_fetch_amazon_jobs_rejects_an_empty_page_before_hits(monkeypatch):
-    _serve(monkeypatch, {0: _page([_SINGAPORE_JOB], hits=3), 1: _page([], hits=3), 2: _page([], hits=3)})
+def test_fetch_amazon_jobs_rejects_a_reordered_overlap(monkeypatch):
+    # "b" moves behind the anchor between pages, so it would be seen twice.
+    _small_pages(monkeypatch)
+    a, b, c, d, e = (dict(_SEATTLE_JOB, id_icims=job_id) for job_id in "abcde")
+    _serve(monkeypatch, {0: _page([a, b, c, d], hits=6), 2: _page([c, d, b, e], hits=6)})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="empty page"):
+    with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
+        _fetch()
+
+
+def test_fetch_amazon_jobs_accepts_a_known_category_with_no_postings(monkeypatch):
+    _serve(monkeypatch, {0: _page([], category_name="Research Science")})
+
+    assert _fetch("research-science") == []
+
+
+@pytest.mark.parametrize("payload", [
+    # An unknown or renamed slug returns zero hits, not an error, and is
+    # echoed unchanged; an empty snapshot would look like every posting closed.
+    _page([], category_name="applied-sciencex"),
+    {"error": None, "hits": 0, "jobs": []},
+    {"error": None, "hits": 0, "jobs": [], "job_posting_search_request": "{not json"},
+    {"error": None, "hits": 0, "jobs": [], "job_posting_search_request": "{}"},
+])
+def test_fetch_amazon_jobs_rejects_an_unrecognised_empty_category(monkeypatch, payload):
+    _serve(monkeypatch, {0: payload})
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="recognise"):
+        _fetch("applied-sciencex")
+
+
+def test_fetch_amazon_jobs_rejects_a_category_at_the_hit_cap_before_paging(monkeypatch):
+    monkeypatch.setattr(client, "_HIT_CAP", 500)
+    calls = []
+    _serve(monkeypatch, {0: _page([_SINGAPORE_JOB], hits=500)}, calls)
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="cap"):
+        _fetch()
+    assert {params["offset"] for _url, params in calls} == {0}
+
+
+def test_fetch_amazon_jobs_rejects_a_short_page_before_hits(monkeypatch):
+    _serve(monkeypatch, {0: _page([_SINGAPORE_JOB], hits=3)})
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="short page"):
+        _fetch()
+
+
+def test_fetch_amazon_jobs_rejects_a_page_longer_than_hits(monkeypatch):
+    _serve(monkeypatch, {0: _page([_SINGAPORE_JOB, _SEATTLE_JOB], hits=1)})
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="past its total"):
+        _fetch()
+
+
+def test_fetch_amazon_jobs_rejects_an_empty_later_page(monkeypatch):
+    _small_pages(monkeypatch)
+    first = [dict(_SEATTLE_JOB, id_icims=str(n)) for n in range(4)]
+    _serve(monkeypatch, {0: _page(first, hits=6), 2: _page([], hits=6)})
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="shifted"):
         _fetch()
 
 
@@ -197,23 +349,27 @@ def test_fetch_amazon_jobs_rejects_a_job_missing_id(monkeypatch):
         _fetch()
 
 
-def test_fetch_amazon_jobs_rejects_a_duplicate_id_across_pages(monkeypatch):
-    pages = {
-        0: _page([_SINGAPORE_JOB], hits=2),
-        1: _page([_SINGAPORE_JOB], hits=2),
-    }
-    _serve(monkeypatch, pages)
+def test_fetch_amazon_jobs_rejects_a_duplicate_id_on_a_page(monkeypatch):
+    _serve(monkeypatch, {0: _page([_SINGAPORE_JOB, _SINGAPORE_JOB])})
 
     with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
         _fetch()
 
 
-def test_fetch_amazon_jobs_rejects_a_malformed_location_entry(monkeypatch):
-    job = dict(_SEATTLE_JOB, locations=["{not json"])
+@pytest.mark.parametrize("locations, expected", [
+    # The usable entry wins; the malformed one is skipped.
+    (["{not json", _HYDERABAD], "Hyderabad, India"),
+    (["[1, 2]", _HYDERABAD], "Hyderabad, India"),
+    # With no usable entry, the top-level city and country stand in.
+    (["{not json"], "Seattle, United States"),
+    ("Seattle", "Seattle, United States"),
+])
+def test_fetch_amazon_jobs_skips_a_malformed_location_entry(monkeypatch, locations, expected):
+    # An office isn't part of a posting's identity, so it can't fail the board.
+    job = dict(_SEATTLE_JOB, locations=locations)
     _serve(monkeypatch, {0: _page([job])})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="malformed location"):
-        _fetch()
+    assert [job.location for job in _fetch()] == [expected]
 
 
 def test_fetch_amazon_jobs_raises_on_http_error(monkeypatch):
@@ -280,6 +436,8 @@ def test_url_falls_back_to_the_job_id_without_a_path():
     assert client._url({}, "10584792") == "https://www.amazon.jobs/en/jobs/10584792"
 
 
-@pytest.mark.parametrize("value", [None, "", "18 days", "2026-11-06"])
+@pytest.mark.parametrize("value", [
+    None, "", "18 days", "2026-11-06", 1762387200, ["November 6, 2026"], {"date": "x"},
+])
 def test_posted_date_degrades_to_empty(value):
     assert client._posted_date(value) == ""
