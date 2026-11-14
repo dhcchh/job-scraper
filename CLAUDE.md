@@ -134,6 +134,9 @@ live board counts in documentation. Add new provider fixtures with actual
 response fields and record API limitations precisely, with official sources
 where available. There is no configured formatter or linter.
 
+When writing documentation, don't write one long paragraph, especially when
+listing items or features. Use bullets, or split the text over several lines.
+
 Remaining enhancements: numeric/level-based seniority (such as Engineer II),
 a lock shared by local and Actions writers, and integrations in the README
 backlog. These are outside the current implementation.
