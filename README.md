@@ -2,6 +2,7 @@
 
 Collects open postings from company career boards into a Google Sheet, filed by role and region, with optional Telegram alerts. The sheet is its only memory.
 Each run: fetch → validate → classify → append/prune → notify. Decisions, failures and conflicts are in [blog.md](blog.md).
+Job boards: Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, Recruitee and Amazon (amazon.jobs). Firms and tokens live in [`company_toml/`](company_toml/).
 Citadel's SG/HK integration is disabled: [docs/citadel.md](docs/citadel.md).
 
 ## Setup
