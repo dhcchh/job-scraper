@@ -2,8 +2,19 @@
 
 Collects open postings from company career boards into a Google Sheet, filed by role and region, with optional Telegram alerts. The sheet is its only memory.
 Each run: fetch → validate → classify → append/prune → notify. Decisions, failures and conflicts are in [blog.md](blog.md).
-Job boards: Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, Recruitee and Amazon (amazon.jobs). Firms and tokens live in [`company_toml/`](company_toml/).
-Citadel's SG/HK integration is disabled: [docs/citadel.md](docs/citadel.md).
+
+Job boards:
+
+- Greenhouse
+- Lever
+- Ashby
+- SmartRecruiters
+- Eightfold
+- Workday
+- Recruitee
+- Amazon (amazon.jobs)
+
+Firms and tokens live in [`company_toml/`](company_toml/). Citadel's SG/HK integration is disabled: [docs/citadel.md](docs/citadel.md).
 
 ## Setup
 
@@ -114,7 +125,15 @@ The four sheet writers run `pytest` first and share the `sheet-write` concurrenc
 
 ## Backlog
 
-- Dedicated integrations: Gojek, Shopify, Zoom, Meta, Google, The Trade Desk, Apple, Atlassian. X runs through SmartRecruiters. Endpoint notes for Google and Apple: [docs/google-apple.md](docs/google-apple.md).
+- Dedicated integrations (X already runs through SmartRecruiters). Endpoint notes for Google and Apple: [docs/google-apple.md](docs/google-apple.md).
+  - Gojek
+  - Shopify
+  - Zoom
+  - Meta
+  - Google
+  - The Trade Desk
+  - Apple
+  - Atlassian
 - Citadel SG/HK browser access ([docs/citadel.md](docs/citadel.md)).
 - A lock shared by local and Actions writers; numeric seniority such as Engineer II.
 - A searchable, mobile-friendly site on the Hetzner server, replacing the sheet: sign-in, approved users, revocable access on pages and data, first-seen dates kept, no duplicate alerts. Needs a database, scheduling, HTTPS and backups.
