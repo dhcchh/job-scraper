@@ -18,6 +18,7 @@ from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
 from jobscraper.models import DATE_FIELDS, FIELDS, Job
 from jobscraper.sheets.backfill import (
     _config_lookup_tables,
+    _extract_url,
     _fetch_overrides,
     _recompute_row_values,
     _tab_rows_for_refresh,
@@ -33,21 +34,19 @@ logger = logging.getLogger(__name__)
 
 
 def _as_job(values: dict[str, str]) -> Job:
-    """Build the fields routing reads from a recomputed row."""
-    return Job(
-        board=values["board"],
-        job_id=values["job_id"],
-        title=values["title"],
-        department=values["department"],
-        location=values["location"],
-        url="",
-        updated_at="",
-        scraped_date=datetime.date.today(),
-        company_type=values["company_type"],
-        # Source-specific classifier rules (Amazon's) key off it, so routing
-        # without it disagrees with the daily scrape.
-        source=values["source"],
-    )
+    """Rebuild the job a recomputed row describes, from every column.
+
+    Routing then sees what the daily scrape's classifiers see, whichever
+    field a rule reads (Amazon's read `source` and `department`). Only the
+    scrape date, which no rule reads, is today's.
+    """
+    fields = {name: values[name] for name in FIELDS}
+    return Job(**{
+        **fields,
+        "url": _extract_url(fields["url"]),
+        "salary": fields["salary"] or None,
+        "scraped_date": datetime.date.today(),
+    })
 
 
 def _route(job: Job) -> str | None:

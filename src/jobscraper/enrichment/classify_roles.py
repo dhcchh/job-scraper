@@ -1,7 +1,9 @@
 """Classify jobs by title; unmatched jobs are treated as noise."""
 
+import dataclasses
 import re
 
+from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.enrichment._keywords import contains_keyword
 
 from jobscraper.models import Job
@@ -283,14 +285,62 @@ _NOT_TECHNICAL_RESEARCH_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Bare "analytics" is checked last too, so "Analytics Engineer" stays SWE/DE
+# and "Quantitative Analytics" stays DS/ML/Algos.
+_ANALYTICS_RE = re.compile(r"\banalytics\b", re.IGNORECASE)
+_NOT_DATA_ANALYTICS_RE = re.compile(
+    r"\bfinance\b|\bconsultant\b", re.IGNORECASE
+)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _SourceRules:
+    """The title rules for one provider's jobs, its own merged into the shared.
+
+    `noise` makes a whole title noise. `swe_department` names the department
+    whose otherwise unmatched postings are SWE/DE.
+    """
+
+    categories: tuple[tuple[str, tuple[str, ...]], ...]
+    keyword_vetoes: tuple[tuple[re.Pattern[str], frozenset[str]], ...]
+    noise: re.Pattern[str] | None = None
+    swe_department: str | None = None
+
+
+def _source_rules(
+    extra_keywords: dict[str, tuple[str, ...]] | None = None,
+    *,
+    noise: re.Pattern[str] | None = None,
+    swe_department: str | None = None,
+) -> _SourceRules:
+    """Merge a provider's own keywords into the shared rules, built once.
+
+    Each extra keyword joins its category in CATEGORIES order.
+    """
+    extra_keywords = extra_keywords or {}
+    unknown = set(extra_keywords) - {category for category, _keywords in CATEGORIES}
+    if unknown:
+        raise ValueError(f"unknown role categories: {sorted(unknown)}")
+    return _SourceRules(
+        categories=tuple(
+            (category, (*keywords, *extra_keywords.get(category, ())))
+            for category, keywords in CATEGORIES
+        ),
+        keyword_vetoes=tuple(_KEYWORD_VETOES),
+        noise=noise,
+        swe_department=swe_department,
+    )
+
+
+_SHARED_RULES = _source_rules()
+
 # Amazon titles roles in its own words ("Software Dev Engineer", "SDE II",
 # "SDM", "BIE", "System Development Engineer") and lists data-centre, QA and
 # consulting roles under the engineering categories it is fetched from.
 # These rules apply only to jobs from the Amazon provider, keyed by
 # `Job.source`, so every other firm keeps the shared rules above.
-# Each extra keyword joins its category in CATEGORIES order.
-_EXTRA_KEYWORDS_BY_SOURCE: dict[str, dict[str, tuple[str, ...]]] = {
-    "Amazon": {
+_AMAZON_RULES = _source_rules(
+    {
         "DS/ML/Algos": ("applied science", "research science"),
         "DA/BI": ("bie", "business intel engineer"),
         "SWE/DE": (
@@ -323,16 +373,13 @@ _EXTRA_KEYWORDS_BY_SOURCE: dict[str, dict[str, tuple[str, ...]]] = {
             "sys dev engineer",
         ),
     },
-}
-
-# Amazon noise: every data-centre role, software ones included;
-# Infrastructure Reliability & Quality (IRQ) hardware-reliability roles; QA
-# and SDET roles; technicians; ProServe delivery consultants; physical
-# security; and program, project and product managers. Data-centre team
-# codes are matched case-sensitively and only as seen on data-centre titles:
-# "DCSX" (Devices Sales & Customer Experience) is not one.
-_NOISE_TITLE_RE_BY_SOURCE: dict[str, re.Pattern[str]] = {
-    "Amazon": re.compile(
+    # Amazon noise: every data-centre role, software ones included;
+    # Infrastructure Reliability & Quality (IRQ) hardware-reliability roles;
+    # QA and SDET roles; technicians; ProServe delivery consultants; physical
+    # security; and program, project and product managers. Data-centre team
+    # codes are matched case-sensitively and only as seen on data-centre
+    # titles: "DCSX" (Devices Sales & Customer Experience) is not one.
+    noise=re.compile(
         r"\bdata ?cent(?:er|re)s?\b|\bdatacent(?:er|re)s?\b"
         r"|(?-i:\b(?:Inter)?DC(?:C|CD|E|EO|LC|NE|O|OSE|PD)?\b|\bDRES\b)"
         r"|\binfrastructure reliability (?:&|and) quality\b|\bIRQ\b"
@@ -343,22 +390,18 @@ _NOISE_TITLE_RE_BY_SOURCE: dict[str, re.Pattern[str]] = {
         r"|\b(?:program|project|product) manag(?:er|ement)\b|\bTPM\b",
         re.IGNORECASE,
     ),
-}
-
-# Amazon files every posting under a job family (carried in `Job.department`),
-# and "Software Development" is its engineering one. Titles there often name
-# neither "software" nor a keyword ("Kernel/Hypervisor Engineer",
-# "Application Builder", "Tech Lead Eng"), so a posting filed under that family
-# is SWE/DE once the noise rules and every title keyword have had their say.
-# Keyed by `Job.source`, so no other firm's department is read this way.
-_SWE_DEPARTMENT_BY_SOURCE: dict[str, str] = {"Amazon": "Software Development"}
-
-# Bare "analytics" is checked last too, so "Analytics Engineer" stays SWE/DE
-# and "Quantitative Analytics" stays DS/ML/Algos.
-_ANALYTICS_RE = re.compile(r"\banalytics\b", re.IGNORECASE)
-_NOT_DATA_ANALYTICS_RE = re.compile(
-    r"\bfinance\b|\bconsultant\b", re.IGNORECASE
+    # Amazon files every posting under a job family (carried in
+    # `Job.department`), and "Software Development" is its engineering one.
+    # Titles there often name neither "software" nor a keyword
+    # ("Kernel/Hypervisor Engineer", "Application Builder", "Tech Lead Eng"),
+    # so a posting filed under that family is SWE/DE once the noise rules
+    # and every title keyword have had their say.
+    swe_department="Software Development",
 )
+
+_RULES_BY_SOURCE: dict[str, _SourceRules] = {
+    PROVIDER_LABELS["amazon"]: _AMAZON_RULES,
+}
 
 
 def classify_job(job: Job) -> str | None:
@@ -366,17 +409,16 @@ def classify_job(job: Job) -> str | None:
     text = " ".join(job.title.split())
     if _NOISE_TITLE_RE.search(text):
         return None
-    source_noise = _NOISE_TITLE_RE_BY_SOURCE.get(job.source)
-    if source_noise is not None and source_noise.search(text):
+    rules = _RULES_BY_SOURCE.get(job.source, _SHARED_RULES)
+    if rules.noise is not None and rules.noise.search(text):
         return None
     skipped = frozenset().union(
-        *(keywords for pattern, keywords in _KEYWORD_VETOES if pattern.search(text))
+        *(keywords for pattern, keywords in rules.keyword_vetoes if pattern.search(text))
     )
-    extra_keywords = _EXTRA_KEYWORDS_BY_SOURCE.get(job.source, {})
-    for category, keywords in CATEGORIES:
+    for category, keywords in rules.categories:
         if any(
             contains_keyword(text, keyword)
-            for keyword in (*keywords, *extra_keywords.get(category, ()))
+            for keyword in keywords
             if keyword not in skipped
         ):
             return category
@@ -397,7 +439,6 @@ def classify_job(job: Job) -> str | None:
         and not _NOT_DATA_ANALYTICS_RE.search(text)
     ):
         return "DA/BI"
-    swe_department = _SWE_DEPARTMENT_BY_SOURCE.get(job.source)
-    if swe_department is not None and job.department == swe_department:
+    if rules.swe_department is not None and job.department == rules.swe_department:
         return "SWE/DE"
     return None

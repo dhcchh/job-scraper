@@ -11,6 +11,7 @@ import json
 import logging
 import urllib.parse
 
+from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.enrichment.classify_region import names_a_country
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations, normalize_office
@@ -91,7 +92,7 @@ def _to_job(
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
         company_type=company_type,
-        source="Amazon",
+        source=PROVIDER_LABELS["amazon"],
         description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
         salary=None,
     )

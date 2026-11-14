@@ -3,6 +3,7 @@
 import datetime
 import logging
 
+from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
     normalize_office,
@@ -57,7 +58,7 @@ def _to_job(
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
         company_type=company_type,
-        source="Recruitee",
+        source=PROVIDER_LABELS["recruitee"],
         description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
         salary=None,
     )

@@ -6,17 +6,22 @@ from pathlib import Path
 from typing import NotRequired, TypedDict
 
 
-PROVIDERS: tuple[str, ...] = (
-    "greenhouse",
-    "lever",
-    "ashby",
-    "smartrecruiters",
-    "eightfold",
-    "workday",
-    "recruitee",
-    "citadel",
-    "amazon",
-)
+# Each provider's name in the sheet's source column. Clients stamp it on
+# every job and Full Refresh rewrites rows from it, and provider-specific
+# classifier rules are keyed by it, so all three read this one table.
+PROVIDER_LABELS: dict[str, str] = {
+    "greenhouse": "Greenhouse",
+    "lever": "Lever",
+    "ashby": "Ashby",
+    "smartrecruiters": "SmartRecruiters",
+    "eightfold": "Eightfold",
+    "workday": "Workday",
+    "recruitee": "Recruitee",
+    "citadel": "Citadel",
+    "amazon": "Amazon",
+}
+
+PROVIDERS: tuple[str, ...] = tuple(PROVIDER_LABELS)
 
 _PACKAGE_BOARD_DIR = Path(__file__).resolve().parent / "company_toml"
 DEFAULT_BOARD_DIR = (

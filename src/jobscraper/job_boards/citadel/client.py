@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations
 from jobscraper.job_boards._http import IncompleteBoardResponse
@@ -115,7 +116,7 @@ def _to_job(raw: Listing, firm: str, company_type: str, date: datetime.date) -> 
         board=firm, job_id=raw.job_id, title=raw.title, department="",
         location=normalize_locations(raw.offices), url=raw.url, updated_at="",
         scraped_date=date, seniority=classify_seniority(raw.title, ""),
-        company_type=company_type, source="Citadel",
+        company_type=company_type, source=PROVIDER_LABELS["citadel"],
     )
 
 

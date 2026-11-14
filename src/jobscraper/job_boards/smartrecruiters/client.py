@@ -3,6 +3,7 @@
 import datetime
 import logging
 
+from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.job_boards._http import paginate_with_retries
 from jobscraper.models import Job, normalize_job_id, normalize_date
 from jobscraper.enrichment.classify_seniority import classify_seniority
@@ -71,7 +72,7 @@ def _to_job(
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department),
         company_type=company_type,
-        source="SmartRecruiters",
+        source=PROVIDER_LABELS["smartrecruiters"],
         description="",
         salary=None,
     )

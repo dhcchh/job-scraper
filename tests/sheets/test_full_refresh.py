@@ -1,11 +1,12 @@
 """Tests for sheets.full_refresh using fake integrations."""
 
+import dataclasses
 import datetime
 import logging
 
 import pytest
 
-from jobscraper.models import FIELDS
+from jobscraper.models import FIELDS, Job
 from jobscraper.sheets import full_refresh
 
 
@@ -68,6 +69,11 @@ def _row(
         "salary": salary,
     }
     return [values[name] for name in FIELDS]
+
+
+def _values(**fields):
+    """A recomputed row as `_recompute_row_values` returns it."""
+    return dict(zip(FIELDS, _row(**fields)))
 
 
 def _empty_boards(monkeypatch):
@@ -133,29 +139,41 @@ def _all_tab_worksheets(overrides=None):
 
 
 def test_route_sends_a_normal_title_to_its_tab():
-    values = {
-        "board": "Acme",
-        "job_id": "1",
-        "title": "Software Engineer",
-        "department": "Eng",
-        "location": "Singapore",
-        "company_type": "",
-        "source": "",
-    }
+    values = _values(title="Software Engineer", location="Singapore")
     assert full_refresh._route(full_refresh._as_job(values)) == "SWE/DE - PAC"
+
+
+def test_as_job_carries_every_column_into_the_job():
+    # Any classifier rule may read any field, so none may be dropped here.
+    job = Job(
+        board="Amazon", job_id="7", title="SDE II", department="Software Development",
+        location="Seattle, United States", url="https://x/7", updated_at="2026-09-02",
+        scraped_date=datetime.date(2026, 9, 3), seniority="Mid", company_type="Consumer/Marketplace",
+        first_published="2026-09-01", source="Amazon", description="Builds things", salary="$1",
+    )
+    values = dict(zip(FIELDS, job.to_values()))
+
+    rebuilt = full_refresh._as_job(values)
+
+    assert rebuilt == dataclasses.replace(job, scraped_date=datetime.date.today())
+
+
+def test_as_job_requires_every_column():
+    values = _values()
+    del values["description"]
+    with pytest.raises(KeyError):
+        full_refresh._as_job(values)
 
 
 def test_route_uses_the_rows_company_type():
     # A bare research title is quant research only at a trading firm.
-    values = {
-        "board": "AQR",
-        "job_id": "1",
-        "title": "2027 Research Summer Analyst",
-        "department": "",
-        "location": "Greenwich, CT",
-        "company_type": "Prop Trading/Hedge Fund",
-        "source": "",
-    }
+    values = _values(
+        board="AQR",
+        title="2027 Research Summer Analyst",
+        department="",
+        location="Greenwich, CT",
+        company_type="Prop Trading/Hedge Fund",
+    )
     assert full_refresh._route(full_refresh._as_job(values)) == "QT/QR - RoW"
     fintech = {**values, "company_type": "Fintech"}
     assert full_refresh._route(full_refresh._as_job(fintech)) is None
@@ -176,15 +194,7 @@ def test_rewrite_requests_preserve_literal_text_and_url_formulas():
 
 
 def test_route_drops_a_recruiter_title():
-    values = {
-        "board": "Acme",
-        "job_id": "1",
-        "title": "Technical Recruiter",
-        "department": "People",
-        "location": "Singapore",
-        "company_type": "",
-        "source": "",
-    }
+    values = _values(title="Technical Recruiter", department="People", location="Singapore")
     assert full_refresh._route(full_refresh._as_job(values)) is None
 
 
@@ -468,15 +478,14 @@ def test_refresh_all_adds_untracked_open_postings_that_now_route(monkeypatch, ca
 
 
 def _amazon_values(title, department="Software Development", location="Seattle, United States"):
-    return {
-        "board": "Amazon",
-        "job_id": "1",
-        "title": title,
-        "department": department,
-        "location": location,
-        "company_type": "Consumer/Marketplace",
-        "source": "Amazon",
-    }
+    return _values(
+        board="Amazon",
+        title=title,
+        department=department,
+        location=location,
+        company_type="Consumer/Marketplace",
+        source="Amazon",
+    )
 
 
 def test_route_applies_amazon_title_keywords_to_a_rows_source():

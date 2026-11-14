@@ -3,6 +3,7 @@
 import datetime
 import logging
 
+from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.job_boards._http import get_with_retries, require_job_list
 from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date, strip_html
 from jobscraper.enrichment.classify_seniority import classify_seniority
@@ -73,7 +74,7 @@ def _to_job(
         scraped_date=scraped_date,
         seniority=classify_seniority(title, department, _employment_type(raw)),
         company_type=company_type,
-        source="Greenhouse",
+        source=PROVIDER_LABELS["greenhouse"],
         description=(
             strip_html(raw.get("content", ""))
             if firm in FIRMS_NEEDING_DESCRIPTION

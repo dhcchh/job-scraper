@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from requests.exceptions import HTTPError
 
+from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.enrichment.classify_roles import classify_job
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
@@ -241,7 +242,7 @@ def _to_job(
         scraped_date=scraped_date,
         seniority=classify_seniority(title, ""),
         company_type=company_type,
-        source="Workday",
+        source=PROVIDER_LABELS["workday"],
         description="",
         salary=None,
     )
