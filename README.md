@@ -63,7 +63,18 @@ Backfill also clears descriptions of firms not on the allowlist, and blanks sala
 
 ## Rules in brief
 
-- **Roles:** the first matching title keyword wins, in the order DS/ML/Algos, DA/BI, SWE/DE, QT/QR, SRE/DevOps. Fallbacks: generic senior engineering titles go to SWE/DE; bare "research" to QT/QR at `Prop Trading/Hedge Fund` firms and DS/ML/Algos at `AI Lab` firms; bare "analytics" to DA/BI. Recruiter, solutions-architect, legal-engineer, developer-relations, customer-facing engineering-lead and non-systematic trader titles are noise. A team-name keyword doesn't count on a product, program, project, technical-writer or service-delivery title ("Product Manager, Data Engineering"). Anything unmatched is noise, with one Amazon exception below. Amazon jobs alone get extra keywords for Amazon's own titles (SDE, SDM, Software Dev Engineer, Software Development, System Development Engineer, BIE, Applied Science, Research Science) and extra noise: every data-centre role, Infrastructure Reliability & Quality, QA and SDET, technicians, delivery consultants, physical security and program, project or product managers. An otherwise unmatched Amazon posting in the "Software Development" job family is SWE/DE, unless its title names a job that isn't software engineering: one of the noise titles above, a product owner, a customer-facing engineer, a user researcher, a designer or a writer. Seniority uses title and department, then Greenhouse's employment type.
+- **Roles:** the first matching title keyword wins, in this order: DS/ML/Algos, DA/BI, SWE/DE, QT/QR, SRE/DevOps. Anything unmatched is noise, except for the Amazon fallback below.
+  - Fallbacks:
+    - Generic senior engineering titles go to SWE/DE.
+    - Bare "research" goes to QT/QR at `Prop Trading/Hedge Fund` firms and to DS/ML/Algos at `AI Lab` firms.
+    - Bare "analytics" goes to DA/BI.
+  - Noise: recruiter, solutions-architect, legal-engineer, developer-relations, customer-facing engineering-lead and non-systematic trader titles.
+  - A team-name keyword doesn't count on a product, program, project, technical-writer or service-delivery title ("Product Manager, Data Engineering").
+  - Amazon only:
+    - Extra keywords for Amazon's own titles: SDE, SDM, Software Dev Engineer, Software Development, System Development Engineer, BIE, Applied Science, Research Science.
+    - Extra noise: every data-centre role, Infrastructure Reliability & Quality, QA and SDET, technicians, delivery consultants, physical security, and program, project or product managers.
+    - An otherwise unmatched posting in the "Software Development" job family is SWE/DE, unless its title names a job that isn't software engineering: one of the noise titles above, a product owner, a customer-facing engineer, a user researcher, a designer or a writer.
+- **Seniority:** title and department, then Greenhouse's employment type.
 - **Regions:** PAC is Singapore, Hong Kong, Australia, Japan, South Korea, China, Taiwan, New Zealand, Thailand, or a role listed for APAC or APJ; one PAC office is enough. A posting is excluded only if every office is in Vietnam, Malaysia, Indonesia, India, Armenia or Uruguay. All else is RoW.
 - **Locations:** each office is normalized separately and joined with ` | `, keeping provider country data. A label splits on `/`, `;` or ` or ` only when every part names a known place; free text is never comma-split. GovTech uses its location label (its offices name teams). Unresolved offices in new rows appear in the run summary.
 - **Dates:** `YYYY-MM-DD`; blank if the provider gives none. Workday's relative dates count back from one posting's exact start date, else the scrape date; "30+ days" stays blank unless a detail page gives a date.
