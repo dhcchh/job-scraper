@@ -1,15 +1,11 @@
 """Ashby Posting API client."""
 
 import datetime
-import logging
 
-from jobscraper.board_config import PROVIDER_LABELS
-from jobscraper.job_boards._http import get_with_retries, require_job_list
-from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations
-
-logger = logging.getLogger(__name__)
+from jobscraper.job_boards._http import get_with_retries, require_job_list
+from jobscraper.job_boards._jobs import build_job, jobs_from
+from jobscraper.models import Job, normalize_date
 
 BASE_URL = "https://api.ashbyhq.com/posting-api/job-board"
 
@@ -22,48 +18,31 @@ def fetch_ashby_jobs(
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch and normalize all open jobs for an Ashby board."""
-    if scraped_date is None:
-        scraped_date = datetime.date.today()
-
     url = f"{BASE_URL}/{board_slug}"
     response = get_with_retries(
         "ashby", board_slug, url, params={"includeCompensation": "true"}
     )
-
-    payload = response.json()
-    raw_jobs = require_job_list(payload, "ashby", board_slug, key="jobs")
-
-    jobs = []
-    for raw in raw_jobs:
-        jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    logger.info("ashby[%s]: fetched %d jobs", board_slug, len(jobs))
-
-    return jobs
+    raw_jobs = require_job_list(response.json(), "ashby", board_slug, key="jobs")
+    return jobs_from(
+        "ashby", board_slug, raw_jobs, _to_job, firm, company_type, scraped_date
+    )
 
 
 def _to_job(
     raw: dict, firm: str, company_type: str, scraped_date: datetime.date
 ) -> Job:
-    title = raw.get("title", "")
-    department = _department(raw)
-    return Job(
-        board=firm,
-        job_id=normalize_job_id(raw["id"]),
-        title=title,
-        department=department,
+    return build_job(
+        "ashby",
+        firm,
+        company_type,
+        scraped_date,
+        job_id=raw["id"],
+        title=raw.get("title", ""),
+        department=_department(raw),
         location=_location(raw),
         url=raw.get("jobUrl", ""),
-        updated_at="",
         first_published=normalize_date(raw.get("publishedAt", "")),
-        scraped_date=scraped_date,
-        seniority=classify_seniority(title, department),
-        company_type=company_type,
-        source=PROVIDER_LABELS["ashby"],
-        description=(
-            (raw.get("descriptionPlain") or "").strip()
-            if firm in FIRMS_NEEDING_DESCRIPTION
-            else ""
-        ),
+        description=lambda: (raw.get("descriptionPlain") or "").strip(),
         salary=_salary(raw),
     )
 

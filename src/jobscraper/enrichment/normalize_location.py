@@ -292,6 +292,24 @@ _CANONICAL_LOCATIONS: dict[str, str] = {
 
 _KNOWN_LOCATIONS = frozenset(_CANONICAL_LOCATIONS.values())
 
+# Decorations stripped from a label, in this order, before it is looked up.
+_CLEANUPS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (_OFFICE_SUFFIX_RE, ""),
+    (_LOCATION_SUFFIX_RE, ""),
+    (_OFFICE_CODE_SUFFIX_RE, ""),
+    (_WORK_MODE_WRAPPER_RE, r"\1"),
+    (_ISO_CODE_PREFIX_RE, ""),
+    (_ISO_CODE_SPACING_RE, r"\1-"),
+    (_REMOTE_PREFIX_RE, ""),
+    (_REMOTE_PREFIX_NO_DASH_RE, ""),
+    (_REMOTE_SUFFIX_RE, ""),
+    (_REMOTE_COMMA_SUFFIX_RE, ""),
+    (_COUNTRY_CODE_SUFFIX_RE, ""),
+    (_WORK_MODE_SUFFIX_RE, ""),
+    (_BUILDING_SUFFIX_RE, r"\1"),
+    (_DUPLICATE_NAME_RE, r"\1"),
+)
+
 
 def _alpha3_location(country: str, rest: str) -> str:
     """Normalize a location prefixed by an ISO alpha-3 country code."""
@@ -402,37 +420,27 @@ def _office_list_location(cleaned: str) -> str | None:
 
 def normalize_location(raw: str) -> str:
     """Return a canonical location or a cleaned, unchanged fallback."""
-    alpha3 = _ALPHA3_PREFIX_RE.match(raw.strip())
+    raw = raw.strip()
+    alpha3 = _ALPHA3_PREFIX_RE.match(raw)
     if alpha3 and alpha3.group(1) in _ALPHA3_COUNTRIES:
         return _alpha3_location(_ALPHA3_COUNTRIES[alpha3.group(1)], alpha3.group(2))
-    alpha3 = _ALPHA3_SUFFIX_RE.match(raw.strip())
+    alpha3 = _ALPHA3_SUFFIX_RE.match(raw)
     if alpha3 and alpha3.group(2) in _ALPHA3_COUNTRIES:
         return _alpha3_location(_ALPHA3_COUNTRIES[alpha3.group(2)], alpha3.group(1))
-    alpha3 = _ALPHA3_DOTTED_RE.match(raw.strip())
+    alpha3 = _ALPHA3_DOTTED_RE.match(raw)
     if alpha3 and alpha3.group(1) in _ALPHA3_COUNTRIES:
         return _alpha3_dotted_location(_ALPHA3_COUNTRIES[alpha3.group(1)], alpha3.group(2))
-    region_site = _REGION_SITE_RE.match(raw.strip())
+    region_site = _REGION_SITE_RE.match(raw)
     if region_site:
         location = _region_site_location(region_site.group(1))
         if location:
             return location
-    location = _country_prefix_location(raw.strip())
+    location = _country_prefix_location(raw)
     if location:
         return location
-    cleaned = _OFFICE_SUFFIX_RE.sub("", raw.strip()).strip()
-    cleaned = _LOCATION_SUFFIX_RE.sub("", cleaned).strip()
-    cleaned = _OFFICE_CODE_SUFFIX_RE.sub("", cleaned).strip()
-    cleaned = _WORK_MODE_WRAPPER_RE.sub(r"\1", cleaned).strip()
-    cleaned = _ISO_CODE_PREFIX_RE.sub("", cleaned).strip()
-    cleaned = _ISO_CODE_SPACING_RE.sub(r"\1-", cleaned).strip()
-    cleaned = _REMOTE_PREFIX_RE.sub("", cleaned).strip()
-    cleaned = _REMOTE_PREFIX_NO_DASH_RE.sub("", cleaned).strip()
-    cleaned = _REMOTE_SUFFIX_RE.sub("", cleaned).strip()
-    cleaned = _REMOTE_COMMA_SUFFIX_RE.sub("", cleaned).strip()
-    cleaned = _COUNTRY_CODE_SUFFIX_RE.sub("", cleaned).strip()
-    cleaned = _WORK_MODE_SUFFIX_RE.sub("", cleaned).strip()
-    cleaned = _BUILDING_SUFFIX_RE.sub(r"\1", cleaned).strip()
-    cleaned = _DUPLICATE_NAME_RE.sub(r"\1", cleaned).strip()
+    cleaned = raw
+    for pattern, replacement in _CLEANUPS:
+        cleaned = pattern.sub(replacement, cleaned).strip()
     return (
         _CANONICAL_LOCATIONS.get(cleaned.lower())
         or _office_list_location(cleaned)

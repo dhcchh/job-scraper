@@ -12,12 +12,11 @@ import json
 import logging
 import urllib.parse
 
-from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.enrichment.classify_region import names_a_country
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations, normalize_office
 from jobscraper.job_boards._http import IncompleteBoardResponse, paginate_with_overlap
-from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, strip_html
+from jobscraper.job_boards._jobs import build_job, html_sections, jobs_from
+from jobscraper.models import Job, normalize_job_id
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +36,9 @@ _PAGE_OVERLAP = 10
 # this offset, so a category this large cannot be fetched completely.
 _HIT_CAP = 10_000
 
+# The description and both qualification lists, shown as one description.
+_DESCRIPTION_FIELDS = ("description", "basic_qualifications", "preferred_qualifications")
+
 
 def fetch_amazon_jobs(
     category: str,
@@ -46,9 +48,6 @@ def fetch_amazon_jobs(
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch and normalize every open Amazon posting in one job category."""
-    if scraped_date is None:
-        scraped_date = datetime.date.today()
-
     query = urllib.parse.urlencode({"category[]": category, "sort": "recent"})
     raw_jobs = paginate_with_overlap(
         "amazon",
@@ -65,10 +64,9 @@ def fetch_amazon_jobs(
     )
     if not raw_jobs:
         logger.warning("amazon[%s]: the category lists no postings", category)
-
-    jobs = [_to_job(raw, firm, company_type, scraped_date) for raw in raw_jobs]
-    logger.info("amazon[%s]: fetched %d jobs", category, len(jobs))
-    return jobs
+    return jobs_from(
+        "amazon", category, raw_jobs, _to_job, firm, company_type, scraped_date
+    )
 
 
 def _check_first_page(payload: dict, *, category: str) -> None:
@@ -116,23 +114,18 @@ def _to_job(
     raw: dict, firm: str, company_type: str, scraped_date: datetime.date
 ) -> Job:
     job_id = normalize_job_id(raw["id_icims"])
-    title = raw.get("title") or ""
-    department = raw.get("job_family") or ""
-    return Job(
-        board=firm,
+    return build_job(
+        "amazon",
+        firm,
+        company_type,
+        scraped_date,
         job_id=job_id,
-        title=title,
-        department=department,
+        title=raw.get("title") or "",
+        department=raw.get("job_family") or "",
         location=_location(raw, job_id),
         url=_url(raw, job_id),
-        updated_at="",
         first_published=_posted_date(raw.get("posted_date")),
-        scraped_date=scraped_date,
-        seniority=classify_seniority(title, department),
-        company_type=company_type,
-        source=PROVIDER_LABELS["amazon"],
-        description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
-        salary=None,
+        description=lambda: html_sections(raw, _DESCRIPTION_FIELDS),
     )
 
 
@@ -152,13 +145,6 @@ def _posted_date(value: object) -> str:
         return datetime.datetime.strptime(" ".join(value.split()), "%B %d, %Y").date().isoformat()
     except ValueError:
         return ""
-
-
-def _description(raw: dict) -> str:
-    """Combine the description and both qualification lists as plain text."""
-    fields = ("description", "basic_qualifications", "preferred_qualifications")
-    parts = (strip_html(raw.get(field) or "") for field in fields)
-    return "\n\n".join(part for part in parts if part)
 
 
 def _location(raw: dict, job_id: str) -> str:

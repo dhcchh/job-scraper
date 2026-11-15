@@ -4,18 +4,12 @@ postings that route but aren't tracked yet."""
 import datetime
 import logging
 
-from jobscraper.quality import validate_rows
-
 import gspread
 
-from jobscraper.enrichment.classify_region import (
-    REGIONS,
-    classify_region,
-    is_excluded,
-    tab_name,
-)
-from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
+from jobscraper.cli import configure_logging
 from jobscraper.models import DATE_FIELDS, FIELDS, Job
+from jobscraper.quality import validate_rows
+from jobscraper.routing import JOB_TABS, route_job
 from jobscraper.sheets.backfill import (
     _config_lookup_tables,
     _extract_url,
@@ -49,14 +43,6 @@ def _as_job(values: dict[str, str]) -> Job:
     })
 
 
-def _route(job: Job) -> str | None:
-    """Return the tab the daily scrape would append a job to, if any."""
-    category = classify_job(job)
-    if category is None or is_excluded(job.location):
-        return None
-    return tab_name(category, classify_region(job.location))
-
-
 def _read_tab_rows(
     worksheet: gspread.Worksheet,
     company_type_by_firm: dict[str, str],
@@ -80,14 +66,13 @@ def _read_tab_rows(
         values = _recompute_row_values(
             row, url_cell, old_index, company_type_by_firm, source_by_firm, overrides
         )
-        job = _as_job(values)
-        dest_tab = _route(job)
+        dest_tab, category = route_job(_as_job(values))
         if dest_tab is not None:
             rows.append((dest_tab, values))
             continue
         reason = (
             "its title no longer matches any category"
-            if classify_job(job) is None
+            if category is None
             else f"every office in {values['location']!r} is an excluded country"
         )
         logger.warning(
@@ -156,43 +141,36 @@ def refresh_all() -> None:
     company_type_by_firm, source_by_firm = _config_lookup_tables()
     spreadsheet = get_spreadsheet()
 
-    worksheets: dict[str, gspread.Worksheet] = {}
-    buckets: dict[str, list[dict[str, str]]] = {}
-    for category, _keywords in CATEGORIES:
-        for region in REGIONS:
-            tab = tab_name(category, region)
-            worksheets[tab] = get_worksheet(spreadsheet, tab)
-            buckets[tab] = []
+    worksheets = {tab: get_worksheet(spreadsheet, tab) for tab in JOB_TABS}
+    buckets: dict[str, list[dict[str, str]]] = {tab: [] for tab in JOB_TABS}
 
     seen_keys: dict[tuple[str, str], str] = {}
     moved = 0
     dropped_total = 0
-    for category, _keywords in CATEGORIES:
-        for region in REGIONS:
-            origin_tab = tab_name(category, region)
-            logger.info("full_refresh: reading %s", origin_tab)
-            rows, dropped = _read_tab_rows(
-                worksheets[origin_tab],
-                company_type_by_firm,
-                source_by_firm,
-                overrides,
-            )
-            dropped_total += dropped
-            for dest_tab, values in rows:
-                key = (values["board"], values["job_id"])
-                if key in seen_keys:
-                    logger.warning(
-                        "full_refresh: %s already placed on %s, skipping "
-                        "duplicate seen again on %s",
-                        key,
-                        seen_keys[key],
-                        origin_tab,
-                    )
-                    continue
-                seen_keys[key] = dest_tab
-                if dest_tab != origin_tab:
-                    moved += 1
-                buckets[dest_tab].append(values)
+    for origin_tab in JOB_TABS:
+        logger.info("full_refresh: reading %s", origin_tab)
+        rows, dropped = _read_tab_rows(
+            worksheets[origin_tab],
+            company_type_by_firm,
+            source_by_firm,
+            overrides,
+        )
+        dropped_total += dropped
+        for dest_tab, values in rows:
+            key = (values["board"], values["job_id"])
+            if key in seen_keys:
+                logger.warning(
+                    "full_refresh: %s already placed on %s, skipping "
+                    "duplicate seen again on %s",
+                    key,
+                    seen_keys[key],
+                    origin_tab,
+                )
+                continue
+            seen_keys[key] = dest_tab
+            if dest_tab != origin_tab:
+                moved += 1
+            buckets[dest_tab].append(values)
 
     # Open postings that now route but aren't tracked (a classifier change
     # newly matches them) are added here, so the daily scrape doesn't
@@ -201,7 +179,7 @@ def refresh_all() -> None:
     for key, job in overrides.items():
         if key in seen_keys:
             continue
-        dest_tab = _route(job)
+        dest_tab = route_job(job).tab
         if dest_tab is not None:
             buckets[dest_tab].append(dict(zip(FIELDS, job.to_values())))
             added += 1
@@ -228,7 +206,5 @@ def refresh_all() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
     refresh_all()

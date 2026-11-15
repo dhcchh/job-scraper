@@ -36,6 +36,15 @@ def board_sources() -> list[tuple[str, str, list[dict]]]:
     ]
 
 
+def company_type_by_firm() -> dict[str, str]:
+    """Map each configured firm to its company type."""
+    return {
+        board["firm"]: board["company_type"]
+        for _name, _label, boards in board_sources()
+        for board in boards
+    }
+
+
 def require_sheet_credentials() -> None:
     """Validate sheet settings only for commands that actually open a sheet."""
     missing = [
@@ -83,3 +92,8 @@ FORCE_PRUNE_FIRMS: frozenset[str] = _optional_set("FORCE_PRUNE_FIRMS")
 # skipped). Used by the daily-scrape workflow on TOML pushes to run only the
 # firms with added or modified board entries.
 ONLY_FIRMS: frozenset[str] = _optional_set("ONLY_FIRMS")
+
+
+def is_selected(firm: str) -> bool:
+    """Whether `ONLY_FIRMS` lets this run fetch a firm; unset selects all."""
+    return not ONLY_FIRMS or firm in ONLY_FIRMS

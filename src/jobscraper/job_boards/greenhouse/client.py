@@ -1,18 +1,15 @@
 """Greenhouse Job Board API client."""
 
 import datetime
-import logging
+import functools
 
-from jobscraper.board_config import PROVIDER_LABELS
-from jobscraper.job_boards._http import get_with_retries, require_job_list
-from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date, strip_html
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
     normalize_location,
     normalize_locations,
 )
-
-logger = logging.getLogger(__name__)
+from jobscraper.job_boards._http import get_with_retries, require_job_list
+from jobscraper.job_boards._jobs import build_job, jobs_from
+from jobscraper.models import Job, normalize_date, strip_html
 
 BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
 
@@ -27,29 +24,15 @@ def fetch_greenhouse_jobs(
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch and normalize all open jobs for a Greenhouse board."""
-    if scraped_date is None:
-        scraped_date = datetime.date.today()
-
     url = f"{BASE_URL}/{board_token}/jobs"
     response = get_with_retries("greenhouse", board_token, url, params={"content": "true"})
-
-    payload = response.json()
-    raw_jobs = require_job_list(payload, "greenhouse", board_token, key="jobs")
-
-    jobs = []
-    for raw in raw_jobs:
-        jobs.append(
-            _to_job(
-                raw,
-                firm,
-                company_type,
-                scraped_date,
-                use_location_name=board_token in _OFFICES_ARE_TEAMS,
-            )
-        )
-    logger.info("greenhouse[%s]: fetched %d jobs", board_token, len(jobs))
-
-    return jobs
+    raw_jobs = require_job_list(response.json(), "greenhouse", board_token, key="jobs")
+    to_job = functools.partial(
+        _to_job, use_location_name=board_token in _OFFICES_ARE_TEAMS
+    )
+    return jobs_from(
+        "greenhouse", board_token, raw_jobs, to_job, firm, company_type, scraped_date
+    )
 
 
 def _to_job(
@@ -60,27 +43,20 @@ def _to_job(
     *,
     use_location_name: bool = False,
 ) -> Job:
-    title = raw.get("title", "")
-    department = _first_name(raw.get("departments"))
-    return Job(
-        board=firm,
-        job_id=normalize_job_id(raw["id"]),
-        title=title,
-        department=department,
+    return build_job(
+        "greenhouse",
+        firm,
+        company_type,
+        scraped_date,
+        job_id=raw["id"],
+        title=raw.get("title", ""),
+        department=_first_name(raw.get("departments")),
         location=_location(raw, use_location_name=use_location_name),
         url=raw.get("absolute_url", ""),
         updated_at=normalize_date(raw.get("updated_at", "")),
         first_published=normalize_date(raw.get("first_published", "")),
-        scraped_date=scraped_date,
-        seniority=classify_seniority(title, department, _employment_type(raw)),
-        company_type=company_type,
-        source=PROVIDER_LABELS["greenhouse"],
-        description=(
-            strip_html(raw.get("content", ""))
-            if firm in FIRMS_NEEDING_DESCRIPTION
-            else ""
-        ),
-        salary=None,
+        employment_type=_employment_type(raw),
+        description=lambda: strip_html(raw.get("content", "")),
     )
 
 

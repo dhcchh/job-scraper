@@ -6,6 +6,7 @@ import pytest
 
 from jobscraper.job_boards import _http
 from jobscraper.job_boards.smartrecruiters import client
+from tests.fakes import FakeResponse
 
 
 def _page(content, offset=0, total_found=None):
@@ -38,24 +39,13 @@ _SAMPLE_RESPONSE = _page(
 )
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
-
-
 def test_fetch_smartrecruiters_jobs_parses_response(monkeypatch):
     captured = {}
 
     def fake_get(url, params=None, timeout=None):
         captured["url"] = url
         captured["params"] = params
-        return _FakeResponse(_SAMPLE_RESPONSE)
+        return FakeResponse(_SAMPLE_RESPONSE)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -106,7 +96,7 @@ def test_fetch_smartrecruiters_jobs_paginates_until_total_found_is_reached(
 
     def fake_get(url, params=None, timeout=None):
         calls.append(dict(params))
-        return _FakeResponse(page1 if params["offset"] == 0 else page2)
+        return FakeResponse(page1 if params["offset"] == 0 else page2)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -131,7 +121,7 @@ def test_fetch_smartrecruiters_jobs_rejects_an_empty_page_before_total(monkeypat
 
     def fake_get(url, params=None, timeout=None):
         calls.append(dict(params))
-        return _FakeResponse(page1 if params["offset"] == 0 else empty_page)
+        return FakeResponse(page1 if params["offset"] == 0 else empty_page)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -150,7 +140,7 @@ def test_fetch_smartrecruiters_jobs_rejects_a_job_missing_id(
             {"id": "real-id", "name": "Software Engineer", "company": {"identifier": "Acme"}},
         ]
     )
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
 
     with pytest.raises(_http.IncompleteBoardResponse):
         client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
@@ -162,7 +152,7 @@ def test_fetch_smartrecruiters_jobs_falls_back_to_empty_department_when_function
     response = _page(
         [{"id": "1", "name": "Administrative Business Partner", "company": {"identifier": "Acme"}}]
     )
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
 
     (job,) = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 

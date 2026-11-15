@@ -4,8 +4,9 @@ import datetime
 
 import pytest
 
-from jobscraper.job_boards import _http
+from jobscraper.job_boards import _http, _jobs
 from jobscraper.job_boards.recruitee import client
+from tests.fakes import FakeResponse
 
 _SAMPLE_RESPONSE = {
     "offers": [
@@ -46,23 +47,12 @@ _SAMPLE_RESPONSE = {
 }
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
-
-
 def test_fetch_recruitee_jobs_parses_response(monkeypatch):
     captured = {}
 
     def fake_get(url, **kwargs):
         captured["url"] = url
-        return _FakeResponse(_SAMPLE_RESPONSE)
+        return FakeResponse(_SAMPLE_RESPONSE)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -93,7 +83,7 @@ def test_fetch_recruitee_jobs_parses_response(monkeypatch):
 
 def test_fetch_recruitee_jobs_joins_and_dedupes_every_office(monkeypatch):
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
+        _http._session, "get", lambda *a, **k: FakeResponse(_SAMPLE_RESPONSE)
     )
 
     jobs = client.fetch_recruitee_jobs("x", "X", "Big Tech")
@@ -110,7 +100,7 @@ def test_fetch_recruitee_jobs_falls_back_to_top_level_city(monkeypatch):
             {"id": 1, "title": "Engineer", "city": "Singapore", "locations": []}
         ]
     }
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
 
     (job,) = client.fetch_recruitee_jobs("x", "X", "Big Tech")
 
@@ -119,9 +109,9 @@ def test_fetch_recruitee_jobs_falls_back_to_top_level_city(monkeypatch):
 
 def test_fetch_recruitee_jobs_fills_description_only_for_listed_firms(monkeypatch):
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(_SAMPLE_RESPONSE)
+        _http._session, "get", lambda *a, **k: FakeResponse(_SAMPLE_RESPONSE)
     )
-    monkeypatch.setattr(client, "FIRMS_NEEDING_DESCRIPTION", frozenset({"OGP"}))
+    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"OGP"}))
 
     job = client.fetch_recruitee_jobs("opengovernmentproducts", "OGP", "Gov")[0]
 
@@ -132,7 +122,7 @@ def test_fetch_recruitee_jobs_fills_description_only_for_listed_firms(monkeypatc
 
 def test_fetch_recruitee_jobs_rejects_a_record_without_an_id(monkeypatch):
     response = {"offers": [{"title": "No id"}, {"id": 7, "title": "Engineer"}]}
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
 
     with pytest.raises(_http.IncompleteBoardResponse):
         client.fetch_recruitee_jobs("x", "X", "Big Tech")

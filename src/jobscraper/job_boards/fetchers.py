@@ -44,10 +44,11 @@ def board_sources() -> list[tuple[str, list[dict], Fetcher]]:
 def selected_board_sources() -> list[tuple[str, list[dict], Fetcher]]:
     """Return `board_sources()` limited to `ONLY_FIRMS` when it's set."""
     return [
-        (source, [
-            board for board in boards
-            if not config.ONLY_FIRMS or board["firm"] in config.ONLY_FIRMS
-        ], fetch)
+        (
+            source,
+            [board for board in boards if config.is_selected(board["firm"])],
+            fetch,
+        )
         for source, boards, fetch in board_sources()
     ]
 

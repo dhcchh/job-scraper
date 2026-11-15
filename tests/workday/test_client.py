@@ -6,21 +6,11 @@ import pytest
 
 from jobscraper.job_boards import _http
 from jobscraper.job_boards.workday import client
+from tests.fakes import FakeResponse
 
 _SCRAPED = datetime.date(2026, 9, 26)
 
 _API = "https://visa.wd5.myworkdayjobs.com/wday/cxs/visa/Visa"
-
-
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
 
 
 class _NotFound:
@@ -55,14 +45,14 @@ def _serve(monkeypatch, postings, details=None, calibrate=False):
     def fake_post(url, json=None, timeout=None):
         posts.append((url, json))
         page = postings if json["offset"] == 0 else []
-        return _FakeResponse({"total": len(postings), "jobPostings": page})
+        return FakeResponse({"total": len(postings), "jobPostings": page})
 
     def fake_get(url, params=None, timeout=None):
         gets.append(url)
         detail = (details or {})[url[len(_API):]]
         if not isinstance(detail, dict):
             return detail
-        return _FakeResponse({"jobPostingInfo": detail})
+        return FakeResponse({"jobPostingInfo": detail})
 
     monkeypatch.setattr(_http._session, "post", fake_post)
     monkeypatch.setattr(_http._session, "get", fake_get)
@@ -262,7 +252,7 @@ def test_fetch_workday_jobs_keeps_paging_past_a_zero_total(monkeypatch):
     }
 
     def fake_post(url, json=None, timeout=None):
-        return _FakeResponse(pages[json["offset"]])
+        return FakeResponse(pages[json["offset"]])
 
     monkeypatch.setattr(client, "_PAGE_SIZE", 2)
     monkeypatch.setattr(_http._session, "post", fake_post)
@@ -384,7 +374,7 @@ def test_fetch_workday_jobs_retries_a_failed_detail_call_once_more_before_droppi
         attempts.append(url)
         if len(attempts) <= _http.MAX_ATTEMPTS:
             return _Unavailable()
-        return _FakeResponse({"jobPostingInfo": {"location": "SG - Singapore"}})
+        return FakeResponse({"jobPostingInfo": {"location": "SG - Singapore"}})
 
     _serve(monkeypatch, [_posting(path, locations_text="2 Locations")])
     monkeypatch.setattr(_http._session, "get", lambda url, params=None, timeout=None: detail(url))
@@ -425,7 +415,7 @@ def test_fetch_workday_jobs_fails_board_on_missing_detail_payload(monkeypatch):
     _posts, gets = _serve(
         monkeypatch,
         [_posting(path, locations_text="2 Locations")],
-        details={path: _FakeResponse({})},
+        details={path: FakeResponse({})},
     )
 
     with pytest.raises(RuntimeError, match="unsafe to prune"):

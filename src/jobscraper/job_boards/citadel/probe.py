@@ -3,11 +3,11 @@
 import argparse
 import datetime
 import json
-import logging
 import os
 import time
 from pathlib import Path
 
+from jobscraper.cli import BRIEF_LOG_FORMAT, configure_logging, write_step_summary
 from jobscraper.enrichment.classify_roles import classify_job
 from jobscraper.job_boards._http import IncompleteBoardResponse
 from jobscraper.job_boards.citadel.client import (
@@ -62,12 +62,10 @@ def main(argv: list[str] | None = None) -> int:
         "Enable Citadel only after consistent useful passes and scoped live validation.\n"
     )
     print(summary)
-    if path := os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write(summary)
+    write_step_summary(summary)
     return 0 if report["status"] == "passed" else 1
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    configure_logging(BRIEF_LOG_FORMAT)
     raise SystemExit(main())

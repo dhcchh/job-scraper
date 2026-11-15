@@ -1,18 +1,14 @@
 """Lever Postings API client."""
 
 import datetime
-import logging
 
-from jobscraper.board_config import PROVIDER_LABELS
-from jobscraper.job_boards._http import get_with_retries, require_job_list
-from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date, strip_html
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
     normalize_location,
     normalize_locations,
 )
-
-logger = logging.getLogger(__name__)
+from jobscraper.job_boards._http import get_with_retries, require_job_list
+from jobscraper.job_boards._jobs import build_job, jobs_from
+from jobscraper.models import Job, normalize_date, strip_html
 
 BASE_URL = "https://api.lever.co/v0/postings"
 
@@ -25,42 +21,30 @@ def fetch_lever_jobs(
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch and normalize all open jobs for a Lever site."""
-    if scraped_date is None:
-        scraped_date = datetime.date.today()
-
     url = f"{BASE_URL}/{board_slug}"
     response = get_with_retries("lever", board_slug, url, params={"mode": "json"})
-
     raw_jobs = require_job_list(response.json(), "lever", board_slug)
-
-    jobs = []
-    for raw in raw_jobs:
-        jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    logger.info("lever[%s]: fetched %d jobs", board_slug, len(jobs))
-
-    return jobs
+    return jobs_from(
+        "lever", board_slug, raw_jobs, _to_job, firm, company_type, scraped_date
+    )
 
 
 def _to_job(
     raw: dict, firm: str, company_type: str, scraped_date: datetime.date
 ) -> Job:
-    title = raw.get("text", "")
     categories = raw.get("categories") or {}
-    department = _department(categories)
-    return Job(
-        board=firm,
-        job_id=normalize_job_id(raw["id"]),
-        title=title,
-        department=department,
+    return build_job(
+        "lever",
+        firm,
+        company_type,
+        scraped_date,
+        job_id=raw["id"],
+        title=raw.get("text", ""),
+        department=_department(categories),
         location=_location(categories),
         url=raw.get("hostedUrl", ""),
-        updated_at="",
         first_published=normalize_date(_created_at(raw)),
-        scraped_date=scraped_date,
-        seniority=classify_seniority(title, department),
-        company_type=company_type,
-        source=PROVIDER_LABELS["lever"],
-        description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
+        description=lambda: _description(raw),
         salary=_salary(raw),
     )
 

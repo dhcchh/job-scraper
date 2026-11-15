@@ -23,8 +23,7 @@ def test_audit_readonly_report_and_failure_exit(monkeypatch, tmp_path, job_id, f
 
     monkeypatch.setattr(writer.Credentials, 'from_service_account_info', credentials)
     monkeypatch.setattr(writer.gspread, 'authorize', lambda *a, **k: SimpleNamespace(open_by_key=lambda key: sheet))
-    monkeypatch.setattr(audit, 'CATEGORIES', [('SWE/DE', ())])
-    monkeypatch.setattr(audit, 'REGIONS', ('PAC',))
+    monkeypatch.setattr(audit, 'JOB_TABS', ('SWE/DE - PAC',))
     monkeypatch.setattr(config, 'GOOGLE_SHEET_TITLE', 'Test')
     output = tmp_path / 'report.json'
     summary = tmp_path / 'summary.md'

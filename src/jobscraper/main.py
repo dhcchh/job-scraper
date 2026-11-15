@@ -1,22 +1,18 @@
 """Fetch configured boards, route jobs to sheet tabs, and prune closed posts."""
 
 import logging
-import os
 from collections import Counter
 from collections.abc import Mapping
 
 from jobscraper import config
 from jobscraper.alerts import send_alerts
+from jobscraper.cli import configure_logging, write_step_summary
 from jobscraper.coverage import coverage_markdown, unmatched_titles, unresolved_locations
-from jobscraper.enrichment.classify_region import (
-    REGIONS,
-    classify_region,
-    is_excluded,
-    tab_name,
-)
-from jobscraper.enrichment.classify_roles import CATEGORIES, classify_job
+from jobscraper.enrichment.classify_region import tab_name
+from jobscraper.enrichment.classify_roles import CATEGORIES
 from jobscraper.job_boards import fetchers
 from jobscraper.models import Job
+from jobscraper.routing import JOB_TABS, route_job
 from jobscraper.sheets.supported_companies import sync_and_announce
 from jobscraper.sheets.writer import (
     PrunePlan,
@@ -83,23 +79,17 @@ def run() -> None:
         f" -- failed: {', '.join(sorted(failed_firms))}" if failed_firms else "",
     )
 
-    jobs_by_tab: dict[str, list[Job]] = {
-        tab_name(category, region): []
-        for category, _keywords in CATEGORIES
-        for region in REGIONS
-    }
+    jobs_by_tab: dict[str, list[Job]] = {tab: [] for tab in JOB_TABS}
     noise_jobs: list[Job] = []
     excluded_count = 0
     for job in all_jobs:
-        category = classify_job(job)
-        if category is None:
+        tab, category = route_job(job)
+        if tab is not None:
+            jobs_by_tab[tab].append(job)
+        elif category is None:
             noise_jobs.append(job)
-            continue
-        if is_excluded(job.location):
+        else:
             excluded_count += 1
-            continue
-        region = classify_region(job.location)
-        jobs_by_tab[tab_name(category, region)].append(job)
 
     logger.info(
         "classified %d job(s) across %d tab(s), filtered %d as noise, "
@@ -173,7 +163,7 @@ def run() -> None:
         len(locations),
         len(titles),
     )
-    _write_job_summary(markdown + coverage_markdown(locations, titles))
+    write_step_summary(markdown + coverage_markdown(locations, titles))
 
     send_digest(
         {
@@ -276,17 +266,6 @@ def _build_summary_markdown(
     return "\n".join(lines) + "\n"
 
 
-def _write_job_summary(markdown: str) -> None:
-    """Append to `GITHUB_STEP_SUMMARY` when running in GitHub Actions."""
-    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not summary_path:
-        return
-    with open(summary_path, "a") as f:
-        f.write(markdown)
-
-
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
     run()

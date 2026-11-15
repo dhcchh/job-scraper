@@ -1,18 +1,14 @@
 """Recruitee careers API client."""
 
 import datetime
-import logging
 
-from jobscraper.board_config import PROVIDER_LABELS
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
     normalize_office,
     normalize_locations,
 )
 from jobscraper.job_boards._http import get_with_retries, require_job_list
-from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date, strip_html
-
-logger = logging.getLogger(__name__)
+from jobscraper.job_boards._jobs import build_job, html_sections, jobs_from
+from jobscraper.models import Job, normalize_date
 
 URL_TEMPLATE = "https://{subdomain}.recruitee.com/api/offers/"
 
@@ -25,49 +21,31 @@ def fetch_recruitee_jobs(
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch and normalize all open jobs for a Recruitee site."""
-    if scraped_date is None:
-        scraped_date = datetime.date.today()
-
     url = URL_TEMPLATE.format(subdomain=subdomain)
     response = get_with_retries("recruitee", subdomain, url)
-
     raw_jobs = require_job_list(response.json(), "recruitee", subdomain, key="offers")
-
-    jobs = []
-    for raw in raw_jobs:
-        jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    logger.info("recruitee[%s]: fetched %d jobs", subdomain, len(jobs))
-
-    return jobs
+    return jobs_from(
+        "recruitee", subdomain, raw_jobs, _to_job, firm, company_type, scraped_date
+    )
 
 
 def _to_job(
     raw: dict, firm: str, company_type: str, scraped_date: datetime.date
 ) -> Job:
-    title = (raw.get("title") or "").strip()
-    department = (raw.get("department") or "").strip()
-    return Job(
-        board=firm,
-        job_id=normalize_job_id(raw["id"]),
-        title=title,
-        department=department,
+    return build_job(
+        "recruitee",
+        firm,
+        company_type,
+        scraped_date,
+        job_id=raw["id"],
+        title=(raw.get("title") or "").strip(),
+        department=(raw.get("department") or "").strip(),
         location=_location(raw),
         url=raw.get("careers_url") or "",
         updated_at=normalize_date(raw.get("updated_at") or ""),
         first_published=normalize_date(raw.get("published_at") or ""),
-        scraped_date=scraped_date,
-        seniority=classify_seniority(title, department),
-        company_type=company_type,
-        source=PROVIDER_LABELS["recruitee"],
-        description=_description(raw) if firm in FIRMS_NEEDING_DESCRIPTION else "",
-        salary=None,
+        description=lambda: html_sections(raw, ("description", "requirements")),
     )
-
-
-def _description(raw: dict) -> str:
-    """Combine the description and requirements as plain text."""
-    parts = (strip_html(raw.get(field) or "") for field in ("description", "requirements"))
-    return "\n\n".join(part for part in parts if part)
 
 
 def _location(raw: dict) -> str:

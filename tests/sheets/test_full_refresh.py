@@ -7,6 +7,7 @@ import logging
 import pytest
 
 from jobscraper.models import FIELDS, Job
+from jobscraper.routing import route_job
 from jobscraper.sheets import full_refresh
 
 
@@ -140,7 +141,7 @@ def _all_tab_worksheets(overrides=None):
 
 def test_route_sends_a_normal_title_to_its_tab():
     values = _values(title="Software Engineer", location="Singapore")
-    assert full_refresh._route(full_refresh._as_job(values)) == "SWE/DE - PAC"
+    assert route_job(full_refresh._as_job(values)).tab == "SWE/DE - PAC"
 
 
 def test_as_job_carries_every_column_into_the_job():
@@ -174,9 +175,9 @@ def test_route_uses_the_rows_company_type():
         location="Greenwich, CT",
         company_type="Prop Trading/Hedge Fund",
     )
-    assert full_refresh._route(full_refresh._as_job(values)) == "QT/QR - RoW"
+    assert route_job(full_refresh._as_job(values)).tab == "QT/QR - RoW"
     fintech = {**values, "company_type": "Fintech"}
-    assert full_refresh._route(full_refresh._as_job(fintech)) is None
+    assert route_job(full_refresh._as_job(fintech)).tab is None
 
 
 def test_rewrite_requests_preserve_literal_text_and_url_formulas():
@@ -195,7 +196,7 @@ def test_rewrite_requests_preserve_literal_text_and_url_formulas():
 
 def test_route_drops_a_recruiter_title():
     values = _values(title="Technical Recruiter", department="People", location="Singapore")
-    assert full_refresh._route(full_refresh._as_job(values)) is None
+    assert route_job(full_refresh._as_job(values)).tab is None
 
 
 def test_read_tab_rows_keeps_a_row_on_its_current_tab_when_unchanged():
@@ -492,19 +493,19 @@ def test_route_applies_amazon_title_keywords_to_a_rows_source():
     # "SDE II" is SWE/DE only through Amazon's keywords, so routing must see
     # the row's source or Full Refresh would drop every such row.
     values = _amazon_values("SDE II, Amazon Business")
-    assert full_refresh._route(full_refresh._as_job(values)) == "SWE/DE - RoW"
-    assert full_refresh._route(full_refresh._as_job({**values, "source": ""})) is None
+    assert route_job(full_refresh._as_job(values)).tab == "SWE/DE - RoW"
+    assert route_job(full_refresh._as_job({**values, "source": ""})).tab is None
 
 
 def test_route_applies_amazon_noise_rules_to_a_rows_source():
     values = _amazon_values("Software Development Engineer II, DC Bridge")
-    assert full_refresh._route(full_refresh._as_job(values)) is None
+    assert route_job(full_refresh._as_job(values)).tab is None
     consultant = _amazon_values("Delivery Consultant - AI/ML, Professional Services")
-    assert full_refresh._route(full_refresh._as_job(consultant)) is None
+    assert route_job(full_refresh._as_job(consultant)).tab is None
 
 
 def test_route_applies_the_amazon_job_family_rule_to_a_row_s_department():
     values = _amazon_values("Kernel / Hypervisor Engineer, Firecracker")
-    assert full_refresh._route(full_refresh._as_job(values)) == "SWE/DE - RoW"
+    assert route_job(full_refresh._as_job(values)).tab == "SWE/DE - RoW"
     other_family = {**values, "department": "Professional Services"}
-    assert full_refresh._route(full_refresh._as_job(other_family)) is None
+    assert route_job(full_refresh._as_job(other_family)).tab is None

@@ -6,6 +6,7 @@ import pytest
 
 from jobscraper.job_boards import _http
 from jobscraper.job_boards.eightfold import client
+from tests.fakes import FakeResponse
 
 
 def _page(positions, start=0, count=None):
@@ -37,24 +38,13 @@ _SAMPLE_RESPONSE = _page(
 )
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
-
-
 def test_fetch_eightfold_jobs_parses_response(monkeypatch):
     captured = {}
 
     def fake_get(url, params=None, timeout=None):
         captured["url"] = url
         captured["params"] = params
-        return _FakeResponse(_SAMPLE_RESPONSE)
+        return FakeResponse(_SAMPLE_RESPONSE)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -150,10 +140,10 @@ def test_fetch_eightfold_jobs_pages_in_fixed_strides_regardless_of_count(monkeyp
         calls.append(dict(params))
         start = params["start"]
         if start == 0:
-            return _FakeResponse(page1)
+            return FakeResponse(page1)
         if start == 10:
-            return _FakeResponse(page2)
-        return _FakeResponse(page3)
+            return FakeResponse(page2)
+        return FakeResponse(page3)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -174,7 +164,7 @@ def test_fetch_eightfold_jobs_rejects_an_empty_page_before_total(monkeypatch):
 
     def fake_get(url, params=None, timeout=None):
         calls.append(dict(params))
-        return _FakeResponse(page1 if params["start"] == 0 else empty_page)
+        return FakeResponse(page1 if params["start"] == 0 else empty_page)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -195,7 +185,7 @@ def test_fetch_eightfold_jobs_rejects_a_job_missing_id(monkeypatch):
             {"id": "real-id", "name": "Software Engineer", "t_create": 0, "t_update": 0},
         ]
     )
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
 
     with pytest.raises(_http.IncompleteBoardResponse):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
@@ -213,7 +203,7 @@ def test_fetch_eightfold_jobs_rejects_a_duplicate_id_across_pages(monkeypatch):
 
     def fake_get(url, params=None, timeout=None):
         calls["n"] += 1
-        return _FakeResponse(page1 if calls["n"] == 1 else page2)
+        return FakeResponse(page1 if calls["n"] == 1 else page2)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 

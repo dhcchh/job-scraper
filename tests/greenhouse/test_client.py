@@ -6,6 +6,7 @@ import pytest
 
 from jobscraper.job_boards import _http
 from jobscraper.job_boards.greenhouse import client
+from tests.fakes import FakeResponse
 
 _SAMPLE_RESPONSE = {
     "jobs": [
@@ -30,24 +31,13 @@ _SAMPLE_RESPONSE = {
 }
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
-
-
 def test_fetch_greenhouse_jobs_parses_response(monkeypatch):
     captured = {}
 
     def fake_get(url, params=None, timeout=None):
         captured["url"] = url
         captured["params"] = params
-        return _FakeResponse(_SAMPLE_RESPONSE)
+        return FakeResponse(_SAMPLE_RESPONSE)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -94,7 +84,7 @@ def test_fetch_greenhouse_jobs_populates_description_only_for_a_firm_needing_it(
             }
         ]
     }
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
 
     (needed,) = client.fetch_greenhouse_jobs("qrt", "QRT", "Prop Trading/Hedge Fund")
     (not_needed,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -127,7 +117,7 @@ def test_fetch_greenhouse_jobs_rejects_a_job_missing_id(monkeypatch):
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     with pytest.raises(_http.IncompleteBoardResponse):
@@ -157,7 +147,7 @@ def test_fetch_greenhouse_jobs_builds_location_from_offices_not_the_raw_location
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -180,7 +170,7 @@ def test_fetch_greenhouse_jobs_falls_back_to_location_name_when_offices_missing(
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -209,7 +199,7 @@ def test_fetch_greenhouse_jobs_reads_location_name_for_a_board_whose_offices_are
     # city is only in location.name. Without this its postings' location was
     # "MOE HQ | SingPass" and they all landed in RoW.
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(_team_offices_response())
+        _http._session, "get", lambda *a, **k: FakeResponse(_team_offices_response())
     )
 
     (job,) = client.fetch_greenhouse_jobs("govtech", "GovTech", "Government/Defense Tech")
@@ -233,7 +223,7 @@ def test_fetch_greenhouse_jobs_reads_location_name_for_twitch_placeholder_office
             }
         ]
     }
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(payload))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(payload))
 
     (job,) = client.fetch_greenhouse_jobs("twitch", "Twitch", "Gaming")
 
@@ -256,7 +246,7 @@ def test_fetch_greenhouse_jobs_reads_location_name_for_scaleai_placeholder_offic
             }
         ]
     }
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(payload))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(payload))
 
     (job,) = client.fetch_greenhouse_jobs("scaleai", "Scale AI", "Applied AI Products")
 
@@ -279,7 +269,7 @@ def test_fetch_greenhouse_jobs_reads_location_name_for_lyft_workspace_offices(mo
             }
         ]
     }
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(payload))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(payload))
 
     (job,) = client.fetch_greenhouse_jobs("lyft", "Lyft", "Consumer/Marketplace")
 
@@ -290,7 +280,7 @@ def test_fetch_greenhouse_jobs_still_uses_offices_for_every_other_board(monkeypa
     # Opt-in per board only: location.name is free text that often
     # disagrees with offices on other boards, so they keep using offices.
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(_team_offices_response())
+        _http._session, "get", lambda *a, **k: FakeResponse(_team_offices_response())
     )
 
     (job,) = client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")
@@ -353,7 +343,7 @@ def test_fetch_greenhouse_jobs_reads_seniority_from_employment_type_metadata(mon
     monkeypatch.setattr(
         _http._session,
         "get",
-        lambda url, params=None, timeout=None: _FakeResponse(_METADATA_RESPONSE),
+        lambda url, params=None, timeout=None: FakeResponse(_METADATA_RESPONSE),
     )
 
     intern, experienced, null_value, no_metadata = client.fetch_greenhouse_jobs(
@@ -371,7 +361,7 @@ def test_fetch_greenhouse_jobs_reads_seniority_from_employment_type_metadata(mon
 def test_fetch_rejects_invalid_id(monkeypatch, job_id):
     monkeypatch.setattr(
         _http._session, "get",
-        lambda *a, **k: _FakeResponse({"jobs": [{"id": job_id}]}),
+        lambda *a, **k: FakeResponse({"jobs": [{"id": job_id}]}),
     )
     with pytest.raises(ValueError, match="job_id"):
         client.fetch_greenhouse_jobs("acme", "Acme Corp", "Big Tech")

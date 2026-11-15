@@ -12,6 +12,7 @@ import textwrap
 import time
 
 from jobscraper import config
+from jobscraper.cli import configure_logging
 from jobscraper.enrichment.classify_region import office_countries
 from jobscraper.enrichment.classify_roles import (
     _NOT_AN_ENGINEERING_ROLE_RE,
@@ -159,9 +160,7 @@ if __name__ == "__main__":
     import argparse
     import sys
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
     parser = argparse.ArgumentParser(description="Per-role Telegram DM alerts.")
     parser.add_argument(
         "--check",

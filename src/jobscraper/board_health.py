@@ -1,9 +1,9 @@
 """Fetch all configured boards and report health without writing to the sheet."""
 
 import logging
-import os
 import sys
 
+from jobscraper.cli import BRIEF_LOG_FORMAT, configure_logging, write_step_summary
 from jobscraper.job_boards import fetchers
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ def check() -> bool:
             passed.append((firm, len(result.jobs)))
             logger.info("%s: %d jobs", firm, len(result.jobs))
 
-    _write_summary(passed, failed)
+    write_step_summary(_summary_markdown(passed, failed))
     logger.info("%d/%d boards healthy", len(passed), len(passed) + len(failed))
     if not passed and not failed:
         logger.error("No boards selected; check ONLY_FIRMS")
@@ -32,26 +32,21 @@ def check() -> bool:
     return not failed
 
 
-def _write_summary(
+def _summary_markdown(
     passed: list[tuple[str, int]], failed: list[tuple[str, str]]
-) -> None:
-    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not summary_path:
-        return
+) -> str:
     total = len(passed) + len(failed)
-    with open(summary_path, "a") as f:
-        f.write(f"## Board Health: {len(passed)}/{total} healthy\n\n")
-        if failed:
-            f.write("### Failed\n\n")
-            for firm, err in failed:
-                f.write(f"- **{firm}**: `{err}`\n")
-            f.write("\n")
-        if passed:
-            f.write("### Passed\n\n")
-            for firm, count in passed:
-                f.write(f"- {firm}: {count} jobs\n")
+    lines = [f"## Board Health: {len(passed)}/{total} healthy", ""]
+    if failed:
+        lines += ["### Failed", ""]
+        lines += [f"- **{firm}**: `{err}`" for firm, err in failed]
+        lines.append("")
+    if passed:
+        lines += ["### Passed", ""]
+        lines += [f"- {firm}: {count} jobs" for firm, count in passed]
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    configure_logging(BRIEF_LOG_FORMAT)
     sys.exit(0 if check() else 1)

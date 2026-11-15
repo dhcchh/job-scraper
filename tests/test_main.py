@@ -868,21 +868,6 @@ def test_build_summary_markdown_reports_success_when_nothing_failed():
     assert "-- failed" not in markdown
 
 
-def test_write_job_summary_appends_to_existing_file(monkeypatch, tmp_path):
-    path = tmp_path / "summary.md"
-    path.write_text("existing\n")
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
-
-    main._write_job_summary("new content\n")
-
-    assert path.read_text() == "existing\nnew content\n"
-
-
-def test_write_job_summary_noop_without_env_var(monkeypatch):
-    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
-    main._write_job_summary("content")  # must not raise
-
-
 def test_run_sends_telegram_digest_with_newly_appended_pac_jobs(monkeypatch):
     boards = [{"token": "acme", "firm": "Acme", "company_type": "Big Tech"}]
     monkeypatch.setattr(main.config, "GREENHOUSE_BOARDS", boards)
@@ -1036,10 +1021,7 @@ def test_repeated_held_back_runs_do_not_append_replacement_ids(monkeypatch):
     ])
     old = [_job("Acme", f"old-{i}", title="Software Engineer", location="Singapore") for i in range(6)]
     new = [_job("Acme", f"new-{i}", title="Software Engineer", location="Singapore") for i in range(6)]
-    worksheets = {
-        main.tab_name(category, region): Worksheet(main.tab_name(category, region))
-        for category, _ in main.CATEGORIES for region in main.REGIONS
-    }
+    worksheets = {tab: Worksheet(tab) for tab in main.JOB_TABS}
     worksheets["SWE/DE - PAC"] = Worksheet("SWE/DE - PAC", old)
     monkeypatch.setattr(main, "get_worksheet", lambda _, name: worksheets[name])
     monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda *a: new)
@@ -1060,7 +1042,7 @@ def test_summary_counts_each_successful_token_for_the_same_firm(monkeypatch):
     ])
     monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda *a: [])
     summaries = []
-    monkeypatch.setattr(main, "_write_job_summary", summaries.append)
+    monkeypatch.setattr(main, "write_step_summary", summaries.append)
     main.run()
     assert "Boards fetched: 2/2" in summaries[0]
 
@@ -1090,10 +1072,7 @@ def test_citadel_challenge_preserves_existing_rows_while_other_firms_continue(mo
     ])
     old = _job("Citadel", "software-engineer", location="Singapore")
     new = _job("GoodCo", "new", location="Singapore")
-    worksheets = {
-        main.tab_name(category, region): Worksheet(main.tab_name(category, region))
-        for category, _ in main.CATEGORIES for region in main.REGIONS
-    }
+    worksheets = {tab: Worksheet(tab) for tab in main.JOB_TABS}
     worksheets["SWE/DE - PAC"] = Worksheet("SWE/DE - PAC", [old])
     monkeypatch.setattr(main, "get_worksheet", lambda _, name: worksheets[name])
     monkeypatch.setattr(main.fetchers, "fetch_greenhouse_jobs", lambda *a: [new])
@@ -1130,10 +1109,6 @@ def test_run_rereads_only_the_tabs_that_got_appends(monkeypatch):
 
     main.run()
 
-    expected = Counter(
-        main.tab_name(category, region)
-        for category, _keywords in main.CATEGORIES
-        for region in main.REGIONS
-    )
+    expected = Counter(main.JOB_TABS)
     expected["SWE/DE - PAC"] += 1  # its append may have moved rows
     assert Counter(planned) == expected

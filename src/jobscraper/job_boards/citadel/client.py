@@ -9,10 +9,9 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from jobscraper.board_config import PROVIDER_LABELS
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations
 from jobscraper.job_boards._http import IncompleteBoardResponse
+from jobscraper.job_boards._jobs import build_job
 from jobscraper.job_boards.citadel.parser import (
     LISTING_URL, Listing, ListingPage, parse_listing_page,
 )
@@ -112,11 +111,10 @@ async def _collect_snapshot(
 
 
 def _to_job(raw: Listing, firm: str, company_type: str, date: datetime.date) -> Job:
-    return Job(
-        board=firm, job_id=raw.job_id, title=raw.title, department="",
-        location=normalize_locations(raw.offices), url=raw.url, updated_at="",
-        scraped_date=date, seniority=classify_seniority(raw.title, ""),
-        company_type=company_type, source=PROVIDER_LABELS["citadel"],
+    return build_job(
+        "citadel", firm, company_type, date,
+        job_id=raw.job_id, title=raw.title,
+        location=normalize_locations(raw.offices), url=raw.url,
     )
 
 
