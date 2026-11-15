@@ -4,8 +4,9 @@ import datetime
 
 import pytest
 
-from jobscraper.job_boards import _http
+from jobscraper.job_boards import _http, _jobs
 from jobscraper.job_boards.lever import client
+from tests.fakes import FakeResponse
 
 _SAMPLE_RESPONSE = [
     {
@@ -36,24 +37,13 @@ _SAMPLE_RESPONSE = [
 ]
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
-
-
 def test_fetch_lever_jobs_parses_response(monkeypatch):
     captured = {}
 
     def fake_get(url, params=None, timeout=None):
         captured["url"] = url
         captured["params"] = params
-        return _FakeResponse(_SAMPLE_RESPONSE)
+        return FakeResponse(_SAMPLE_RESPONSE)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -90,7 +80,7 @@ def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
 ):
     # No live Lever board is in FIRMS_NEEDING_DESCRIPTION today -- monkeypatch
     # it onto the client's own binding to exercise the gating regardless.
-    monkeypatch.setattr(client, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Acme Corp"}))
+    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Acme Corp"}))
     response = [
         {
             "id": "1",
@@ -101,7 +91,7 @@ def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
             "openingPlain": "Do the thing.",
         }
     ]
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
 
     (needed,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
     (not_needed,) = client.fetch_lever_jobs("beta", "Beta Inc", "Big Tech")
@@ -125,7 +115,7 @@ def test_fetch_lever_jobs_rejects_a_job_missing_id(monkeypatch):
         },
     ]
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     with pytest.raises(_http.IncompleteBoardResponse):
@@ -145,7 +135,7 @@ def test_fetch_lever_jobs_builds_location_from_all_locations_and_dedupes(monkeyp
         }
     ]
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
@@ -165,7 +155,7 @@ def test_fetch_lever_jobs_falls_back_to_categories_location_when_all_locations_m
         }
     ]
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
@@ -185,7 +175,7 @@ def test_fetch_lever_jobs_falls_back_to_team_when_department_is_missing(monkeypa
         }
     ]
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")

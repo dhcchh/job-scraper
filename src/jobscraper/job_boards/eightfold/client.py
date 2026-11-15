@@ -1,15 +1,11 @@
 """Eightfold Apply API client."""
 
 import datetime
-import logging
 
-from jobscraper.board_config import PROVIDER_LABELS
-from jobscraper.job_boards._http import paginate_with_retries
-from jobscraper.models import FIRMS_NEEDING_DESCRIPTION, Job, normalize_job_id, normalize_date
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations
-
-logger = logging.getLogger(__name__)
+from jobscraper.job_boards._http import paginate_with_retries
+from jobscraper.job_boards._jobs import build_job, jobs_from
+from jobscraper.models import Job, normalize_date
 
 _PAGE_SIZE = 10
 
@@ -24,18 +20,11 @@ def fetch_eightfold_jobs(
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch and normalize all open jobs for an Eightfold board."""
-    if scraped_date is None:
-        scraped_date = datetime.date.today()
-
     url = f"https://{board_slug}.eightfold.ai/api/apply/v2/jobs"
     raw_jobs = _fetch_all_pages(board_slug, url)
-
-    jobs = []
-    for raw in raw_jobs:
-        jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    logger.info("eightfold[%s]: fetched %d jobs", board_slug, len(jobs))
-
-    return jobs
+    return jobs_from(
+        "eightfold", board_slug, raw_jobs, _to_job, firm, company_type, scraped_date
+    )
 
 
 def _fetch_all_pages(board_slug: str, url: str) -> list[dict]:
@@ -56,27 +45,19 @@ def _fetch_all_pages(board_slug: str, url: str) -> list[dict]:
 def _to_job(
     raw: dict, firm: str, company_type: str, scraped_date: datetime.date
 ) -> Job:
-    title = raw.get("name", "")
-    department = raw.get("department", "")
-    return Job(
-        board=firm,
-        job_id=normalize_job_id(raw["id"]),
-        title=title,
-        department=department,
+    return build_job(
+        "eightfold",
+        firm,
+        company_type,
+        scraped_date,
+        job_id=raw["id"],
+        title=raw.get("name", ""),
+        department=raw.get("department", ""),
         location=_location(raw),
         url=raw.get("canonicalPositionUrl", ""),
         updated_at=_epoch_date(raw.get("t_update")),
         first_published=_epoch_date(raw.get("t_create")),
-        scraped_date=scraped_date,
-        seniority=classify_seniority(title, department),
-        company_type=company_type,
-        source=PROVIDER_LABELS["eightfold"],
-        description=(
-            (raw.get("job_description") or "").strip()
-            if firm in FIRMS_NEEDING_DESCRIPTION
-            else ""
-        ),
-        salary=None,
+        description=lambda: (raw.get("job_description") or "").strip(),
     )
 
 

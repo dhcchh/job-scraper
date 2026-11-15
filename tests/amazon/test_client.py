@@ -10,8 +10,9 @@ import json
 import pytest
 
 from jobscraper.enrichment.classify_region import classify_region, is_excluded
-from jobscraper.job_boards import _http
+from jobscraper.job_boards import _http, _jobs
 from jobscraper.job_boards.amazon import client
+from tests.fakes import FakeResponse
 
 
 def _entry(city, iso3, country_name, normalized_city=None):
@@ -93,22 +94,11 @@ def _page(jobs, hits=None, category_name="Software Development"):
     }
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
-
-
 def _serve(monkeypatch, pages_by_offset, calls=None):
     def fake_get(url, params=None, timeout=None):
         if calls is not None:
             calls.append((url, dict(params)))
-        return _FakeResponse(pages_by_offset[params["offset"]])
+        return FakeResponse(pages_by_offset[params["offset"]])
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -128,7 +118,7 @@ class _Listing:
         payload = _page(self.jobs[offset:offset + limit], hits=len(self.jobs))
         if self._after_call is not None:
             self._after_call(self)
-        return _FakeResponse(payload)
+        return FakeResponse(payload)
 
     def remove(self, *ids):
         self.jobs = [job for job in self.jobs if job["id_icims"] not in map(str, ids)]
@@ -384,7 +374,7 @@ def test_fetch_amazon_jobs_raises_on_http_error(monkeypatch):
 
 
 def test_description_combines_description_and_qualifications_for_allowlisted_firm(monkeypatch):
-    monkeypatch.setattr(client, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Amazon"}))
+    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Amazon"}))
 
     job = client._to_job(_SINGAPORE_JOB, "Amazon", "Consumer/Marketplace", datetime.date(2026, 11, 8))
 

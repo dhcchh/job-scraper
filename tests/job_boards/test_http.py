@@ -3,17 +3,7 @@
 import pytest
 
 from jobscraper.job_boards import _http
-
-
-class _FakeResponse:
-    def __init__(self, payload=None):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
+from tests.fakes import FakeResponse
 
 
 class _RespondingWith:
@@ -50,7 +40,7 @@ def test_get_with_retries_returns_response_on_first_success(monkeypatch):
         captured["url"] = url
         captured["params"] = params
         captured["timeout"] = timeout
-        return _FakeResponse({"ok": True})
+        return FakeResponse({"ok": True})
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -71,7 +61,7 @@ def test_get_with_retries_defaults_params_to_none(monkeypatch):
 
     def fake_get(url, params=None, timeout=None):
         captured["params"] = params
-        return _FakeResponse()
+        return FakeResponse()
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -93,7 +83,7 @@ def test_get_with_retries_retries_a_connection_error_or_timeout_then_succeeds(
         calls.append(url)
         if len(calls) < 3:
             raise exc_type("blip")
-        return _FakeResponse({"ok": True})
+        return FakeResponse({"ok": True})
 
     monkeypatch.setattr(_http._session, "get", fake_get)
     monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
@@ -112,7 +102,7 @@ def test_get_with_retries_retries_a_5xx_or_429_then_succeeds(monkeypatch, status
         calls.append(url)
         if len(calls) < 2:
             return _RespondingWith(status_code)
-        return _FakeResponse({"ok": True})
+        return FakeResponse({"ok": True})
 
     monkeypatch.setattr(_http._session, "get", fake_get)
     monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
@@ -135,7 +125,7 @@ def test_get_with_retries_honors_a_429_retry_after_in_seconds(
 ):
     responses = [
         _RespondingWith(status_code, {"Retry-After": retry_after}),
-        _FakeResponse({"ok": True}),
+        FakeResponse({"ok": True}),
     ]
     sleeps = []
     monkeypatch.setattr(_http._session, "get", lambda *a, **k: responses.pop(0))
@@ -208,7 +198,7 @@ def test_get_with_retries_labels_the_retry_log_with_source_and_identifier(
         calls.append(url)
         if len(calls) < 2:
             return _RespondingWith(503)
-        return _FakeResponse()
+        return FakeResponse()
 
     monkeypatch.setattr(_http._session, "get", fake_get)
     monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
@@ -226,7 +216,7 @@ def test_post_with_retries_sends_json_and_retries_like_get(monkeypatch):
         calls.append((url, json, timeout))
         if len(calls) < 2:
             return _RespondingWith(503)
-        return _FakeResponse({"ok": True})
+        return FakeResponse({"ok": True})
 
     monkeypatch.setattr(_http._session, "post", fake_post)
     monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
@@ -271,7 +261,7 @@ def test_paginate_with_retries_posts_cursor_in_the_body_and_keeps_the_first_tota
 
     def fake_post(url, json=None, timeout=None):
         bodies.append(json)
-        return _FakeResponse(pages[json["offset"]])
+        return FakeResponse(pages[json["offset"]])
 
     monkeypatch.setattr(_http._session, "post", fake_post)
     monkeypatch.setattr(
@@ -302,8 +292,8 @@ def test_paginate_with_retries_gets_cursor_as_query_params_by_default(monkeypatc
     def fake_get(url, params=None, timeout=None):
         params_seen.append(params)
         if params["offset"] == 0:
-            return _FakeResponse({"totalFound": 3, "content": [{"id": 0}, {"id": 1}]})
-        return _FakeResponse({"totalFound": 3, "content": [{"id": 2}]})
+            return FakeResponse({"totalFound": 3, "content": [{"id": 0}, {"id": 1}]})
+        return FakeResponse({"totalFound": 3, "content": [{"id": 2}]})
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -331,7 +321,7 @@ def _post_pages(monkeypatch, page_for_call):
         offset = json["offset"]
         calls[offset] = calls.get(offset, 0) + 1
         result = page_for_call(offset, calls[offset])
-        return result if isinstance(result, _RespondingWith) else _FakeResponse(result)
+        return result if isinstance(result, _RespondingWith) else FakeResponse(result)
 
     monkeypatch.setattr(_http._session, "post", fake_post)
     monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)

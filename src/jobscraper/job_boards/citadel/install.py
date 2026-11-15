@@ -13,7 +13,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     selected = [
         board for board in config.CITADEL_BOARDS
-        if args.all_firms or not config.ONLY_FIRMS or board["firm"] in config.ONLY_FIRMS
+        if args.all_firms or config.is_selected(board["firm"])
     ]
     if not selected:
         print("Citadel is not selected; no Chromium installation needed.")

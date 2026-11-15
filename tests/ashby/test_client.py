@@ -4,8 +4,9 @@ import datetime
 
 import pytest
 
-from jobscraper.job_boards import _http
+from jobscraper.job_boards import _http, _jobs
 from jobscraper.job_boards.ashby import client
+from tests.fakes import FakeResponse
 
 _SAMPLE_RESPONSE = {
     "jobs": [
@@ -39,24 +40,13 @@ _SAMPLE_RESPONSE = {
 }
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
-
-
 def test_fetch_ashby_jobs_parses_response(monkeypatch):
     captured = {}
 
     def fake_get(url, params=None, timeout=None):
         captured["url"] = url
         captured["params"] = params
-        return _FakeResponse(_SAMPLE_RESPONSE)
+        return FakeResponse(_SAMPLE_RESPONSE)
 
     monkeypatch.setattr(_http._session, "get", fake_get)
 
@@ -95,7 +85,7 @@ def test_fetch_ashby_jobs_populates_description_only_for_a_firm_needing_it(
 ):
     # No live Ashby board is in FIRMS_NEEDING_DESCRIPTION today -- monkeypatch
     # it onto the client's own binding to exercise the gating regardless.
-    monkeypatch.setattr(client, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Acme Corp"}))
+    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Acme Corp"}))
     response = {
         "jobs": [
             {
@@ -106,7 +96,7 @@ def test_fetch_ashby_jobs_populates_description_only_for_a_firm_needing_it(
             }
         ]
     }
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FakeResponse(response))
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
 
     (needed,) = client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
     (not_needed,) = client.fetch_ashby_jobs("beta", "Beta Inc", "Big Tech")
@@ -132,7 +122,7 @@ def test_fetch_ashby_jobs_rejects_a_job_missing_id(monkeypatch):
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     with pytest.raises(_http.IncompleteBoardResponse):
@@ -157,7 +147,7 @@ def test_fetch_ashby_jobs_builds_location_from_primary_and_secondary_and_dedupes
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
@@ -178,7 +168,7 @@ def test_fetch_ashby_jobs_falls_back_to_team_when_department_is_missing(monkeypa
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: _FakeResponse(response)
+        _http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")

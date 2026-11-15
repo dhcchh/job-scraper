@@ -4,14 +4,11 @@ import logging
 import re
 from collections import Counter
 
-from jobscraper.quality import validate_rows
-
 import gspread
 from gspread.utils import rowcol_to_a1
 
 from jobscraper import config
-from jobscraper.enrichment.classify_region import REGIONS, tab_name
-from jobscraper.enrichment.classify_roles import CATEGORIES
+from jobscraper.cli import configure_logging
 from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_locations
 from jobscraper.job_boards import fetchers
@@ -23,6 +20,8 @@ from jobscraper.models import (
     hyperlink_formula,
     normalize_date,
 )
+from jobscraper.quality import validate_rows
+from jobscraper.routing import JOB_TABS
 from jobscraper.sheets.writer import (
     HEADER,
     format_tab,
@@ -101,17 +100,12 @@ def _renormalize_location(value: str) -> str:
 
 def _config_lookup_tables() -> tuple[dict[str, str], dict[str, str]]:
     """Build current company-type and board-source lookups by firm."""
-    company_type_by_firm = {
-        board["firm"]: board["company_type"]
-        for _source, _label, board_list in config.board_sources()
-        for board in board_list
-    }
     source_by_firm = {
-        board["firm"]: source
-        for _source, source, board_list in config.board_sources()
-        for board in board_list
+        board["firm"]: label
+        for _name, label, boards in config.board_sources()
+        for board in boards
     }
-    return company_type_by_firm, source_by_firm
+    return config.company_type_by_firm(), source_by_firm
 
 
 def _read_row_values(row: list[str], old_index: dict[str, int | None]) -> dict[str, str]:
@@ -242,16 +236,11 @@ def refresh_all() -> None:
     """Refresh every (category, region) tab in the spreadsheet, one at a time."""
     overrides = _fetch_overrides()
     spreadsheet = get_spreadsheet()
-    for category, _keywords in CATEGORIES:
-        for region in REGIONS:
-            tab = tab_name(category, region)
-            logger.info("refresh: %s", tab)
-            worksheet = get_worksheet(spreadsheet, tab)
-            refresh_worksheet(worksheet, overrides=overrides)
+    for tab in JOB_TABS:
+        logger.info("refresh: %s", tab)
+        refresh_worksheet(get_worksheet(spreadsheet, tab), overrides=overrides)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
     refresh_all()

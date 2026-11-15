@@ -1,5 +1,6 @@
 """Shared retry and pagination helpers for job-board HTTP clients."""
 
+import dataclasses
 import logging
 import math
 import time
@@ -125,6 +126,52 @@ def _send_with_retries(
             attempt += 1
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _PageFormat:
+    """Where a provider's paginated response keeps its total, items and IDs."""
+
+    total_key: str
+    items_key: str
+    id_key: str = "id"
+    is_placeholder: Callable[[dict], bool] | None = None
+
+    def total(self, payload: object) -> int:
+        if not isinstance(payload, dict):
+            raise IncompleteBoardResponse("pagination response is not an object")
+        total = payload.get(self.total_key)
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise IncompleteBoardResponse(
+                f"missing or invalid {self.total_key!r} total"
+            )
+        return total
+
+    def items(self, payload: object, cursor: int) -> list[dict]:
+        return require_job_list(
+            payload, "pagination", str(cursor), key=self.items_key,
+            id_key=self.id_key, is_placeholder=self.is_placeholder,
+        )
+
+    def validate_ids(self, items: list[dict]) -> None:
+        _validate_ids(items, self.id_key, self.is_placeholder)
+
+
+def _fetch_twice(
+    fetch: Callable[[], list[dict]], source: str, identifier: str, fetch_name: str
+) -> list[dict]:
+    """Fetch a whole board, and once more if its snapshot is incomplete."""
+    try:
+        return fetch()
+    except IncompleteBoardResponse as exc:
+        logger.warning(
+            "%s[%s]: incomplete %s (%s), retrying the whole board once",
+            source,
+            identifier,
+            fetch_name,
+            exc,
+        )
+    return fetch()
+
+
 def paginate_with_retries(
     source: str,
     identifier: str,
@@ -146,6 +193,7 @@ def paginate_with_retries(
     Placeholders are returned with the postings, so page counts still match
     the reported total; the caller drops them.
     """
+    pages = _PageFormat(total_key, items_key, id_key, is_placeholder)
 
     def fetch_page(cursor: int) -> dict:
         page_args = {cursor_param: cursor, page_size_param: page_size}
@@ -159,9 +207,7 @@ def paginate_with_retries(
 
     if workers > 1:
         try:
-            items = _paginate_in_parallel(
-                fetch_page, total_key, items_key, workers, id_key, is_placeholder
-            )
+            items = _paginate_in_parallel(fetch_page, pages, workers)
         except Exception as exc:
             logger.warning(
                 "%s[%s]: parallel page fetch failed (%s), refetching one page "
@@ -180,35 +226,16 @@ def paginate_with_retries(
                 source,
                 identifier,
             )
-    for attempt in range(2):
-        try:
-            return _paginate_sequentially(
-                fetch_page, total_key, items_key, id_key, is_placeholder
-            )
-        except IncompleteBoardResponse:
-            if attempt:
-                raise
-            logger.warning(
-                "%s[%s]: incomplete sequential page fetch, retrying the "
-                "whole board once",
-                source,
-                identifier,
-            )
-    raise AssertionError("unreachable")
-
-
-def _page_total(payload: object, total_key: str) -> int:
-    if not isinstance(payload, dict):
-        raise IncompleteBoardResponse("pagination response is not an object")
-    total = payload.get(total_key)
-    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-        raise IncompleteBoardResponse(f"missing or invalid {total_key!r} total")
-    return total
+    return _fetch_twice(
+        lambda: _paginate_sequentially(fetch_page, pages),
+        source,
+        identifier,
+        "sequential page fetch",
+    )
 
 
 def _paginate_sequentially(
-    fetch_page: Callable[[int], dict], total_key: str, items_key: str, id_key: str,
-    is_placeholder: Callable[[dict], bool] | None = None,
+    fetch_page: Callable[[int], dict], pages: _PageFormat
 ) -> list[dict]:
     """Fetch pages sequentially until the endpoint is exhausted."""
     items: list[dict] = []
@@ -216,15 +243,12 @@ def _paginate_sequentially(
     total: int | None = None
     while total is None or cursor < total:
         payload = fetch_page(cursor)
-        page_total = _page_total(payload, total_key)
+        page_total = pages.total(payload)
         if total is None:
             total = page_total
         elif page_total not in (0, total):
             raise IncompleteBoardResponse("pagination total changed during fetch")
-        page = require_job_list(
-            payload, "pagination", str(cursor), key=items_key, id_key=id_key,
-            is_placeholder=is_placeholder,
-        )
+        page = pages.items(payload, cursor)
         if not page:
             if cursor < total:
                 raise IncompleteBoardResponse(
@@ -237,21 +261,17 @@ def _paginate_sequentially(
             raise IncompleteBoardResponse(
                 f"received {cursor} items, more than reported total {total}"
             )
-    _validate_ids(items, id_key, is_placeholder)
+    pages.validate_ids(items)
     return items
 
 
 def _paginate_in_parallel(
-    fetch_page: Callable[[int], dict], total_key: str, items_key: str,
-    workers: int, id_key: str, is_placeholder: Callable[[dict], bool] | None = None,
+    fetch_page: Callable[[int], dict], pages: _PageFormat, workers: int
 ) -> list[dict] | None:
     """Fetch remaining pages concurrently when the total is known."""
     first = fetch_page(0)
-    total = _page_total(first, total_key)
-    items = list(require_job_list(
-        first, "pagination", "0", key=items_key, id_key=id_key,
-        is_placeholder=is_placeholder,
-    ))
+    total = pages.total(first)
+    items = list(pages.items(first, 0))
     if len(items) == total:
         return items
     if not items or len(items) > total:
@@ -260,14 +280,10 @@ def _paginate_in_parallel(
     with ThreadPoolExecutor(max_workers=workers) as pool:
         payloads = list(pool.map(fetch_page, range(stride, total, stride)))
     for payload in payloads:
-        page_total = _page_total(payload, total_key)
-        if page_total not in (0, total):
+        if pages.total(payload) not in (0, total):
             return None
-        items.extend(require_job_list(
-            payload, "pagination", str(len(items)), key=items_key, id_key=id_key,
-            is_placeholder=is_placeholder,
-        ))
-    _validate_ids(items, id_key, is_placeholder)
+        items.extend(pages.items(payload, len(items)))
+    pages.validate_ids(items)
     return items if len(items) == total else None
 
 
@@ -301,6 +317,7 @@ def paginate_with_overlap(
     """
     if not 0 < overlap < page_size:
         raise ValueError("overlap must be positive and smaller than a page")
+    pages = _PageFormat(total_key, items_key, id_key)
 
     def fetch_page(cursor: int) -> dict:
         response = get_with_retries(
@@ -309,48 +326,36 @@ def paginate_with_overlap(
         )
         return response.json()
 
-    for attempt in range(2):
-        try:
-            return _paginate_overlapping(
-                fetch_page, page_size, overlap, total_key, items_key, id_key,
-                check_first_page,
-            )
-        except IncompleteBoardResponse as exc:
-            if attempt:
-                raise
-            logger.warning(
-                "%s[%s]: incomplete page fetch (%s), retrying the whole "
-                "board once",
-                source,
-                identifier,
-                exc,
-            )
-    raise AssertionError("unreachable")
+    return _fetch_twice(
+        lambda: _paginate_overlapping(
+            fetch_page, pages, page_size, overlap, check_first_page
+        ),
+        source,
+        identifier,
+        "page fetch",
+    )
 
 
 def _paginate_overlapping(
-    fetch_page: Callable[[int], dict], page_size: int, overlap: int,
-    total_key: str, items_key: str, id_key: str,
-    check_first_page: Callable[[dict], None] | None,
+    fetch_page: Callable[[int], dict], pages: _PageFormat, page_size: int,
+    overlap: int, check_first_page: Callable[[dict], None] | None,
 ) -> list[dict]:
     items: list[dict] = []
     cursor = 0
     while True:
         payload = fetch_page(cursor)
-        total = _page_total(payload, total_key)
+        total = pages.total(payload)
         if cursor == 0 and check_first_page is not None:
             check_first_page(payload)
-        page = require_job_list(
-            payload, "pagination", str(cursor), key=items_key, id_key=id_key
-        )
+        page = pages.items(payload, cursor)
         end = cursor + len(page)
         if end > total:
             raise IncompleteBoardResponse(
                 f"page at offset {cursor} ends at {end}, past its total {total}"
             )
         if items:
-            anchor = normalize_job_id(items[-1][id_key])
-            page_ids = [normalize_job_id(item[id_key]) for item in page]
+            anchor = normalize_job_id(items[-1][pages.id_key])
+            page_ids = [normalize_job_id(item[pages.id_key]) for item in page]
             if anchor not in page_ids:
                 raise IncompleteBoardResponse(
                     f"listing shifted by {overlap} or more items before "
@@ -367,7 +372,7 @@ def _paginate_overlapping(
                 f"total {total}"
             )
         cursor = end - overlap
-    _validate_ids(items, id_key)
+    pages.validate_ids(items)
     return items
 
 

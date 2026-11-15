@@ -7,6 +7,7 @@ from collections import defaultdict
 import gspread
 
 from jobscraper import config
+from jobscraper.cli import configure_logging
 from jobscraper.models import escape_sheet_text
 from jobscraper.sheets.writer import get_spreadsheet
 from jobscraper.telegram import send_new_companies
@@ -21,21 +22,10 @@ def _slugify(label: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
 
 
-def _category_by_firm() -> dict[str, str]:
-    """Map each configured firm to its company type."""
-    all_boards = [
-        board for _name, _label, boards in config.board_sources() for board in boards
-    ]
-    category_by_firm: dict[str, str] = {}
-    for board in all_boards:
-        category_by_firm.setdefault(board["firm"], board["company_type"])
-    return category_by_firm
-
-
 def build_columns() -> dict[str, list[str]]:
     """Group sorted, unique firm names by company-type slug."""
     firms_by_slug: dict[str, list[str]] = defaultdict(list)
-    for firm, category in _category_by_firm().items():
+    for firm, category in config.company_type_by_firm().items():
         firms_by_slug[_slugify(category)].append(firm)
 
     return {slug: sorted(firms) for slug, firms in sorted(firms_by_slug.items())}
@@ -110,7 +100,7 @@ def sync_supported_companies(spreadsheet: gspread.Spreadsheet) -> dict[str, str]
     run with a partial config can never wipe the tab. Returns the configured
     firms the tab didn't list before (firm -> company_type).
     """
-    category_by_firm = _category_by_firm()
+    category_by_firm = config.company_type_by_firm()
     configured = build_columns()
     worksheet = _get_or_create_worksheet(spreadsheet, cols=len(configured))
     old_rows = worksheet.get_all_values()
@@ -158,12 +148,10 @@ def sync_and_announce(spreadsheet: gspread.Spreadsheet) -> None:
     send_new_companies(
         sync_supported_companies(spreadsheet),
         spreadsheet_url=spreadsheet.url,
-        total_firms=len(_category_by_firm()),
+        total_firms=len(config.company_type_by_firm()),
     )
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
     sync_and_announce(get_spreadsheet())

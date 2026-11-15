@@ -44,9 +44,14 @@ live writes.
 - `validate_boards.py`: static configuration and optional live endpoint checks.
 - `job_boards/fetchers.py`: shared provider registry and per-board invocation.
 - `job_boards/_http.py`: retries, response validation and pagination.
+- `job_boards/_jobs.py`: shared `Job` building for every client: source
+  label, seniority, identity and the description allowlist.
 - `job_boards/*/client.py`: provider payloads to `Job` objects.
 - `models.py`: `Job`, `FIELDS`, date/text handling and URL formulas.
 - `enrichment/`: role, seniority, region and office normalization.
+- `routing.py`: the managed job tabs and the one rule that puts a job on a
+  tab, shared by the scrape, Full Refresh, Backfill and the audit.
+- `cli.py`: logging setup and the Actions step summary for entry points.
 - `main.py`: fetch, classify, guard, append, prune, summarize and notify.
 - `sheets/writer.py`: sheet access, schema checks, filters and prune planning.
 - `sheets/backfill.py`: shared row recomputation and in-place refresh.
@@ -129,7 +134,9 @@ objects; do not use production credentials in tests. Cover failure behavior,
 including incomplete pagination and rejection of atomic writes.
 
 Keep provider enumeration in the shared registry and keyword matching in
-`enrichment/_keywords.py`. Avoid repeating implementation walkthroughs or
+`enrichment/_keywords.py`. Build jobs with `_jobs.build_job` and route them
+with `routing.route_job` rather than repeating either in a client or a
+command. Avoid repeating implementation walkthroughs or
 live board counts in documentation. Add new provider fixtures with actual
 response fields and record API limitations precisely, with official sources
 where available. There is no configured formatter or linter.

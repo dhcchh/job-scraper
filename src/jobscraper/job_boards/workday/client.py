@@ -8,9 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from requests.exceptions import HTTPError
 
-from jobscraper.board_config import PROVIDER_LABELS
 from jobscraper.enrichment.classify_roles import classify_job
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import (
     normalize_location,
     normalize_locations,
@@ -20,6 +18,7 @@ from jobscraper.job_boards._http import (
     get_with_retries,
     paginate_with_retries,
 )
+from jobscraper.job_boards._jobs import build_job
 from jobscraper.models import Job, normalize_date
 
 logger = logging.getLogger(__name__)
@@ -224,27 +223,21 @@ def _to_job(
     scraped_date: datetime.date,
     workday_today: datetime.date,
 ) -> Job:
-    title = raw.get("title", "")
     locations_text = raw.get("locationsText") or ""
-    return Job(
-        board=firm,
+    return build_job(
+        "workday",
+        firm,
+        company_type,
+        scraped_date,
         job_id=job_id,
-        title=title,
-        department="",
+        title=raw.get("title", ""),
         location=(
             ""
             if _MULTI_LOCATION_RE.match(locations_text)
             else normalize_location(locations_text)
         ),
         url=f"https://{host}/{site}{raw['externalPath']}",
-        updated_at="",
         first_published=_posted_on_date(raw.get("postedOn"), workday_today),
-        scraped_date=scraped_date,
-        seniority=classify_seniority(title, ""),
-        company_type=company_type,
-        source=PROVIDER_LABELS["workday"],
-        description="",
-        salary=None,
     )
 
 

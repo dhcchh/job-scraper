@@ -1,15 +1,11 @@
 """SmartRecruiters Posting API client."""
 
 import datetime
-import logging
 
-from jobscraper.board_config import PROVIDER_LABELS
-from jobscraper.job_boards._http import paginate_with_retries
-from jobscraper.models import Job, normalize_job_id, normalize_date
-from jobscraper.enrichment.classify_seniority import classify_seniority
 from jobscraper.enrichment.normalize_location import normalize_office
-
-logger = logging.getLogger(__name__)
+from jobscraper.job_boards._http import paginate_with_retries
+from jobscraper.job_boards._jobs import build_job, jobs_from
+from jobscraper.models import Job, normalize_date
 
 BASE_URL = "https://api.smartrecruiters.com/v1/companies"
 JOBS_SITE_URL = "https://jobs.smartrecruiters.com"
@@ -25,20 +21,17 @@ def fetch_smartrecruiters_jobs(
     scraped_date: datetime.date | None = None,
 ) -> list[Job]:
     """Fetch and normalize all open jobs for a SmartRecruiters company."""
-    if scraped_date is None:
-        scraped_date = datetime.date.today()
-
     url = f"{BASE_URL}/{company_identifier}/postings"
     raw_jobs = _fetch_all_pages(company_identifier, url)
-
-    jobs = []
-    for raw in raw_jobs:
-        jobs.append(_to_job(raw, firm, company_type, scraped_date))
-    logger.info(
-        "smartrecruiters[%s]: fetched %d jobs", company_identifier, len(jobs)
+    return jobs_from(
+        "smartrecruiters",
+        company_identifier,
+        raw_jobs,
+        _to_job,
+        firm,
+        company_type,
+        scraped_date,
     )
-
-    return jobs
 
 
 def _fetch_all_pages(company_identifier: str, url: str) -> list[dict]:
@@ -58,23 +51,17 @@ def _fetch_all_pages(company_identifier: str, url: str) -> list[dict]:
 def _to_job(
     raw: dict, firm: str, company_type: str, scraped_date: datetime.date
 ) -> Job:
-    title = raw.get("name", "")
-    department = _department(raw)
-    return Job(
-        board=firm,
-        job_id=normalize_job_id(raw["id"]),
-        title=title,
-        department=department,
+    return build_job(
+        "smartrecruiters",
+        firm,
+        company_type,
+        scraped_date,
+        job_id=raw["id"],
+        title=raw.get("name", ""),
+        department=_department(raw),
         location=_location(raw),
         url=_posting_url(raw),
-        updated_at="",
         first_published=normalize_date(raw.get("releasedDate", "")),
-        scraped_date=scraped_date,
-        seniority=classify_seniority(title, department),
-        company_type=company_type,
-        source=PROVIDER_LABELS["smartrecruiters"],
-        description="",
-        salary=None,
     )
 
 

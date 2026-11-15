@@ -8,6 +8,7 @@ import sys
 import requests
 
 from jobscraper import config
+from jobscraper.cli import configure_logging
 from jobscraper.models import Job
 
 logger = logging.getLogger(__name__)
@@ -278,9 +279,7 @@ def check_connection() -> bool:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
     parser = argparse.ArgumentParser(
         description="Optional Telegram digest for latest-job-scraper. "
         "This module has no standalone run mode of its own -- main.py calls "
