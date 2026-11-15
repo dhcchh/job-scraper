@@ -14,7 +14,9 @@ Job boards:
 - Recruitee
 - Amazon (amazon.jobs)
 
-Firms and tokens live in [`company_toml/`](company_toml/). Citadel's SG/HK integration is disabled: [docs/citadel.md](docs/citadel.md).
+Firms and tokens live in [`company_toml/`](company_toml/).
+
+Not supported: Citadel, or any other board behind a Cloudflare challenge. They are not worth the time ([docs/cloudflare-challenges.md](docs/cloudflare-challenges.md)).
 
 ## Setup
 
@@ -145,7 +147,6 @@ The four sheet writers run `pytest` first and share the `sheet-write` concurrenc
   - The Trade Desk
   - Apple
   - Atlassian
-- Citadel SG/HK browser access ([docs/citadel.md](docs/citadel.md)).
 - A lock shared by local and Actions writers; numeric seniority such as Engineer II.
 - A searchable, mobile-friendly site on the Hetzner server, replacing the sheet: sign-in, approved users, revocable access on pages and data, first-seen dates kept, no duplicate alerts. Needs a database, scheduling, HTTPS and backups.
 - Limits: Sheets quotas, full-tab reads, provider rate limits and the cell cap bound scale; no capacity is measured.

@@ -2,7 +2,7 @@
 
 These are notes from a probe on 2026-11-08, kept for when the integrations are built. Neither company has a public jobs API. Both embed search results in their own careers pages, so a client has to parse HTML, and it breaks when the site changes. Check the endpoints again before building.
 
-Every probe ran from a home connection, not GitHub Actions. Before writing a client, confirm that Actions can fetch these pages. Citadel shows what happens when a site blocks automated access ([citadel.md](citadel.md)).
+Every probe ran from a home connection, not GitHub Actions. Before writing a client, confirm that Actions can fetch these pages. If either site answers with a Cloudflare challenge, stop: Citadel was removed for that reason ([cloudflare-challenges.md](cloudflare-challenges.md)).
 
 ## Google
 

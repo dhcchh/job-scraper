@@ -17,7 +17,6 @@ PROVIDER_LABELS: dict[str, str] = {
     "eightfold": "Eightfold",
     "workday": "Workday",
     "recruitee": "Recruitee",
-    "citadel": "Citadel",
     "amazon": "Amazon",
 }
 
@@ -174,13 +173,6 @@ def _provider_from_path(path: Path) -> str:
 def _validate_token(
     path: Path, provider: str, identifier: object, token: str
 ) -> None:
-    if provider == "citadel":
-        if token == "citadel":
-            return
-        raise ValueError(
-            f"{path.name}: [[boards]] entry {identifier!r} has invalid token "
-            f"{token!r}; expected 'citadel'"
-        )
     pattern, expected = {
         "workday": (_WORKDAY_TOKEN_RE, "'<tenant>.wd<number>/<site>'"),
         "amazon": (

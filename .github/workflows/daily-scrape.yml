@@ -58,12 +58,6 @@ jobs:
 
       # A TOML push that only removed entries selects no firms. Skip the
       # scrape rather than reading the empty ONLY_FIRMS as "every board".
-      - name: Install Chromium if Citadel is selected
-        if: github.event_name != 'push' || steps.changed_boards.outputs.firms != ''
-        env:
-          ONLY_FIRMS: ${{ steps.changed_boards.outputs.firms }}
-        run: uv run python -m jobscraper.job_boards.citadel.install
-
       - name: Run scraper
         if: github.event_name != 'push' || steps.changed_boards.outputs.firms != ''
         env:

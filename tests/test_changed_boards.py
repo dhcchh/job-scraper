@@ -26,11 +26,11 @@ def test_changed_firms_ignores_order_and_removals_and_dedupes_firms():
     assert changed_firms({}, {"gh": [a, {**a, "token": "c"}]}) == ["Acme"]
 
 
-def test_citadel_activation_is_selected_but_disabled_config_is_not():
-    path = "company_toml/citadel_boards.toml"
-    board = {"token": "citadel", "firm": "Citadel", "company_type": "Prop Trading/Hedge Fund"}
+def test_an_empty_board_file_selects_nothing_until_a_board_is_added():
+    path = "company_toml/lever_boards.toml"
+    board = {"token": "acme", "firm": "Acme", "company_type": "Tech"}
     assert changed_firms({}, {path: []}) == []
-    assert changed_firms({path: []}, {path: [board]}) == ["Citadel"]
+    assert changed_firms({path: []}, {path: [board]}) == ["Acme"]
 
 
 def test_changed_boards_cli_reads_committed_toml(tmp_path):

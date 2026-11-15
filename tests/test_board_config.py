@@ -17,8 +17,7 @@ def test_checked_in_board_configuration_is_valid():
     boards_by_provider = load_all_boards()
 
     assert tuple(boards_by_provider) == PROVIDERS
-    assert all(boards for provider, boards in boards_by_provider.items() if provider != "citadel")
-    assert boards_by_provider["citadel"] == []  # Disabled pending a Cloudflare access fix.
+    assert all(boards_by_provider.values())
 
 
 def test_load_boards_rejects_duplicate_tokens_ignoring_case(tmp_path):
@@ -40,16 +39,6 @@ def test_load_boards_rejects_duplicate_tokens_ignoring_case(tmp_path):
 
     with pytest.raises(ValueError, match="duplicate token"):
         load_boards(path)
-
-
-def test_load_boards_accepts_fixed_citadel_token(tmp_path):
-    path = _write(tmp_path, "citadel_boards.toml", '''
-        [[boards]]
-        token = "citadel"
-        firm = "Citadel"
-        company_type = "Prop Trading/Hedge Fund"
-    ''')
-    assert load_boards(path)[0]["token"] == "citadel"
 
 
 def test_load_boards_accepts_amazon_category_slugs_under_one_firm(tmp_path):
@@ -132,7 +121,6 @@ def test_load_boards_rejects_blank_workday_location_scope(tmp_path):
     [
         ("greenhouse_boards.toml", "not a slug"),
         ("workday_boards.toml", "acme/External_Careers"),
-        ("citadel_boards.toml", "citadel-securities"),
         ("amazon_boards.toml", "Software-Development"),
         ("amazon_boards.toml", "software_development"),
         ("amazon_boards.toml", "software-development-"),

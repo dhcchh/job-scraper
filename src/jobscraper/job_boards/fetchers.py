@@ -9,7 +9,6 @@ from concurrent.futures import ThreadPoolExecutor
 from jobscraper import config
 from jobscraper.job_boards.amazon.client import fetch_amazon_jobs
 from jobscraper.job_boards.ashby.client import fetch_ashby_jobs
-from jobscraper.job_boards.citadel.client import fetch_citadel_jobs
 from jobscraper.job_boards.eightfold.client import fetch_eightfold_jobs
 from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs

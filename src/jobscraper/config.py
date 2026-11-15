@@ -24,7 +24,6 @@ SMARTRECRUITERS_BOARDS = _BOARDS["smartrecruiters"]
 EIGHTFOLD_BOARDS = _BOARDS["eightfold"]
 WORKDAY_BOARDS = _BOARDS["workday"]
 RECRUITEE_BOARDS = _BOARDS["recruitee"]
-CITADEL_BOARDS = _BOARDS["citadel"]
 AMAZON_BOARDS = _BOARDS["amazon"]
 
 

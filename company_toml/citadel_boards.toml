@@ -1,3 +1,0 @@
-# Disabled pending a Cloudflare access fix.
-# See README.md for the probe and browser setup.
-boards = []

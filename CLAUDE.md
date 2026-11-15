@@ -147,3 +147,11 @@ listing items or features. Use bullets, or split the text over several lines.
 Remaining enhancements: numeric/level-based seniority (such as Engineer II),
 a lock shared by local and Actions writers, and integrations in the README
 backlog. These are outside the current implementation.
+
+Do not build or propose an integration for a job board behind a Cloudflare
+challenge (HTTP 403 with a `cf-mitigated: challenge` header).
+
+- Citadel was tried with a browser client, never fetched a job and was
+  removed on 2026-11-15.
+- Any other board with the same challenge is not worth the time either.
+- Details: [docs/cloudflare-challenges.md](docs/cloudflare-challenges.md).
