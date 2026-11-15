@@ -1,9 +1,61 @@
 # latest-job-scraper
 
 Collects open postings from company career boards into a Google Sheet, filed by role and region, with optional Telegram alerts. The sheet is its only memory.
-Each run: fetch → validate → classify → append/prune → notify. Decisions, failures and conflicts are in [blog.md](blog.md).
 
-Job boards:
+Each run: fetch → validate → classify → append/prune → notify.
+
+- Why it works this way, and what happens on failure: [blog.md](blog.md)
+- How roles, regions and locations are decided: [docs/rules.md](docs/rules.md)
+- Rules for working on the code: [CLAUDE.md](CLAUDE.md)
+
+## What you get
+
+Each posting is one row on a tab named `"{category} - {region}"`, such as `SWE/DE - PAC`. This is an invented example:
+
+| Column | Example | Meaning |
+| --- | --- | --- |
+| `first_published` | 2026-11-03 | Date the provider published it; blank if unknown |
+| `updated_at` | 2026-11-10 | Date the provider last updated it |
+| `board` | Example | The firm name, part of the posting's identity |
+| `title` | Senior Data Engineer | |
+| `location` | Singapore | Offices joined with ` \| ` |
+| `seniority` | Senior | `Unspecified` when no level matches |
+| `company_type` | Fintech | Set per firm in `company_toml/` |
+| `url` | Apply | A `HYPERLINK` formula to the posting |
+| `salary` | | Lever and Ashby only |
+| `department` | Data Platform | |
+| `job_id` | 4821937 | The provider's ID, unique within the firm |
+| `scraped_date` | 2026-11-12 | Date the scraper first saw it |
+| `source` | Greenhouse | The provider |
+| `description` | | Only for allowlisted firms |
+
+A Telegram digest of new PAC roles looks like this:
+
+```text
+📦 3 new PAC role(s)
+
+SWE/DE
+Example x2 (Singapore)
+Other Firm x1 (Hong Kong)
+
+See them in the sheet
+```
+
+## Terms
+
+- **Board:** one firm's careers feed on one provider, configured by an entry in `company_toml/`.
+- **Firm:** the display name in that entry. It is stored in the `board` column.
+- **Posting identity:** `(firm, job_id)`. This is how the scraper knows it has seen a posting.
+- **Tab:** one sheet per role category and region, such as `SWE/DE - PAC`.
+- **PAC / RoW:** Asia-Pacific, and the rest of the world.
+- **Noise:** a posting whose title matches no role. It is dropped.
+- **Prune:** deleting rows whose posting is no longer listed. Closed postings are deleted, not marked.
+- **Prune guard:** holds back a firm whose feed is empty or has dropped sharply. See [blog.md](blog.md).
+- **Backfill:** refreshes existing rows in place and never moves them.
+- **Full Refresh:** refreshes every row, then moves rows between tabs by the current rules.
+- **Supported companies:** a reference tab listing every firm. It is created automatically.
+
+## Job boards
 
 - Greenhouse
 - Lever
@@ -28,11 +80,19 @@ cp .env.example .env
 ```
 
 1. Enable the Sheets API, create a service account, and share the spreadsheet with its `client_email` as Editor.
-2. In `.env`, set `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` (the whole key on one line). Optional `GOOGLE_SHEET_TITLE` makes every run refuse a spreadsheet with a different title.
-3. Create ten tabs named `"{category} - {region}"`, such as `"SWE/DE - PAC"`. Categories: DS/ML/Algos, DA/BI, SWE/DE, QT/QR, SRE/DevOps ([`classify_roles.py`](src/jobscraper/enrichment/classify_roles.py)). Regions: PAC, RoW ([`classify_region.py`](src/jobscraper/enrichment/classify_region.py)).
-4. Give each tab this header, in order ([`models.FIELDS`](src/jobscraper/models.py)): `first_published, updated_at, board, title, location, seniority, company_type, url, salary, department, job_id, scraped_date, source, description`. Backfill or Full Refresh can write it to an empty tab.
+2. In `.env`, set `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` (the whole key on one line).
+   - Optional `GOOGLE_SHEET_TITLE` makes every run refuse a spreadsheet with a different title.
+3. Create ten tabs named `"{category} - {region}"`:
+   - Categories: DS/ML/Algos, DA/BI, SWE/DE, QT/QR, SRE/DevOps.
+   - Regions: PAC, RoW.
+   - Example: `SWE/DE - PAC`.
+4. Give each tab the header from the table above, in this order ([`models.FIELDS`](src/jobscraper/models.py)):
+   - `first_published, updated_at, board, title, location, seniority, company_type, url, salary, department, job_id, scraped_date, source, description`
+   - Backfill or Full Refresh can write it to an empty tab.
 
-The **Supported companies** tab is created automatically. It only adds or recategorizes firms, never drops one, and an empty tab is filled without announcements. Keep credentials in `.env` or Actions secrets; board tokens are public config in `company_toml/`.
+The **Supported companies** tab only adds or recategorizes firms and never drops one. An empty tab is filled without announcements.
+
+Keep credentials in `.env` or Actions secrets. Board tokens are public config in `company_toml/`.
 
 ## Commands
 
@@ -49,9 +109,19 @@ uv run python -m jobscraper.telegram --check            # test Telegram destinat
 uv run python -m jobscraper.alerts --check              # test the DM, plus one live sample
 ```
 
-Before a local production write, the checkout must be clean and pushed to `origin/main` ([CLAUDE.md](CLAUDE.md)). Local runs share no lock, so never overlap writers. Tests block unmocked HTTP.
+Tests block unmocked HTTP and need no credentials.
 
-`ONLY_FIRMS` (comma-separated) limits board health and the daily run, not Backfill, Full Refresh or the Supported companies tab. `FORCE_PRUNE_FIRMS` is the prune-guard override in [blog.md](blog.md).
+Two environment variables narrow or override a run:
+
+- `ONLY_FIRMS` (comma-separated) limits board health and the daily run. It doesn't limit Backfill, Full Refresh or the Supported companies tab.
+- `FORCE_PRUNE_FIRMS` overrides the prune guard for confirmed closures. See [blog.md](blog.md).
+
+### Before writing to the production sheet
+
+- Check that `git status` is clean.
+- Fetch, then check that `git log origin/main..HEAD` is empty. The checkout must match what is pushed.
+- Use `main`. Scheduled runs use it, and local schema changes must use the same code. When dispatching an Actions workflow, select `main` too.
+- Don't overlap writers. Local runs share no lock with each other or with Actions.
 
 ## Which refresh to run
 
@@ -61,28 +131,30 @@ Before a local production write, the checkout must be clean and pushed to `origi
 | Role keywords, region or country rules, location mapping | Full Refresh, before the next daily run | Moves rows, keeps first-seen dates, no re-announcements. |
 | Descriptions, allowlist, salary, column layout, formatting | Full Refresh | Project rule. Backfill also rewrites these, but tab by tab. |
 
-Backfill also clears descriptions of firms not on the allowlist, and blanks salary a live posting no longer has. Rows whose posting closed, or whose board failed, keep their text. Full Refresh does the same, then routes rows by current rules. It removes cross-tab duplicates, drops rows the daily run would no longer route, and silently adds open untracked postings that route. It never deletes a row only because its board stopped listing it.
+Backfill:
+
+- Clears descriptions of firms not on the allowlist.
+- Blanks salary a live posting no longer has.
+- Leaves rows whose posting closed, or whose board failed, as they were.
+
+Full Refresh does the same, then:
+
+- Routes rows by the current rules.
+- Removes cross-tab duplicates.
+- Drops rows the daily run would no longer route.
+- Silently adds open postings that now route and aren't tracked yet.
+- Never deletes a row only because its board stopped listing it.
 
 ## Rules in brief
 
-- **Roles:** the first matching title keyword wins, in this order: DS/ML/Algos, DA/BI, SWE/DE, QT/QR, SRE/DevOps. Anything unmatched is noise, except for the Amazon fallback below.
-  - Fallbacks:
-    - Generic senior engineering titles go to SWE/DE.
-    - Bare "research" goes to QT/QR at `Prop Trading/Hedge Fund` firms and to DS/ML/Algos at `AI Lab` firms.
-    - Bare "analytics" goes to DA/BI.
-  - Noise: recruiter, solutions-architect, legal-engineer, developer-relations, customer-facing engineering-lead and non-systematic trader titles.
-  - A team-name keyword doesn't count on a product, program, project, technical-writer or service-delivery title ("Product Manager, Data Engineering").
-  - Amazon only:
-    - Extra keywords for Amazon's own titles: SDE, SDM, Software Dev Engineer, Software Development, System Development Engineer, BIE, Applied Science, Research Science.
-    - Extra noise: every data-centre role, Infrastructure Reliability & Quality, QA and SDET, technicians, delivery consultants, physical security, and program, project or product managers.
-    - An otherwise unmatched posting in the "Software Development" job family is SWE/DE, unless its title names a job that isn't software engineering: one of the noise titles above, a product owner, a customer-facing engineer, a user researcher, a designer or a writer.
-- **Seniority:** title and department, then Greenhouse's employment type.
-- **Regions:** PAC is Singapore, Hong Kong, Australia, Japan, South Korea, China, Taiwan, New Zealand, Thailand, or a role listed for APAC or APJ; one PAC office is enough. A posting is excluded only if every office is in Vietnam, Malaysia, Indonesia, India, Armenia or Uruguay. All else is RoW.
-- **Locations:** each office is normalized separately and joined with ` | `, keeping provider country data. A label splits on `/`, `;` or ` or ` only when every part names a known place; free text is never comma-split. GovTech uses its location label (its offices name teams). Unresolved offices in new rows appear in the run summary.
-- **Dates:** `YYYY-MM-DD`; blank if the provider gives none. Workday's relative dates count back from one posting's exact start date, else the scrape date; "30+ days" stays blank unless a detail page gives a date.
-- **Descriptions:** only for firms in `FIRMS_NEEDING_DESCRIPTION` (`models.py`; QRT and Squarepoint), and never from SmartRecruiters or Workday.
-- **Salary:** Lever and Ashby only. Greenhouse offers ranges via its [job-detail endpoint](https://docs.greenhouse.io/job-board.html#retrieve-a-job) (`pay_transparency=true`), which this project does not call (per Greenhouse docs; not verified).
-- **Text safety:** external text stays literal: text starting with `=`, `+`, `-` or `@` is escaped, and Full Refresh writes typed values. Only the `url` column, a generated `HYPERLINK` formula, is a formula.
+The full rules are in [docs/rules.md](docs/rules.md).
+
+- **Roles:** the first matching title keyword wins: DS/ML/Algos, DA/BI, SWE/DE, QT/QR, SRE/DevOps. An unmatched title is noise.
+- **Seniority:** from the title and department, then Greenhouse's employment type.
+- **Regions:** one PAC office makes a posting PAC. It is dropped only if every office is in an excluded country. Everything else is RoW.
+- **Dates:** `YYYY-MM-DD`, blank when the provider gives none.
+- **Descriptions and salary:** descriptions only for allowlisted firms; salary from Lever and Ashby only.
+- **Text safety:** external text stays literal. Only the `url` column is a formula.
 
 ## Telegram
 
@@ -94,11 +166,15 @@ Each destination is optional. All need `TELEGRAM_BOT_TOKEN` plus their own chat 
 | Newly added firms, by company type | `TELEGRAM_COMPANIES_CHAT_ID` | `TELEGRAM_COMPANIES_THREAD_ID` |
 | One message per new SG/HK data-engineering posting | `TELEGRAM_DM_CHAT_ID` | none |
 
-The DM recipient must press Start on the bot first. A DM has an apply link, plus a description only for an allowlisted firm. At most 15 go out per run, then an overflow notice.
+For the DM:
+
+- The recipient must press Start on the bot first.
+- Each message has an apply link, plus a description only for an allowlisted firm.
+- At most 15 go out per run, then an overflow notice.
 
 ## Adding or changing a board
 
-Add to `company_toml/<provider>_boards.toml` (Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, Recruitee or Amazon):
+Add an entry to `company_toml/<provider>_boards.toml`. The provider is one of Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, Recruitee or Amazon.
 
 ```toml
 [[boards]]
@@ -107,7 +183,16 @@ firm = "Example"
 company_type = "Fintech"
 ```
 
-Take the token from the firm's real careers site. A firm in two files must use the same spelling and `company_type`. Workday tokens look like `"<tenant>.<wdN>/<site>"` and accept `location_scope = "Singapore"` to keep matching offices. Amazon tokens are amazon.jobs category slugs (`"software-development"`), all under the firm `Amazon`. A slug the site doesn't recognise fails the board; a recognised category may be empty. One with 10,000 or more postings fails on its first page, because the endpoint stops there. Eightfold, Workday and Amazon endpoints are undocumented; validate each tenant or category first.
+- Take the token from the firm's real careers site.
+- A firm in two files must use the same spelling and `company_type`.
+- **Workday:** tokens look like `"<tenant>.<wdN>/<site>"`. Add `location_scope = "Singapore"` to keep only matching offices.
+- **Amazon:** tokens are amazon.jobs category slugs, such as `"software-development"`, all under the firm `Amazon`.
+  - A slug the site doesn't recognise fails the board.
+  - A recognised category may be empty.
+  - A category with 10,000 or more postings fails on its first page, because the endpoint stops there.
+- **Eightfold, Workday and Amazon:** the endpoints are undocumented. Validate each tenant or category first.
+
+Then check it:
 
 ```bash
 uv run jobscraper-validate-boards
@@ -115,9 +200,13 @@ uv run jobscraper-validate-boards --live --provider greenhouse --firm Example
 ONLY_FIRMS=Example uv run python -m jobscraper.board_health
 ```
 
-Static validation rejects unknown or missing fields, stray whitespace, bad or duplicate tokens and inconsistent firm metadata. `--live` also fetches the board; an empty one fails unless `--allow-empty` is given. The built package bundles board files, so rebuild after changes.
+- Static validation rejects unknown or missing fields, stray whitespace, bad or duplicate tokens and inconsistent firm metadata.
+- `--live` also fetches the board. An empty one fails unless you pass `--allow-empty`.
+- The built package bundles board files, so rebuild after changes.
 
-Removing a board leaves its rows and Supported companies entry behind, because nothing prunes a firm that is no longer fetched. **Do not rename a `firm` casually.** It is part of every row's identity: [Known gap](blog.md#known-gap-renaming-a-firm).
+Removing a board leaves its rows and Supported companies entry behind, because nothing prunes a firm that is no longer fetched.
+
+**Do not rename a `firm` casually.** It is part of every row's identity. See [Known gap](blog.md#known-gap-renaming-a-firm).
 
 ## GitHub Actions
 
@@ -132,9 +221,23 @@ Removing a board leaves its rows and Supported companies entry behind, because n
 | Sync Supported Companies | Manual | Sync firms, announce additions |
 | Telegram DM Check | Manual | Test DM, live sample |
 
-23:00 UTC is 07:00 Singapore time the next day. On a TOML push, Daily Scrape fetches only added or modified firms; a removal-only push scrapes nothing. Manual Daily Scrape takes `force_prune_firms`.
+Daily Scrape:
 
-The four sheet writers run `pytest` first and share the `sheet-write` concurrency group. The first three then audit the sheet even after a failure and keep `data-quality.json` for 14 days. The audit fails on broken keys or headers; blank metadata and cross-tab duplicates are advisory. It repairs nothing.
+- 23:00 UTC is 07:00 Singapore time the next day.
+- On a TOML push it fetches only added or modified firms. A removal-only push scrapes nothing.
+- A manual run takes `force_prune_firms`.
+
+The four sheet writers (Daily Scrape, Backfill, Full Refresh and Sync Supported Companies):
+
+- Run `pytest` first.
+- Share the `sheet-write` concurrency group, so Actions never overlaps them.
+
+The audit:
+
+- Runs after the first three writers, even after a failure, and keeps `data-quality.json` for 14 days.
+- Fails on broken keys or headers.
+- Treats blank metadata and cross-tab duplicates as advisory.
+- Repairs nothing.
 
 ## Backlog
 
@@ -147,6 +250,10 @@ The four sheet writers run `pytest` first and share the `sheet-write` concurrenc
   - The Trade Desk
   - Apple
   - Atlassian
-- A lock shared by local and Actions writers; numeric seniority such as Engineer II.
-- A searchable, mobile-friendly site on the Hetzner server, replacing the sheet: sign-in, approved users, revocable access on pages and data, first-seen dates kept, no duplicate alerts. Needs a database, scheduling, HTTPS and backups.
-- Limits: Sheets quotas, full-tab reads, provider rate limits and the cell cap bound scale; no capacity is measured.
+- A lock shared by local and Actions writers.
+- Numeric seniority such as Engineer II.
+- A searchable, mobile-friendly site on the Hetzner server, replacing the sheet:
+  - Sign-in, approved users, and revocable access on pages and data.
+  - First-seen dates kept, and no duplicate alerts.
+  - Needs a database, scheduling, HTTPS and backups.
+- Limits: Sheets quotas, full-tab reads, provider rate limits and the cell cap bound scale. No capacity is measured.

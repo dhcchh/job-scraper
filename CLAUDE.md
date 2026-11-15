@@ -15,6 +15,9 @@ uv run python -m jobscraper.sheets.audit
 ```
 
 See [README.md](README.md) for setup, configuration and workflow behavior.
+Classification rules are in [docs/rules.md](docs/rules.md) and the design
+rationale is in [blog.md](blog.md). Edit the rules doc when you change a
+keyword list, country set or location rule.
 
 ## Production writes
 
@@ -42,6 +45,7 @@ live writes.
   labels. Sheet credentials are required when opening a sheet, not at import
   time.
 - `validate_boards.py`: static configuration and optional live endpoint checks.
+- `board_health.py`: fetches every board without opening the sheet.
 - `job_boards/fetchers.py`: shared provider registry and per-board invocation.
 - `job_boards/_http.py`: retries, response validation and pagination.
 - `job_boards/_jobs.py`: shared `Job` building for every client: source
@@ -86,33 +90,34 @@ live writes.
   intentional formulas. Dates use ISO display formatting.
 - Preserve provider country information. Normalize separate offices and join
   with ` | `; do not split an ambiguous free-text office list on commas.
-  GovTech explicitly uses its location label because its office list names teams;
-  Twitch does too because every posting lists the same placeholder office.
-  Scale AI and Lyft do as well: their office tags are placeholders or
-  workspace names that disagree with the posting's real location.
-  Amazon builds offices from its structured `locations` entries, because
-  `normalized_location` ends in an ISO alpha-3 code. Each office uses the
-  shared alpha-3 table first, then Amazon's country name, whose own forms
-  for China and Hong Kong the region rules don't recognize.
+  - GovTech, Twitch, Scale AI and Lyft explicitly use the posting's location
+    label, not its office list. GovTech's offices name teams, Twitch lists
+    the same placeholder office on every posting, and Scale AI and Lyft tag
+    placeholders or workspace names that disagree with the real location.
+  - Amazon builds offices from its structured `locations` entries, because
+    `normalized_location` ends in an ISO alpha-3 code. Each office uses the
+    shared alpha-3 table first, then Amazon's country name, whose own forms
+    for China and Hong Kong the region rules don't recognize.
 - Region decisions live in `classify_region.py`; keep its country sets
   disjoint. Exclude a posting only if every office is excluded. Unknown
   locations remain visible in coverage reports.
-- Role category precedence is intentional. Recruiter, solutions-architect
-  and legal-engineer titles are noise, as are developer relations/advocacy
-  titles and leads of customer-facing engineering teams ("Sales Engineering
-  Manager"). Data-engineering keywords alone do not make a
-  product/program/project manager, technical writer or service delivery
-  manager an engineering role. QT/QR excludes
-  discretionary, sales, OTC, floor and financing traders. Bare
-  research titles depend on `company_type`, and Amazon's own keywords and
-  noise (every data-centre role, Infrastructure Reliability & Quality, QA
-  and SDET, delivery consultants, program managers) apply only when
-  `source` is Amazon. Amazon's "Software Development" job-family fallback
-  runs last and never overrides a veto or a title naming a non-software
-  job. Every caller of `classify_job` must set `company_type`, `source`
-  and `department`. Keep
-  provider-specific rules out of the shared lists, so other firms are
-  unaffected.
+- Role category precedence is intentional. Full rules: [docs/rules.md](docs/rules.md).
+  - Noise titles: recruiter, solutions-architect, legal-engineer, developer
+    relations/advocacy, and leads of customer-facing engineering teams
+    ("Sales Engineering Manager").
+  - Data-engineering keywords alone do not make a product, program, project,
+    technical-writer or service-delivery-manager title an engineering role.
+  - QT/QR excludes discretionary, sales, OTC, floor and financing traders.
+  - Bare research titles depend on `company_type`.
+  - Amazon's own keywords and noise apply only when `source` is Amazon. The
+    noise covers every data-centre role, Infrastructure Reliability &
+    Quality, QA and SDET, delivery consultants and program managers.
+  - Amazon's "Software Development" job-family fallback runs last. It never
+    overrides a veto or a title naming a non-software job.
+  - Every caller of `classify_job` must set `company_type`, `source` and
+    `department`.
+  - Keep provider-specific rules out of the shared lists, so other firms are
+    unaffected.
 - Greenhouse employment type is a seniority fallback. Refresh open jobs from
   current board data so metadata-only internships retain their level.
 - Description extraction remains limited to `FIRMS_NEEDING_DESCRIPTION`.
@@ -144,14 +149,10 @@ where available. There is no configured formatter or linter.
 When writing documentation, don't write one long paragraph, especially when
 listing items or features. Use bullets, or split the text over several lines.
 
-Remaining enhancements: numeric/level-based seniority (such as Engineer II),
-a lock shared by local and Actions writers, and integrations in the README
-backlog. These are outside the current implementation.
+The README Backlog lists the remaining enhancements. They are outside the
+current implementation.
 
 Do not build or propose an integration for a job board behind a Cloudflare
-challenge (HTTP 403 with a `cf-mitigated: challenge` header).
-
-- Citadel was tried with a browser client, never fetched a job and was
-  removed on 2026-11-15.
-- Any other board with the same challenge is not worth the time either.
-- Details: [docs/cloudflare-challenges.md](docs/cloudflare-challenges.md).
+challenge (HTTP 403 with a `cf-mitigated: challenge` header). Citadel was
+removed for this reason. Details and how to recognise one:
+[docs/cloudflare-challenges.md](docs/cloudflare-challenges.md).
