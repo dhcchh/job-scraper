@@ -89,7 +89,19 @@ never see them.
     (SWE/DE)
   - Information Systems and Technology, which is all the IS&T internships
     name (SWE/DE)
-  - AI research, AIML research and applied researcher (DS/ML/Algos)
+  - Tools engineer (SWE/DE). At Apple "Developer Experience" is the Xcode
+    team, so "Profiling Tools Engineer - Developer Experience" isn't
+    developer relations.
+  - AI research, AIML research, applied researcher and algorithms
+    (DS/ML/Algos)
+  - Data and reporting roles the shared analyst keywords miss (DA/BI):
+    - Insights specialist
+    - Technical analyst
+    - Solutions analyst
+    - Analytics developer, which beats the shared "developer" keyword
+    - Applied Data Solutions, which is all its programme's internships name
+  - Apple's other analysts stay noise: business and financial operations,
+    policy, compliance and SAP functional analysts.
 - **Extra noise:**
   - QA and SDET
   - Program, project and product managers, including EPMs and TPMs
@@ -114,18 +126,21 @@ never see them.
   `department`. An otherwise unmatched posting is:
   - DS/ML/Algos in "Software and Services" when its title names a scientist
     ("Imaging Scientist").
-  - SWE/DE in "Software and Services" when its title names an engineer,
-    software or an internship.
+  - SWE/DE in "Software and Services" when its title names an engineer, an
+    architect, software or an internship.
   - SWE/DE in "Students" when its title names an engineer or software.
   - DS/ML/Algos in "Machine Learning and AI" when its title names an
-    engineer, research, a scientist or an internship.
+    engineer, an architect, research, a scientist or an internship.
 - The team fallbacks run last and skip the same titles as Amazon's
   job-family fallback. They also skip a title that names any of these:
   - Test, quality, validation or verification
-  - Hardware, analog, circuits, silicon, manufacturing, mechanical or molding
+  - Hardware, analog, circuits, silicon, SoC, manufacturing, mechanical or
+    molding
   - A data centre
   - A lab, broadcast, regulatory, human-factors or technical-content
     engineer
+  - A solution architect, who is customer-facing like the shared
+    solutions-architect noise
 
 ## Seniority
 

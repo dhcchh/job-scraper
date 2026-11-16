@@ -680,6 +680,9 @@ _APPLE_TEAM_TITLES = [
     ("RealityKit Spatial UI Rendering Engineer", _SOFTWARE, "SWE/DE"),
     ("Senior GenAI Engineer, Apple Cloud AI", _SOFTWARE, "SWE/DE"),
     ("Software Architect - Payments", _SOFTWARE, "SWE/DE"),
+    ("Principal Data Architect, PostgreSQL Database - Ai & Data Platforms (AiDP)", _SOFTWARE, "SWE/DE"),
+    ("Privacy Architect", _SOFTWARE, "SWE/DE"),
+    ("Systems Architect, Retail and Marcom Engineering", _SOFTWARE, "SWE/DE"),
     ("Internship - Cellular Protocol", _SOFTWARE, "SWE/DE"),
     ("Information Security Internship Program (FY27 Summer Intake)", _SOFTWARE, "SWE/DE"),
     ("Imaging Scientist, Camera and Photos", _SOFTWARE, "DS/ML/Algos"),
@@ -689,6 +692,7 @@ _APPLE_TEAM_TITLES = [
     ("Software PhD Internships", _STUDENTS, "SWE/DE"),
     ("Internship - Framebuffer Driver Engineer", _STUDENTS, "SWE/DE"),
     ("CVML Engineer - 3D Reconstruction", _MLAI, "DS/ML/Algos"),
+    ("Sr Software Architect Perception Systems", _MLAI, "DS/ML/Algos"),
     ("AIML - Lead Researcher, Foundation Models", _MLAI, "DS/ML/Algos"),
     ("Senior Research Lead", _MLAI, "DS/ML/Algos"),
     ("Internship - Reasoning and agentic capabilities of LLMs", _MLAI, "DS/ML/Algos"),
@@ -715,10 +719,25 @@ def test_classify_job_needs_the_apple_team_for_these_titles(title, department, _
     ("AI Research Intern - Foundation Models & Multimodal Intelligence", "DS/ML/Algos"),
     ("Internship - AIML Research", "DS/ML/Algos"),
     ("Senior Applied Researcher", "DS/ML/Algos"),
+    ("Director of Algorithms, Ads Engineering", "DS/ML/Algos"),
+    # "Developer Experience" is Apple's Xcode team, not developer relations.
+    ("Profiling Tools Engineer (Xcode Instruments) - Developer Experience", "SWE/DE"),
+    # Apple's data and reporting roles.
+    ("Storefront Insights Specialist", "DA/BI"),
+    ("Technical Analyst - Insight Team", "DA/BI"),
+    ("Supply Chain Solutions Analyst", "DA/BI"),
+    ("Applied Data Solutions Program, Internships – Summer 2027", "DA/BI"),
 ])
 def test_classify_job_routes_apple_keyword_titles_in_any_team(title, expected):
     assert classify_job(_apple_job(title, _STUDENTS)) == expected
     assert classify_job(_job(title)) is None
+
+
+def test_classify_job_puts_apple_analytics_developers_in_da_bi():
+    title = "Business Analytics Developer, People Analytics"
+    assert classify_job(_apple_job(title)) == "DA/BI"
+    # Elsewhere the shared "developer" keyword still makes it SWE/DE.
+    assert classify_job(_job(title)) == "SWE/DE"
 
 
 @pytest.mark.parametrize("title", [
@@ -790,6 +809,17 @@ def test_classify_job_keeps_apple_keyword_titles_near_its_noise(title, expected)
     ("CDN Solutions Engineer", _SOFTWARE),
     ("Technical Partner Engineer - Apple Home, Wireless Technologies & Ecosystems", _SOFTWARE),
     ("Technical Release Manager, Retail and Marcom Engineering", _SOFTWARE),
+    # Solution architects are customer-facing; SoC architects are chip work.
+    ("Senior Solution Architect, Traffic Infrastructure ASE", _SOFTWARE),
+    ("Solution Architect- Customer Engagement", _SOFTWARE),
+    ("SoC Security Architect - Platform Architecture", _SOFTWARE),
+    ("Data Center Network Architect", _SOFTWARE),
+    # Apple's analysts outside data and reporting work.
+    ("Business & Financial Operations Analyst - AIML", _SOFTWARE),
+    ("Senior Business Operations Analyst, Enterprise Technology Services", _SOFTWARE),
+    ("Policy and Compliance Analyst - Apple Ads", _SOFTWARE),
+    ("Privacy Compliance Analyst", _SOFTWARE),
+    ("Engineering Project Manager (SAP Retail Payments Analyst), IS&T Enterprise Systems", _SOFTWARE),
     # A title that names no engineer, software, research or internship.
     ("App Store Editor (Contract)", _SOFTWARE),
     ("Apple Music Intern", _STUDENTS),

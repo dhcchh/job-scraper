@@ -483,16 +483,39 @@ _APPLE_NON_TECH_INTERNSHIP_RE = (
 # rules apply only to jobs from the Apple provider.
 _APPLE_RULES = _source_rules(
     {
-        "DS/ML/Algos": ("ai research", "aiml research", "applied researcher"),
+        "DS/ML/Algos": (
+            "ai research",
+            "aiml research",
+            "applied researcher",
+            "algorithms",  # "Director of Algorithms, Ads Engineering"
+        ),
+        # Apple's data and reporting roles that the shared analyst keywords
+        # miss. Its other analysts (business and financial operations,
+        # policy, compliance, SAP functional) stay noise.
+        "DA/BI": (
+            "insights specialist",  # dashboards and SQL reporting
+            "technical analyst",  # SQL reports on the manufacturing data platform
+            "solutions analyst",  # "Supply Chain Solutions Analyst": SQL, optimisation
+            "analytics developer",  # "Business Analytics Developer, People Analytics"
+            # The Applied Data Solutions Program internships name only the
+            # programme.
+            "applied data solutions",
+        ),
         "SWE/DE": (
             "security researcher",
             "security research",
             "vulnerability researcher",
             # The IS&T (Apple's IT) internships name only the organisation.
             "information systems and technology",
+            # The shared developer-relations veto drops "Profiling Tools
+            # Engineer (Xcode Instruments) - Developer Experience", but at
+            # Apple "Developer Experience" is the Xcode team.
+            "tools engineer",
         ),
     },
-    team_keywords=frozenset({"information systems and technology"}),
+    team_keywords=frozenset(
+        {"information systems and technology", "algorithms", "applied data solutions"}
+    ),
     # Apple noise: QA and SDET roles, as for Amazon; Siri's language
     # engineers and experts, who are linguists; program, project and product
     # managers, including EPMs and TPMs; and electrical, RF,
@@ -513,10 +536,11 @@ _APPLE_RULES = _source_rules(
     # Apple files every posting under its main team (carried in
     # `Job.department`). An otherwise unmatched title in the software team
     # is DS/ML/Algos when it names a scientist ("Imaging Scientist"), and
-    # SWE/DE when it names an engineer, software or an internship, the
-    # non-tech internships being noise already. An engineer or software
-    # title listed under the student team is SWE/DE; an engineer, research,
-    # scientist or intern title in the machine-learning team is DS/ML/Algos.
+    # SWE/DE when it names an engineer, an architect ("Principal Data
+    # Architect"), software or an internship, the non-tech internships being
+    # noise already. An engineer or software title listed under the student
+    # team is SWE/DE; an engineer, architect, research, scientist or intern
+    # title in the machine-learning team is DS/ML/Algos.
     department_fallbacks=(
         _DepartmentFallback(
             "Software and Services",
@@ -526,7 +550,10 @@ _APPLE_RULES = _source_rules(
         _DepartmentFallback(
             "Software and Services",
             "SWE/DE",
-            re.compile(rf"\bengineers?\b|\bsoftware\b|{_APPLE_INTERNSHIP}", re.IGNORECASE),
+            re.compile(
+                rf"\bengineers?\b|\barchitects?\b|\bsoftware\b|{_APPLE_INTERNSHIP}",
+                re.IGNORECASE,
+            ),
         ),
         _DepartmentFallback(
             "Students",
@@ -537,24 +564,26 @@ _APPLE_RULES = _source_rules(
             "Machine Learning and AI",
             "DS/ML/Algos",
             re.compile(
-                rf"\bengineers?\b|\bresearch(?:ers?)?\b|\bscientists?\b"
-                rf"|{_APPLE_INTERNSHIP}",
+                rf"\bengineers?\b|\barchitects?\b|\bresearch(?:ers?)?\b"
+                rf"|\bscientists?\b|{_APPLE_INTERNSHIP}",
                 re.IGNORECASE,
             ),
         ),
     ),
-    # A team gives no fallback to test, quality, validation, hardware or
-    # data-centre work, or to the lab, broadcast, regulatory, human-factors
-    # and documentation engineers listed under the software team. A keyword
-    # still routes such a title ("Senior Security Engineer, Data Center
-    # Network", "Pre-Silicon ML and Compute Framework Engineer").
+    # A team gives no fallback to test, quality, validation, hardware, chip
+    # (SoC) or data-centre work, to the lab, broadcast, regulatory,
+    # human-factors and documentation engineers listed under the software
+    # team, or to solution architects, who are customer-facing like the
+    # shared "solutions architect" noise. A keyword still routes such a title
+    # ("Senior Security Engineer, Data Center Network", "Pre-Silicon ML and
+    # Compute Framework Engineer").
     fallback_veto=re.compile(
         r"\btest(?:s|ing)?\b|\bquality\b|\bvalidation\b|\bverification\b"
         r"|\bhardware\b|\bHW\b|\banalog\b|\bcircuits?\b|\b(?:pre-)?silicon\b"
-        r"|\bdata[ -]?cent(?:er|re)s?\b"
+        r"|(?-i:\bSoC\b)|\bdata[ -]?cent(?:er|re)s?\b"
         r"|\bmanufacturing\b|\bmechanical\b|\bmolding\b"
         r"|\blab\b|\bbroadcast\b|\bregulatory\b|\bhuman factors\b"
-        r"|\btechnical content\b",
+        r"|\btechnical content\b|\bsolutions? architects?\b",
         re.IGNORECASE,
     ),
 )
