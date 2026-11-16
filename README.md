@@ -186,7 +186,9 @@ company_type = "Fintech"
 
 - Take the token from the firm's real careers site.
 - A firm in two files must use the same spelling and `company_type`.
-- **Workday:** tokens look like `"<tenant>.<wdN>/<site>"`. Add `location_scope = "Singapore"` to keep only matching offices.
+- **Workday:** tokens look like `"<tenant>.<wdN>/<site>"`. Every Workday board sets `location_scope = "Singapore"`.
+  - The scope is sent as Workday's search text, and only postings with a matching office are kept.
+  - Workday rate-limits whole boards (HTTP 429), so a scoped search's few pages fail far less often than a full listing.
 - **Amazon:** tokens are amazon.jobs category slugs, such as `"software-development"`, all under the firm `Amazon`.
   - A slug the site doesn't recognise fails the board.
   - A recognised category may be empty.
