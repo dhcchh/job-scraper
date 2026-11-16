@@ -376,6 +376,121 @@ def _paginate_overlapping(
     return items
 
 
+def paginate_numbered_pages(
+    source: str,
+    identifier: str,
+    fetch_page: Callable[[int], dict],
+    *,
+    page_size: int,
+    total_key: str,
+    items_key: str,
+    id_key: str = "id",
+    workers: int = 1,
+    repair_rounds: int = 3,
+    check_first_page: Callable[[dict], None] | None = None,
+) -> list[dict]:
+    """Fetch every page of a newest-first listing paged by number from 1.
+
+    This is for an endpoint with a fixed page size and no offset, so pages
+    can't overlap. Such a listing can order tied items differently on each
+    request. A tied item on one side of a page boundary can then appear on
+    both pages while its neighbour appears on neither, and the page lengths
+    still add up to the total. Pages holding a repeated ID are fetched
+    again and their items merged, up to `repair_rounds` times, until the
+    distinct IDs reach the total.
+
+    Every page must report the first page's total. Once every item is seen,
+    the first page is fetched once more: an item on it that wasn't seen was
+    added during the fetch. Either change, or repairs that don't reach the
+    total, fetch the board once more and then fail it.
+
+    `check_first_page` sees the first response before any other page is
+    requested.
+    """
+    pages = _PageFormat(total_key, items_key, id_key)
+    return _fetch_twice(
+        lambda: _paginate_numbered(
+            fetch_page, pages, page_size, workers, repair_rounds, check_first_page,
+            f"{source}[{identifier}]",
+        ),
+        source,
+        identifier,
+        "page fetch",
+    )
+
+
+def _paginate_numbered(
+    fetch_page: Callable[[int], dict], pages: _PageFormat, page_size: int,
+    workers: int, repair_rounds: int,
+    check_first_page: Callable[[dict], None] | None, label: str,
+) -> list[dict]:
+    first = fetch_page(1)
+    total = pages.total(first)
+    if check_first_page is not None:
+        check_first_page(first)
+    page_count = max(1, math.ceil(total / page_size))
+
+    def read(number: int, payload: dict) -> list[dict]:
+        if pages.total(payload) != total:
+            raise IncompleteBoardResponse("pagination total changed during fetch")
+        items = pages.items(payload, number)
+        expected = min(page_size, total - (number - 1) * page_size)
+        if len(items) != expected:
+            raise IncompleteBoardResponse(
+                f"page {number} has {len(items)} item(s), expected {expected} "
+                f"of total {total}"
+            )
+        return items
+
+    def fetch(numbers: list[int]) -> dict[int, list[dict]]:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            payloads = list(pool.map(fetch_page, numbers))
+        return {number: read(number, payload) for number, payload in zip(numbers, payloads)}
+
+    def item_id(item: dict) -> str:
+        return normalize_job_id(item[pages.id_key])
+
+    page_items = {1: read(1, first), **fetch(list(range(2, page_count + 1)))}
+    seen: dict[str, dict] = {}
+    for _round in range(repair_rounds + 1):
+        for items in page_items.values():
+            for item in items:
+                seen.setdefault(item_id(item), item)
+        if len(seen) >= total or _round == repair_rounds:
+            break
+        repeated = _pages_with_repeated_ids(page_items, item_id)
+        logger.info(
+            "%s: %d of %d items seen, refetching page(s) %s that repeat an item",
+            label, len(seen), total, ", ".join(map(str, repeated)),
+        )
+        page_items.update(fetch(repeated))
+    if len(seen) != total:
+        raise IncompleteBoardResponse(
+            f"{len(seen)} distinct item(s) after {repair_rounds} repair "
+            f"round(s), total {total}"
+        )
+    if page_count > 1 and any(
+        item_id(item) not in seen for item in read(1, fetch_page(1))
+    ):
+        raise IncompleteBoardResponse("an item was added during the fetch")
+    return list(seen.values())
+
+
+def _pages_with_repeated_ids(
+    page_items: dict[int, list[dict]], item_id: Callable[[dict], str]
+) -> list[int]:
+    """Return the numbers of the pages holding an item another page also holds."""
+    pages_by_id: dict[str, set[int]] = {}
+    for number, items in page_items.items():
+        for item in items:
+            pages_by_id.setdefault(item_id(item), set()).add(number)
+    return sorted({
+        number
+        for numbers in pages_by_id.values() if len(numbers) > 1
+        for number in numbers
+    })
+
+
 def _retry_after(exc: Exception) -> float | None:
     """Read a 429 response's Retry-After seconds, capped; ignore HTTP dates."""
     response = getattr(exc, "response", None)

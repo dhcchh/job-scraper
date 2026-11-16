@@ -65,6 +65,7 @@ See them in the sheet
 - Workday
 - Recruitee
 - Amazon (amazon.jobs)
+- Apple (jobs.apple.com)
 
 Firms and tokens live in [`company_toml/`](company_toml/).
 
@@ -174,7 +175,7 @@ For the DM:
 
 ## Adding or changing a board
 
-Add an entry to `company_toml/<provider>_boards.toml`. The provider is one of Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, Recruitee or Amazon.
+Add an entry to `company_toml/<provider>_boards.toml`. The provider is one of Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, Recruitee, Amazon or Apple.
 
 ```toml
 [[boards]]
@@ -190,7 +191,11 @@ company_type = "Fintech"
   - A slug the site doesn't recognise fails the board.
   - A recognised category may be empty.
   - A category with 10,000 or more postings fails on its first page, because the endpoint stops there.
-- **Eightfold, Workday and Amazon:** the endpoints are undocumented. Validate each tenant or category first.
+- **Apple:** the token lists jobs.apple.com team codes, separated by commas. A code can name one sub-team after a slash: `"SFTWR,MLAI,STDNT/INTRN"`.
+  - Keep all of Apple in one board. A posting listed under two teams comes back once; two boards would fetch it twice under one ID.
+  - A team or sub-team the site doesn't list fails the board, and so does an empty search.
+  - The codes are listed at `https://jobs.apple.com/api/v1/refData/teamsofinterest`.
+- **Eightfold, Workday, Amazon and Apple:** the endpoints are undocumented. Validate each tenant, category or team first.
 
 Then check it:
 
@@ -241,14 +246,13 @@ The audit:
 
 ## Backlog
 
-- Dedicated integrations (X already runs through SmartRecruiters). Endpoint notes for Google and Apple: [docs/google-apple.md](docs/google-apple.md).
+- Dedicated integrations (X already runs through SmartRecruiters). Endpoint notes for Google: [docs/google-apple.md](docs/google-apple.md).
   - Gojek
   - Shopify
   - Zoom
   - Meta
   - Google
   - The Trade Desk
-  - Apple
   - Atlassian
 - A lock shared by local and Actions writers.
 - Numeric seniority such as Engineer II.

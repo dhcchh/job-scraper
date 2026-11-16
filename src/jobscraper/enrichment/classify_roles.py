@@ -259,8 +259,8 @@ def _keyword_vetoes(
     )
 
 
-# A provider's job family is the weakest signal, so it never makes a title
-# SWE/DE when the title says the job isn't software engineering: a veto
+# A provider's job family or team is the weakest signal, so it never gives a
+# title a role when the title says the job isn't software engineering: a veto
 # removed one of its keywords ("Developer Advocate", "Sales Engineering
 # Manager", "Hardware Product Engineer"), it names a non-engineering role
 # ("Product Owner, Payments") or a customer-facing engineering team
@@ -315,17 +315,31 @@ _NOT_DATA_ANALYTICS_RE = re.compile(
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class _DepartmentFallback:
+    """An otherwise unmatched posting in `department` is `category`.
+
+    With `title`, only when the title also matches it.
+    """
+
+    department: str
+    category: str
+    title: re.Pattern[str] | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class _SourceRules:
     """The title rules for one provider's jobs, its own merged into the shared.
 
-    `noise` makes a whole title noise. `swe_department` names the department
-    whose otherwise unmatched postings are SWE/DE.
+    `noise` makes a whole title noise. `department_fallbacks` are checked in
+    order once every keyword has had its say, and `fallback_veto` names
+    titles none of them applies to.
     """
 
     categories: tuple[tuple[str, tuple[str, ...]], ...]
     keyword_vetoes: tuple[tuple[re.Pattern[str], frozenset[str]], ...]
     noise: re.Pattern[str] | None = None
-    swe_department: str | None = None
+    department_fallbacks: tuple[_DepartmentFallback, ...] = ()
+    fallback_veto: re.Pattern[str] | None = None
 
 
 def _source_rules(
@@ -333,7 +347,8 @@ def _source_rules(
     *,
     team_keywords: frozenset[str] = frozenset(),
     noise: re.Pattern[str] | None = None,
-    swe_department: str | None = None,
+    department_fallbacks: tuple[_DepartmentFallback, ...] = (),
+    fallback_veto: re.Pattern[str] | None = None,
 ) -> _SourceRules:
     """Merge a provider's own keywords into the shared rules, built once.
 
@@ -342,7 +357,11 @@ def _source_rules(
     too, so a product owner's or writer's title doesn't match on them.
     """
     extra_keywords = extra_keywords or {}
-    unknown = set(extra_keywords) - {category for category, _keywords in CATEGORIES}
+    categories = {category for category, _keywords in CATEGORIES}
+    unknown = (
+        set(extra_keywords)
+        | {fallback.category for fallback in department_fallbacks}
+    ) - categories
     if unknown:
         raise ValueError(f"unknown role categories: {sorted(unknown)}")
     return _SourceRules(
@@ -352,7 +371,8 @@ def _source_rules(
         ),
         keyword_vetoes=_keyword_vetoes(_TEAM_KEYWORDS | team_keywords),
         noise=noise,
-        swe_department=swe_department,
+        department_fallbacks=department_fallbacks,
+        fallback_veto=fallback_veto,
     )
 
 
@@ -429,11 +449,119 @@ _AMAZON_RULES = _source_rules(
     # so a posting filed under that family is SWE/DE once the noise rules
     # and every title keyword have had their say, unless its title names a
     # job that isn't software engineering (see _NOT_A_SOFTWARE_ROLE_RE).
-    swe_department="Software Development",
+    department_fallbacks=(_DepartmentFallback("Software Development", "SWE/DE"),),
+)
+
+# Apple names each internship by its type: "Software PhD Internships",
+# "Hardware Undergrad Engineering Internships", "Legal Internships". An
+# internship whose title names a non-tech type is noise, whatever keyword it
+# also matches ("CAD Virtuoso Engineering Intern"), unless the title also
+# names software, ML/AI, data science or security work ("Software
+# Engineering Intern - AI Tools for Hardware Engineering").
+_APPLE_INTERNSHIP = r"\binterns?(?:hips?)?\b"
+_APPLE_NON_TECH_INTERNSHIP = (
+    r"\b(?:hardware|analog|circuits?|silicon|RTL|PMU|SoC|CAD|physical design"
+    r"|product design|mechanical|manufacturing|tooling|molding|vibration"
+    r"|design for test|verification|validation|field test"
+    r"|business|marketing|creative|finance|legal|MBA|sales|music|media|travel"
+    r"|sourcing|supply|operations|(?:program|project) manag\w*|environment"
+    r"|events|career fair|apple services)\b"
+    r"|(?-i:\b(?:EE|RF(?:HW)?)\b(?!&))"
+)
+_APPLE_TECH_INTERNSHIP = (
+    r"\b(?:software|machine learning|ML|AI|AIML|LLMs?|data science"
+    r"|computer vision|security|information systems)\b"
+)
+_APPLE_NON_TECH_INTERNSHIP_RE = (
+    rf"^(?=.*{_APPLE_INTERNSHIP})(?=.*(?:{_APPLE_NON_TECH_INTERNSHIP}))"
+    rf"(?!.*(?:{_APPLE_TECH_INTERNSHIP}))"
+)
+
+# Apple titles name a specialism instead of a role keyword ("Swift
+# Engineer", "Linux Kernel Engineer", "CVML Engineer") and list engineering
+# program managers, QA and hardware roles under its software teams. These
+# rules apply only to jobs from the Apple provider.
+_APPLE_RULES = _source_rules(
+    {
+        "DS/ML/Algos": ("ai research", "aiml research", "applied researcher"),
+        "SWE/DE": (
+            "security researcher",
+            "security research",
+            "vulnerability researcher",
+            # The IS&T (Apple's IT) internships name only the organisation.
+            "information systems and technology",
+        ),
+    },
+    team_keywords=frozenset({"information systems and technology"}),
+    # Apple noise: QA and SDET roles, as for Amazon; Siri's language
+    # engineers and experts, who are linguists; program, project and product
+    # managers, including EPMs and TPMs; and electrical, RF,
+    # mechanical-design and chip physical-design roles; and non-tech
+    # internships (see _APPLE_NON_TECH_INTERNSHIP_RE). The codes are matched
+    # case-sensitively, and "EE&P" (Employee Experience & Productivity, an
+    # IS&T team) is not electrical engineering.
+    noise=re.compile(
+        r"\bSDETs?\b|\b(?:engineers?|developers?) in test\b|\bquality assurance\b"
+        r"|(?-i:\bQ[AE]s?\b)|\bquality engineer|\btest(?:ing)? engineer"
+        r"|\bsoftware quality\b|\blanguage (?:engineers?|experts?)\b"
+        r"|\b(?:program|project|product) manag(?:ers?|ement)\b|(?-i:\b[ET]PMs?\b)"
+        r"|(?-i:\b(?:HW)?EE\b(?!&))|(?-i:\bRF(?:HW|IC)?\b)"
+        r"|\bproduct design engineer|\btooling engineering\b|\bphysical design\b"
+        rf"|{_APPLE_NON_TECH_INTERNSHIP_RE}",
+        re.IGNORECASE,
+    ),
+    # Apple files every posting under its main team (carried in
+    # `Job.department`). An otherwise unmatched title in the software team
+    # is DS/ML/Algos when it names a scientist ("Imaging Scientist"), and
+    # SWE/DE when it names an engineer, software or an internship, the
+    # non-tech internships being noise already. An engineer or software
+    # title listed under the student team is SWE/DE; an engineer, research,
+    # scientist or intern title in the machine-learning team is DS/ML/Algos.
+    department_fallbacks=(
+        _DepartmentFallback(
+            "Software and Services",
+            "DS/ML/Algos",
+            re.compile(r"\bscientists?\b", re.IGNORECASE),
+        ),
+        _DepartmentFallback(
+            "Software and Services",
+            "SWE/DE",
+            re.compile(rf"\bengineers?\b|\bsoftware\b|{_APPLE_INTERNSHIP}", re.IGNORECASE),
+        ),
+        _DepartmentFallback(
+            "Students",
+            "SWE/DE",
+            re.compile(r"\bengineers?\b|\bsoftware\b", re.IGNORECASE),
+        ),
+        _DepartmentFallback(
+            "Machine Learning and AI",
+            "DS/ML/Algos",
+            re.compile(
+                rf"\bengineers?\b|\bresearch(?:ers?)?\b|\bscientists?\b"
+                rf"|{_APPLE_INTERNSHIP}",
+                re.IGNORECASE,
+            ),
+        ),
+    ),
+    # A team gives no fallback to test, quality, validation, hardware or
+    # data-centre work, or to the lab, broadcast, regulatory, human-factors
+    # and documentation engineers listed under the software team. A keyword
+    # still routes such a title ("Senior Security Engineer, Data Center
+    # Network", "Pre-Silicon ML and Compute Framework Engineer").
+    fallback_veto=re.compile(
+        r"\btest(?:s|ing)?\b|\bquality\b|\bvalidation\b|\bverification\b"
+        r"|\bhardware\b|\bHW\b|\banalog\b|\bcircuits?\b|\b(?:pre-)?silicon\b"
+        r"|\bdata[ -]?cent(?:er|re)s?\b"
+        r"|\bmanufacturing\b|\bmechanical\b|\bmolding\b"
+        r"|\blab\b|\bbroadcast\b|\bregulatory\b|\bhuman factors\b"
+        r"|\btechnical content\b",
+        re.IGNORECASE,
+    ),
 )
 
 _RULES_BY_SOURCE: dict[str, _SourceRules] = {
     PROVIDER_LABELS["amazon"]: _AMAZON_RULES,
+    PROVIDER_LABELS["apple"]: _APPLE_RULES,
 }
 
 
@@ -473,12 +601,15 @@ def classify_job(job: Job) -> str | None:
     ):
         return "DA/BI"
     if (
-        rules.swe_department is not None
-        and job.department == rules.swe_department
+        (rules.fallback_veto is None or not rules.fallback_veto.search(text))
         and not any(contains_keyword(text, keyword) for keyword in skipped)
         and not _NOT_AN_ENGINEERING_ROLE_RE.search(text)
         and not _NOT_SOFTWARE_ENGINEERING_RE.search(text)
         and not _NOT_A_SOFTWARE_ROLE_RE.search(text)
     ):
-        return "SWE/DE"
+        for fallback in rules.department_fallbacks:
+            if job.department == fallback.department and (
+                fallback.title is None or fallback.title.search(text)
+            ):
+                return fallback.category
     return None

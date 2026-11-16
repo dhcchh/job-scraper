@@ -657,3 +657,191 @@ def test_classify_job_doesnt_match_team_keywords_on_non_engineering_titles(title
 ])
 def test_classify_job_still_routes_amazon_family_titles_without_a_non_software_role(title):
     assert classify_job(_amazon_job(title, "Software Development")) == "SWE/DE"
+
+
+_SOFTWARE = "Software and Services"
+_MLAI = "Machine Learning and AI"
+_STUDENTS = "Students"
+
+
+def _apple_job(title, department=_SOFTWARE):
+    return Job(
+        "Apple", "1", title, department, "Cupertino, United States", "https://x", "", _TODAY,
+        company_type="Consumer/Marketplace", source="Apple",
+    )
+
+
+# Real jobs.apple.com titles (2026-11-16) that no keyword matches, routed by
+# the team Apple files them under.
+_APPLE_TEAM_TITLES = [
+    ("Swift Engineer, Find My", _SOFTWARE, "SWE/DE"),
+    ("Linux Kernel Engineer", _SOFTWARE, "SWE/DE"),
+    ("Camera Software Frameworks Engineer", _SOFTWARE, "SWE/DE"),
+    ("RealityKit Spatial UI Rendering Engineer", _SOFTWARE, "SWE/DE"),
+    ("Senior GenAI Engineer, Apple Cloud AI", _SOFTWARE, "SWE/DE"),
+    ("Software Architect - Payments", _SOFTWARE, "SWE/DE"),
+    ("Internship - Cellular Protocol", _SOFTWARE, "SWE/DE"),
+    ("Information Security Internship Program (FY27 Summer Intake)", _SOFTWARE, "SWE/DE"),
+    ("Imaging Scientist, Camera and Photos", _SOFTWARE, "DS/ML/Algos"),
+    ("Senior Motion Scientist - Sensing & Connectivity", _SOFTWARE, "DS/ML/Algos"),
+    ("Speech Scientist / Engineer (Interspeech 2022)", _SOFTWARE, "DS/ML/Algos"),
+    ("Camera Software (Intern)", _STUDENTS, "SWE/DE"),
+    ("Software PhD Internships", _STUDENTS, "SWE/DE"),
+    ("Internship - Framebuffer Driver Engineer", _STUDENTS, "SWE/DE"),
+    ("CVML Engineer - 3D Reconstruction", _MLAI, "DS/ML/Algos"),
+    ("AIML - Lead Researcher, Foundation Models", _MLAI, "DS/ML/Algos"),
+    ("Senior Research Lead", _MLAI, "DS/ML/Algos"),
+    ("Internship - Reasoning and agentic capabilities of LLMs", _MLAI, "DS/ML/Algos"),
+]
+
+
+@pytest.mark.parametrize("title,department,expected", _APPLE_TEAM_TITLES)
+def test_classify_job_routes_apple_titles_by_team(title, department, expected):
+    assert classify_job(_apple_job(title, department)) == expected
+
+
+@pytest.mark.parametrize("title,department,_expected", _APPLE_TEAM_TITLES)
+def test_classify_job_needs_the_apple_team_for_these_titles(title, department, _expected):
+    assert classify_job(_apple_job(title, "Hardware")) is None
+    # Another provider's department of the same name is just a label.
+    assert classify_job(_job(title, department)) is None
+
+
+@pytest.mark.parametrize("title,expected", [
+    ("Offensive Security Researcher, SEAR", "SWE/DE"),
+    ("Offensive Security Research Manager", "SWE/DE"),
+    ("Vulnerability Researcher", "SWE/DE"),
+    ("2027 Apple Internship - Information Systems and Technology", "SWE/DE"),
+    ("AI Research Intern - Foundation Models & Multimodal Intelligence", "DS/ML/Algos"),
+    ("Internship - AIML Research", "DS/ML/Algos"),
+    ("Senior Applied Researcher", "DS/ML/Algos"),
+])
+def test_classify_job_routes_apple_keyword_titles_in_any_team(title, expected):
+    assert classify_job(_apple_job(title, _STUDENTS)) == expected
+    assert classify_job(_job(title)) is None
+
+
+@pytest.mark.parametrize("title", [
+    # QA and SDET, as for Amazon.
+    "Software Development Engineer in Test, Creativity Apps (SDET)",
+    "Senior Software Developer in Test - Embedded Sensors QE, Core OS",
+    "Senior Software Engineer (SDET), Infrastructure Services",
+    "Software QE Engineering Manager",
+    "Distinguished Engineer – Quality Engineering & Performance, Wallet, Payments & Commerce",
+    # Engineering program, project and product managers.
+    "Software Engineering Program Manager - visionOS",
+    "Engineering Program Manager – Machine Learning Features",
+    "EPM Manager, Cloud Infrastructure Engineering Program Management, Apple Services Engineering",
+    "Senior Product Manager - Apple Cloud AI/ML",
+    # Siri's linguists.
+    "Language Engineer (Finnish), Global Siri",
+    "Siri Language Engineer (Vietnamese)",
+    # Electrical, RF, mechanical-design and chip physical-design work.
+    "iPad System EE - Hardware Engineering Intern",
+    "RFHW Systems Engineer Intern - Shanghai or Shenzhen",
+    "Product Design Engineering Intern-Watch",
+    "Tooling Engineering Intern - iPhone",
+    "CAD Engineer - Static Timing Analysis & Physical Design",
+])
+def test_classify_job_keeps_apple_noise_titles_as_noise(title):
+    assert classify_job(_apple_job(title)) is None
+
+
+@pytest.mark.parametrize("title,expected", [
+    # Apple's noise doesn't reach other providers.
+    ("Software Development Engineer in Test, Creativity Apps (SDET)", "SWE/DE"),
+    ("Engineering Program Manager – Machine Learning Features", "DS/ML/Algos"),
+    ("RFHW Systems Engineer Intern - Shanghai or Shenzhen", "SRE/DevOps"),
+])
+def test_classify_job_applies_apple_noise_only_to_apple(title, expected):
+    assert classify_job(_job(title)) == expected
+
+
+@pytest.mark.parametrize("title,expected", [
+    # "EE&P" is an IS&T team, not electrical engineering.
+    ("Frontend Engineer, EE&P - IS&T Early Career", "SWE/DE"),
+    # A keyword routes a title the team fallback would refuse.
+    ("Senior Security Engineer, Data Center Network", "SWE/DE"),
+    ("Pre-Silicon ML and Compute Framework Engineer, Graphics, Games and ML", "DS/ML/Algos"),
+    ("Engineering Intern (AI/ML & Automation) for Hardware - Shanghai", "DS/ML/Algos"),
+    ("Software Engineering Intern – AI Tools for Hardware Engineering", "SWE/DE"),
+])
+def test_classify_job_keeps_apple_keyword_titles_near_its_noise(title, expected):
+    assert classify_job(_apple_job(title)) == expected
+
+
+@pytest.mark.parametrize("title,department", [
+    # Test, validation, hardware and data-centre work gets no team fallback.
+    ("Wireless Testing Engineer", _SOFTWARE),
+    ("Modem Validation Engineer, Wireless Technologies & Ecosystems", _SOFTWARE),
+    ("Formal Verification Engineer", _STUDENTS),
+    ("Hardware System Integration Engineer Intern - AirPods", _STUDENTS),
+    ("Manufacturing Design Engineer - Intern", _STUDENTS),
+    ("Pre-Silicon Engineer", _MLAI),
+    ("Data Center Engineer", _SOFTWARE),
+    # Nor do these engineers listed under the software team.
+    ("Lab Engineer, Device Services Infrastructure", _SOFTWARE),
+    ("IS&T Services Broadcast Engineer, Employee Experience & Productivity", _SOFTWARE),
+    ("Senior Manager, Services Regulatory Engineering China", _SOFTWARE),
+    ("Human Factors Engineer, AIML Data Operations", _SOFTWARE),
+    ("Technical Content Engineer, Claris", _SOFTWARE),
+    # The shared vetoes still apply: customer-facing engineers, team names.
+    ("Software Application Support Engineer (Java)", _SOFTWARE),
+    ("CDN Solutions Engineer", _SOFTWARE),
+    ("Technical Partner Engineer - Apple Home, Wireless Technologies & Ecosystems", _SOFTWARE),
+    ("Technical Release Manager, Retail and Marcom Engineering", _SOFTWARE),
+    # A title that names no engineer, software, research or internship.
+    ("App Store Editor (Contract)", _SOFTWARE),
+    ("Apple Music Intern", _STUDENTS),
+    ("Intern Opportunities at Apple (General) - October 2026 to September 2027", _STUDENTS),
+    ("Aesthetics Science Manager, Look Development", _SOFTWARE),
+    ("AIML Data Operations - Team Lead", _MLAI),
+])
+def test_classify_job_keeps_non_software_titles_out_of_apple_teams(title, department):
+    assert classify_job(_apple_job(title, department)) is None
+
+
+# Real Apple internships (2026-11-16) whose titles name a non-tech type.
+_APPLE_NON_TECH_INTERNSHIPS = [
+    # A shared keyword ("engineering intern") would route this one.
+    "CAD Virtuoso Engineering Intern",
+    "Hardware Undergrad Engineering Internships",
+    "Product Design PhD Internships",
+    "Operations Manufacturing Design Undergrad Internships",
+    "Home EE Design Intern",
+    "PMU Silicon Validation Intern (m/f/d)",
+    "GPU Internships - Architecture Validation, Performance Modelling & Platform Architecture",
+    "Business, Marketing & Creative Masters Internships",
+    "App Store Marketing Intern",
+    "Apple Media Products Intern",
+    "Internship - Apple Services - France",
+    "Legal Internships",
+    "MBA Internships",
+    "Apple Finance Intern (GBS R2R) - Shanghai",
+]
+
+
+@pytest.mark.parametrize("title", _APPLE_NON_TECH_INTERNSHIPS)
+@pytest.mark.parametrize("department", [_SOFTWARE, _STUDENTS, _MLAI])
+def test_classify_job_guards_apple_internships_of_a_non_tech_type(title, department):
+    assert classify_job(_apple_job(title, department)) is None
+
+
+def test_classify_job_guards_internships_for_apple_only():
+    assert classify_job(_job("CAD Virtuoso Engineering Intern")) == "SWE/DE"
+
+
+@pytest.mark.parametrize("title,expected", [
+    # A non-tech type next to software, ML/AI or security work stays tech.
+    ("Software Engineering Intern – AI Tools for Hardware Engineering", "SWE/DE"),
+    ("Engineering Intern (AI/ML & Automation) for Hardware - Shanghai", "DS/ML/Algos"),
+    ("Wireless Software & AI/ML Engineer Intern - Beijing", "DS/ML/Algos"),
+    ("AI/ML Internship: Self-Improving AI Agents for Cybersecurity, SEAR", "DS/ML/Algos"),
+    ("Machine Learning and Artificial Intelligence PhD Internships", "DS/ML/Algos"),
+    ("Software Undergrad Engineering Internships", "SWE/DE"),
+    # The guard needs an internship: "International" and "Internal" aren't.
+    ("International Engineering Lead - Intelligence Features", "SWE/DE"),
+    ("Software Engineer, Internal Tools - Media, Graphics & Compute Tech", "SWE/DE"),
+])
+def test_classify_job_keeps_apple_tech_internships(title, expected):
+    assert classify_job(_apple_job(title, _STUDENTS)) == expected

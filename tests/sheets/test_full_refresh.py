@@ -509,3 +509,18 @@ def test_route_applies_the_amazon_job_family_rule_to_a_row_s_department():
     assert route_job(full_refresh._as_job(values)).tab == "SWE/DE - RoW"
     other_family = {**values, "department": "Professional Services"}
     assert route_job(full_refresh._as_job(other_family)).tab is None
+
+
+def test_route_applies_the_apple_team_rules_to_a_row_s_source_and_department():
+    values = _values(
+        board="Apple",
+        title="CVML Engineer - 3D Reconstruction",
+        department="Machine Learning and AI",
+        location="Shanghai, China",
+        company_type="Consumer/Marketplace",
+        source="Apple",
+    )
+    assert route_job(full_refresh._as_job(values)).tab == "DS/ML/Algos - PAC"
+    assert route_job(full_refresh._as_job({**values, "source": ""})).tab is None
+    other_team = {**values, "department": "Hardware"}
+    assert route_job(full_refresh._as_job(other_team)).tab is None

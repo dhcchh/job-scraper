@@ -77,6 +77,10 @@ live writes.
   list items with neither a title nor a link: they count toward the total
   but aren't postings, so they're skipped, up to a small per-board allowance.
   A multi-token firm is eligible for pruning only when every token succeeds.
+  Apple reorders tied rows across its pages, so a row repeated on two pages
+  is repaired by refetching them, not rejected. The distinct rows must still
+  reach the total, and the first page is rechecked for postings added
+  mid-fetch.
 - Plan the prune guard across all job tabs before any job append. Hold both
   appends and prunes for flagged firms so repeated runs keep the same
   baseline. `FORCE_PRUNE_FIRMS` overrides a hold for confirmed closures.
@@ -98,6 +102,8 @@ live writes.
     `normalized_location` ends in an ISO alpha-3 code. Each office uses the
     shared alpha-3 table first, then Amazon's country name, whose own forms
     for China and Hong Kong the region rules don't recognize.
+  - Apple returns one row per office. Group rows by `positionId`; each
+    office uses the alpha-3 code in `countryID`, then Apple's country name.
 - Region decisions live in `classify_region.py`; keep its country sets
   disjoint. Exclude a posting only if every office is excluded. Unknown
   locations remain visible in coverage reports.
@@ -114,6 +120,11 @@ live writes.
     Quality, QA and SDET, delivery consultants and program managers.
   - Amazon's "Software Development" job-family fallback runs last. It never
     overrides a veto or a title naming a non-software job.
+  - Apple's own keywords, noise and team fallbacks apply only when `source`
+    is Apple. Its team fallbacks also need the title to name the job, and
+    skip test, hardware and data-centre titles. Its internship guard makes
+    a non-tech internship type noise unless the title also names software,
+    ML/AI or security work.
   - Every caller of `classify_job` must set `company_type`, `source` and
     `department`.
   - Keep provider-specific rules out of the shared lists, so other firms are

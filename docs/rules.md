@@ -31,6 +31,7 @@ Anything unmatched is noise and is dropped, apart from the fallbacks below.
 - Bare "research" goes to QT/QR at `Prop Trading/Hedge Fund` firms.
 - Bare "research" goes to DS/ML/Algos at `AI Lab` firms.
 - Bare "analytics" goes to DA/BI.
+- Amazon's job family and Apple's teams, below.
 
 **Noise**
 
@@ -78,6 +79,54 @@ never see them.
   - A designer
   - A writer
 
+### Apple only
+
+These rules apply only when the posting's `source` is Apple. Other firms
+never see them.
+
+- **Extra keywords:**
+  - Security researcher, security research and vulnerability researcher
+    (SWE/DE)
+  - Information Systems and Technology, which is all the IS&T internships
+    name (SWE/DE)
+  - AI research, AIML research and applied researcher (DS/ML/Algos)
+- **Extra noise:**
+  - QA and SDET
+  - Program, project and product managers, including EPMs and TPMs
+  - Siri's language engineers and language experts
+  - Electrical (EE), RF, mechanical product-design, tooling and chip
+    physical-design roles. "EE&P" is an IS&T team, not electrical
+    engineering.
+  - Non-tech internships, below.
+- **Internship guard:** Apple names each internship by its type ("Software
+  PhD Internships", "Legal Internships"). An internship is noise when its
+  title names a non-tech type, even if a keyword matches:
+  - Hardware, chip, product-design and manufacturing types ("CAD Virtuoso
+    Engineering Intern", "Home EE Design Intern")
+  - Validation, verification and field-test types
+  - Business, marketing, creative, finance, legal, MBA, sales, media, music,
+    travel, sourcing, operations, program-management and Apple Services
+    types
+  - The guard doesn't apply when the title also names software, ML/AI, data
+    science, computer vision or security work ("Software Engineering Intern –
+    AI Tools for Hardware Engineering").
+- **Team fallbacks:** Apple files each posting under its main team, kept in
+  `department`. An otherwise unmatched posting is:
+  - DS/ML/Algos in "Software and Services" when its title names a scientist
+    ("Imaging Scientist").
+  - SWE/DE in "Software and Services" when its title names an engineer,
+    software or an internship.
+  - SWE/DE in "Students" when its title names an engineer or software.
+  - DS/ML/Algos in "Machine Learning and AI" when its title names an
+    engineer, research, a scientist or an internship.
+- The team fallbacks run last and skip the same titles as Amazon's
+  job-family fallback. They also skip a title that names any of these:
+  - Test, quality, validation or verification
+  - Hardware, analog, circuits, silicon, manufacturing, mechanical or molding
+  - A data centre
+  - A lab, broadcast, regulatory, human-factors or technical-content
+    engineer
+
 ## Seniority
 
 Seniority comes from the title and department. For Greenhouse, the
@@ -122,6 +171,9 @@ Lead, Senior, Mid, Junior, Intern, Graduate.
 - Amazon builds offices from its structured `locations` entries, because
   `normalized_location` ends in an ISO alpha-3 code. Each office uses the
   shared alpha-3 table first, then Amazon's country name.
+- Apple lists each office as its own row. Rows are grouped by posting, and
+  each office uses the alpha-3 code in `countryID` first, then Apple's
+  country name.
 
 ## Dates
 
@@ -135,6 +187,7 @@ Lead, Senior, Mid, Junior, Intern, Graduate.
 
 - Only firms in `FIRMS_NEEDING_DESCRIPTION` get one: QRT and Squarepoint.
 - Never from SmartRecruiters or Workday.
+- Apple's is the search result's summary, not the full posting.
 
 ## Salary
 

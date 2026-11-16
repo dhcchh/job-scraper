@@ -1,0 +1,6 @@
+# Apple job boards to scrape.
+
+[[boards]]
+token = "SFTWR,MLAI,STDNT/INTRN"
+firm = "Apple"
+company_type = "Consumer/Marketplace"

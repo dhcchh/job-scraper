@@ -25,6 +25,7 @@ EIGHTFOLD_BOARDS = _BOARDS["eightfold"]
 WORKDAY_BOARDS = _BOARDS["workday"]
 RECRUITEE_BOARDS = _BOARDS["recruitee"]
 AMAZON_BOARDS = _BOARDS["amazon"]
+APPLE_BOARDS = _BOARDS["apple"]
 
 
 def board_sources() -> list[tuple[str, str, list[dict]]]:

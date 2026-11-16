@@ -59,6 +59,17 @@ def test_load_boards_accepts_amazon_category_slugs_under_one_firm(tmp_path):
     ]
 
 
+@pytest.mark.parametrize("token", ["SFTWR", "SFTWR,MLAI,STDNT/INTRN", "STDNT/INTRN"])
+def test_load_boards_accepts_apple_team_codes(tmp_path, token):
+    path = _write(tmp_path, "apple_boards.toml", f'''
+        [[boards]]
+        token = "{token}"
+        firm = "Apple"
+        company_type = "Consumer/Marketplace"
+    ''')
+    assert [board["token"] for board in load_boards(path)] == [token]
+
+
 def test_load_boards_rejects_unknown_fields(tmp_path):
     path = _write(
         tmp_path,
@@ -124,6 +135,11 @@ def test_load_boards_rejects_blank_workday_location_scope(tmp_path):
         ("amazon_boards.toml", "Software-Development"),
         ("amazon_boards.toml", "software_development"),
         ("amazon_boards.toml", "software-development-"),
+        ("apple_boards.toml", "sftwr"),
+        ("apple_boards.toml", "SFTWR, MLAI"),
+        ("apple_boards.toml", "SFTWR,"),
+        ("apple_boards.toml", "STDNT/INTRN/X"),
+        ("apple_boards.toml", "teamsAndSubTeams-SFTWR"),
     ],
 )
 def test_load_boards_rejects_malformed_provider_tokens(tmp_path, filename, token):

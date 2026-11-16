@@ -511,3 +511,163 @@ def test_paginate_with_overlap_rejects_an_overlap_that_cant_advance(overlap):
             page_size_param="limit", page_size=4, overlap=overlap,
             total_key="total", items_key="items",
         )
+
+
+class _NumberedListing:
+    """A fake endpoint paged by number; each page serves its payloads in order.
+
+    A page's last payload repeats once the earlier ones are used up.
+    """
+
+    def __init__(self, payloads_by_page):
+        self._payloads = {page: list(payloads) for page, payloads in payloads_by_page.items()}
+        self.calls = []
+
+    def __call__(self, page):
+        self.calls.append(page)
+        payloads = self._payloads[page]
+        return payloads.pop(0) if len(payloads) > 1 else payloads[0]
+
+
+def _numbered_page(ids, total):
+    return {"total": total, "items": [{"id": item_id} for item_id in ids]}
+
+
+def _paginate_numbered(listing, **kwargs):
+    return _http.paginate_numbered_pages(
+        "test", "board", listing, page_size=2, total_key="total", items_key="items",
+        **kwargs,
+    )
+
+
+def _item_ids(items):
+    return [item["id"] for item in items]
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+def test_paginate_numbered_pages_fetches_each_page_then_rechecks_the_first(workers):
+    listing = _NumberedListing({
+        1: [_numbered_page("ab", 5)],
+        2: [_numbered_page("cd", 5)],
+        3: [_numbered_page("e", 5)],
+    })
+
+    assert _item_ids(_paginate_numbered(listing, workers=workers)) == list("abcde")
+    assert sorted(listing.calls[1:3]) == [2, 3]
+    assert listing.calls[0] == listing.calls[-1] == 1
+    assert len(listing.calls) == 4
+
+
+def test_paginate_numbered_pages_skips_the_recheck_for_a_single_page():
+    listing = _NumberedListing({1: [_numbered_page("ab", 2)]})
+
+    assert _item_ids(_paginate_numbered(listing)) == ["a", "b"]
+    assert listing.calls == [1]
+
+
+def test_paginate_numbered_pages_refetches_pages_around_a_repeated_item():
+    # "b" and "c" tie, so "b" shows on both pages and "c" on neither; the
+    # page lengths still add up to the total.
+    listing = _NumberedListing({
+        1: [_numbered_page("ab", 4), _numbered_page("ac", 4)],
+        2: [_numbered_page("bd", 4), _numbered_page("bd", 4)],
+    })
+
+    assert sorted(_item_ids(_paginate_numbered(listing))) == list("abcd")
+    assert listing.calls[:2] == [1, 2]
+    assert sorted(listing.calls[2:4]) == [1, 2]
+
+
+def test_paginate_numbered_pages_fails_when_repairs_never_reach_the_total():
+    listing = _NumberedListing({
+        1: [_numbered_page("ab", 4)],
+        2: [_numbered_page("bd", 4)],
+    })
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="3 distinct item"):
+        _paginate_numbered(listing, repair_rounds=2)
+    # Two passes of the whole board, each with two rounds of repairs.
+    assert len(listing.calls) == 2 * (2 + 2 * 2)
+
+
+def test_paginate_numbered_pages_refetches_when_merged_items_pass_the_total(caplog):
+    # A refetched page brings "x" and "y", never seen, while "d" closed: the
+    # merged rows no longer describe one listing, so the board is refetched.
+    listing = _NumberedListing({
+        1: [_numbered_page("ab", 4), _numbered_page("ax", 4)],
+        2: [_numbered_page("bd", 4), _numbered_page("by", 4)],
+    })
+
+    assert _item_ids(_paginate_numbered(listing)) == list("axby")
+    assert "5 distinct item(s)" in caplog.text
+
+
+def test_paginate_numbered_pages_retries_a_total_that_changes_mid_fetch():
+    listing = _NumberedListing({
+        1: [_numbered_page("ab", 4), _numbered_page("ab", 3)],
+        2: [_numbered_page("cd", 5), _numbered_page("c", 3)],
+    })
+
+    assert _item_ids(_paginate_numbered(listing)) == list("abc")
+
+
+def test_paginate_numbered_pages_fails_a_total_that_keeps_changing():
+    listing = _NumberedListing({
+        1: [_numbered_page("ab", 4)],
+        2: [_numbered_page("cd", 5)],
+    })
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="total changed"):
+        _paginate_numbered(listing)
+
+
+def test_paginate_numbered_pages_refetches_after_an_item_added_during_the_fetch(caplog):
+    # "n" was added at the top after page 1 was read, and "b" closed, so the
+    # total and the page lengths still agree; only the recheck notices.
+    listing = _NumberedListing({
+        1: [_numbered_page("ab", 4), _numbered_page("na", 4)],
+        2: [_numbered_page("cd", 4)],
+    })
+
+    assert _item_ids(_paginate_numbered(listing)) == list("nacd")
+    assert "added during the fetch" in caplog.text
+
+
+def test_paginate_numbered_pages_fails_when_items_keep_being_added():
+    listing = _NumberedListing({
+        1: [_numbered_page("ab", 4), _numbered_page("na", 4), _numbered_page("na", 4),
+            _numbered_page("mn", 4)],
+        2: [_numbered_page("cd", 4)],
+    })
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="added during the fetch"):
+        _paginate_numbered(listing)
+
+
+@pytest.mark.parametrize("ids", ["a", "abc"])
+def test_paginate_numbered_pages_rejects_a_page_of_the_wrong_length(ids):
+    listing = _NumberedListing({
+        1: [_numbered_page(ids, 4)],
+        2: [_numbered_page("cd", 4)],
+    })
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="expected 2"):
+        _paginate_numbered(listing)
+
+
+def test_paginate_numbered_pages_checks_the_first_page_before_any_other():
+    listing = _NumberedListing({1: [_numbered_page("ab", 4)], 2: [_numbered_page("cd", 4)]})
+
+    def reject(payload):
+        raise _http.IncompleteBoardResponse("rejected")
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="rejected"):
+        _paginate_numbered(listing, check_first_page=reject)
+    assert listing.calls == [1, 1]  # once per pass, and never page 2
+
+
+def test_paginate_numbered_pages_rejects_a_duplicate_on_one_page():
+    listing = _NumberedListing({1: [_numbered_page("aa", 2)]})
+
+    with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
+        _paginate_numbered(listing)

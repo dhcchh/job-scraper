@@ -18,6 +18,7 @@ PROVIDER_LABELS: dict[str, str] = {
     "workday": "Workday",
     "recruitee": "Recruitee",
     "amazon": "Amazon",
+    "apple": "Apple",
 }
 
 PROVIDERS: tuple[str, ...] = tuple(PROVIDER_LABELS)
@@ -40,6 +41,9 @@ _SLUG_TOKEN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _WORKDAY_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]+\.wd\d+/[^/\s]+$")
 # An amazon.jobs category slug, such as "software-development".
 _AMAZON_TOKEN_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# jobs.apple.com team codes, each optionally narrowed to one sub-team, such
+# as "SFTWR,MLAI,STDNT/INTRN".
+_APPLE_TOKEN_RE = re.compile(r"^[A-Z0-9]+(?:/[A-Z0-9]+)?(?:,[A-Z0-9]+(?:/[A-Z0-9]+)?)*$")
 
 
 class BoardConfig(TypedDict):
@@ -178,6 +182,11 @@ def _validate_token(
         "amazon": (
             _AMAZON_TOKEN_RE,
             "an amazon.jobs category slug such as 'software-development'",
+        ),
+        "apple": (
+            _APPLE_TOKEN_RE,
+            "comma-separated jobs.apple.com team codes, each optionally "
+            "with a sub-team, such as 'SFTWR,MLAI,STDNT/INTRN'",
         ),
     }.get(
         provider,

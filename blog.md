@@ -5,8 +5,11 @@ The scraper reads open postings from company career boards, keeps the roles it c
 ## The daily run
 
 1. **Open the sheet.** Stop if its title differs from `GOOGLE_SHEET_TITLE` (when set). Add newly configured firms to the Supported companies tab and announce them.
-2. **Fetch every board.** Boards are fetched concurrently (8 workers, with Workday in its own pool of 4). Workday and Eightfold also fetch their pages, and Workday its detail records, with up to 8 workers; Amazon fetches its pages one at a time, each repeating the end of the last, so a posting added or closed mid-fetch can't shift another out of the snapshot. A failed board is fetched once more after 60 seconds.
-3. **Classify.** A title keyword picks one of five roles. A few fallbacks (generic senior titles, bare "research" or "analytics", Amazon's Software Development job family) cover titles without one, and the rest is noise. Drop it if every office is in an excluded country. The rest go to PAC or RoW. Role and region name one of ten tabs.
+2. **Fetch every board.** Boards are fetched concurrently (8 workers, with Workday in its own pool of 4). A failed board is fetched once more after 60 seconds.
+   - Workday and Eightfold also fetch their pages, and Workday its detail records, with up to 8 workers.
+   - Amazon fetches its pages one at a time, each repeating the end of the last, so a posting added or closed mid-fetch can't shift another out of the snapshot.
+   - Apple's pages can't overlap, and it reorders tied rows on every request. It fetches 4 pages at a time, refetches the pages around a repeated row, then rechecks the first page. A posting added or closed mid-fetch makes it fetch the whole board once more, then fail, rather than shift another out of the snapshot.
+3. **Classify.** A title keyword picks one of five roles. A few fallbacks (generic senior titles, bare "research" or "analytics", Amazon's Software Development job family, Apple's software, machine-learning and student teams) cover titles without one, and the rest is noise. Drop it if every office is in an excluded country. The rest go to PAC or RoW. Role and region name one of ten tabs.
 4. **Plan.** Read every tab, check headers, find rows no longer listed, run the prune guard.
 5. **Write.** Append unseen postings. Re-read tabs that grew, since a saved sort can reorder rows. Delete closed rows. Held-back firms skip both.
 6. **Report.** Write the run summary, send Telegram, then fail the run if any board failed or any firm was held back.
