@@ -15,6 +15,7 @@ from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs
 from jobscraper.job_boards.recruitee.client import fetch_recruitee_jobs
 from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
+from jobscraper.job_boards.tiktok.client import fetch_tiktok_jobs
 from jobscraper.models import Job
 
 logger = logging.getLogger(__name__)

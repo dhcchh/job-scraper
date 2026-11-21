@@ -18,6 +18,7 @@ PROVIDER_LABELS: dict[str, str] = {
     "recruitee": "Recruitee",
     "amazon": "Amazon",
     "apple": "Apple",
+    "tiktok": "TikTok",
 }
 
 PROVIDERS: tuple[str, ...] = tuple(PROVIDER_LABELS)
@@ -38,6 +39,8 @@ _AMAZON_TOKEN_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # jobs.apple.com team codes, each optionally narrowed to one sub-team, such
 # as "SFTWR,MLAI,STDNT/INTRN".
 _APPLE_TOKEN_RE = re.compile(r"^[A-Z0-9]+(?:/[A-Z0-9]+)?(?:,[A-Z0-9]+(?:/[A-Z0-9]+)?)*$")
+# lifeattiktok.com city codes, such as "CT_163" (Singapore).
+_TIKTOK_TOKEN_RE = re.compile(r"^CT_[0-9]+(?:,CT_[0-9]+)*$")
 
 
 class BoardConfig(TypedDict):
@@ -174,6 +177,10 @@ def _validate_token(
             _APPLE_TOKEN_RE,
             "comma-separated jobs.apple.com team codes, each optionally "
             "with a sub-team, such as 'SFTWR,MLAI,STDNT/INTRN'",
+        ),
+        "tiktok": (
+            _TIKTOK_TOKEN_RE,
+            "comma-separated lifeattiktok.com city codes such as 'CT_163'",
         ),
     }.get(
         provider,

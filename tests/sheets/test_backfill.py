@@ -334,6 +334,7 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
     monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
     monkeypatch.setattr(backfill.config, "APPLE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "TIKTOK_BOARDS", [])
     monkeypatch.setattr(backfill, "get_spreadsheet", lambda: "SPREADSHEET")
     monkeypatch.setattr(backfill, "get_worksheet", lambda spreadsheet, name: name)
 
@@ -363,6 +364,7 @@ def test_fetch_overrides_keys_by_board_and_job_id(monkeypatch):
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
     monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
     monkeypatch.setattr(backfill.config, "APPLE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "TIKTOK_BOARDS", [])
 
     fetched = [_job_stub("Acme", "1", "Singapore"), _job_stub("Acme", "2", "London, United Kingdom")]
     monkeypatch.setattr(
@@ -390,6 +392,7 @@ def test_fetch_overrides_skips_a_board_that_fails(monkeypatch):
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
     monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
     monkeypatch.setattr(backfill.config, "APPLE_BOARDS", [])
+    monkeypatch.setattr(backfill.config, "TIKTOK_BOARDS", [])
 
     good_job = _job_stub("GoodCo", "1", "Singapore")
 
@@ -450,6 +453,11 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         "APPLE_BOARDS",
         [{"token": "SFTWR,MLAI", "firm": "AppleCo", "company_type": "Big Tech"}],
     )
+    monkeypatch.setattr(
+        backfill.config,
+        "TIKTOK_BOARDS",
+        [{"token": "CT_163", "firm": "TikTokCo", "company_type": "Big Tech"}],
+    )
 
     gh_job = _job_stub("GreenhouseCo", "1", "Singapore")
     lever_job = _job_stub("LeverCo", "2", "London, United Kingdom")
@@ -459,6 +467,7 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
     recruitee_job = _job_stub("RecruiteeCo", "7", "Singapore")
     amazon_job = _job_stub("AmazonCo", "8", "Seattle, United States")
     apple_job = _job_stub("AppleCo", "9", "Cupertino, United States")
+    tiktok_job = _job_stub("TikTokCo", "10", "Singapore")
 
     monkeypatch.setattr(backfill.fetchers, "fetch_greenhouse_jobs", lambda token, firm, company_type: [gh_job])
     monkeypatch.setattr(
@@ -492,6 +501,11 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         "fetch_apple_jobs",
         lambda token, firm, company_type: [apple_job],
     )
+    monkeypatch.setattr(
+        backfill.fetchers,
+        "fetch_tiktok_jobs",
+        lambda token, firm, company_type: [tiktok_job],
+    )
 
     overrides = backfill._fetch_overrides()
 
@@ -504,6 +518,7 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         ("RecruiteeCo", "7"): recruitee_job,
         ("AmazonCo", "8"): amazon_job,
         ("AppleCo", "9"): apple_job,
+        ("TikTokCo", "10"): tiktok_job,
     }
 
 

@@ -104,6 +104,8 @@ live writes.
     for China and Hong Kong the region rules don't recognize.
   - Apple returns one row per office. Group rows by `positionId`; each
     office uses the alpha-3 code in `countryID`, then Apple's country name.
+  - TikTok names one city per posting. Its country is the top of the
+    city's parent chain.
 - Region decisions live in `classify_region.py`; keep its country sets
   disjoint. Exclude a posting only if every office is excluded. Unknown
   locations remain visible in coverage reports.

@@ -65,6 +65,7 @@ See them in the sheet
 - Recruitee
 - Amazon (amazon.jobs)
 - Apple (jobs.apple.com)
+- TikTok (lifeattiktok.com)
 
 Firms and tokens live in [`company_toml/`](company_toml/).
 
@@ -174,7 +175,7 @@ For the DM:
 
 ## Adding or changing a board
 
-Add an entry to `company_toml/<provider>_boards.toml`. The provider is one of Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Recruitee, Amazon or Apple.
+Add an entry to `company_toml/<provider>_boards.toml`. The provider is one of Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Recruitee, Amazon, Apple or TikTok.
 
 ```toml
 [[boards]]
@@ -193,7 +194,10 @@ company_type = "Fintech"
   - Keep all of Apple in one board. A posting listed under two teams comes back once; two boards would fetch it twice under one ID.
   - A team or sub-team the site doesn't list fails the board, and so does an empty search.
   - The codes are listed at `https://jobs.apple.com/api/v1/refData/teamsofinterest`.
-- **Eightfold, Amazon and Apple:** the endpoints are undocumented. Validate each tenant, category or team first.
+- **TikTok:** the token lists lifeattiktok.com city codes, separated by commas. `"CT_163"` is Singapore.
+  - Only postings in the listed cities are kept.
+  - One request returns a city's whole listing. A response shorter than its own count fails the board.
+- **Eightfold, Amazon, Apple and TikTok:** the endpoints are undocumented. Validate each tenant, category, team or city first.
 
 Then check it:
 

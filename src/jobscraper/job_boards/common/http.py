@@ -76,11 +76,18 @@ def get_with_retries(
 
 
 def post_with_retries(
-    source: str, identifier: str, url: str, *, json: dict
+    source: str, identifier: str, url: str, *,
+    json: dict,
+    headers: dict[str, str] | None = None,
 ) -> requests.Response:
-    """POST JSON using the shared transient-error retry policy."""
+    """POST JSON using the shared transient-error retry policy.
+
+    `headers` are added to the session's for this request only.
+    """
+    extra = {"headers": headers} if headers else {}
     return _send_with_retries(
-        source, identifier, lambda: _session.post(url, json=json, timeout=30)
+        source, identifier,
+        lambda: _session.post(url, json=json, timeout=30, **extra),
     )
 
 

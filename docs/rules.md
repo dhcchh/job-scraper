@@ -189,21 +189,26 @@ Lead, Senior, Mid, Junior, Intern, Graduate.
 - Apple lists each office as its own row. Rows are grouped by posting, and
   each office uses the alpha-3 code in `countryID` first, then Apple's
   country name.
+- TikTok names one city per posting. Its country is the top of the city's
+  parent chain (city, state, country).
 
 ## Dates
 
 - Dates are written as `YYYY-MM-DD`.
-- A date is blank when the provider gives none.
+- A date is blank when the provider gives none. TikTok gives none.
 
 ## Descriptions
 
 - Only firms in `FIRMS_NEEDING_DESCRIPTION` get one: QRT and Squarepoint.
 - Never from SmartRecruiters.
 - Apple's is the search result's summary, not the full posting.
+- TikTok's is the posting's description followed by its requirements.
 
 ## Salary
 
 - Lever and Ashby only.
+- TikTok's listing has salary fields, but they were empty on every Singapore
+  posting checked (2026-11-21), so they aren't read.
 - Greenhouse offers structured ranges through its
   [job-detail endpoint](https://docs.greenhouse.io/job-board.html#retrieve-a-job)
   (`pay_transparency=true`). This project doesn't call it. Per the Greenhouse

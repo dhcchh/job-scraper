@@ -1,0 +1,6 @@
+# TikTok job boards to scrape.
+
+[[boards]]
+token = "CT_163"
+firm = "TikTok"
+company_type = "Consumer Comms/Social"

@@ -70,6 +70,17 @@ def test_load_boards_accepts_apple_team_codes(tmp_path, token):
     assert [board["token"] for board in load_boards(path)] == [token]
 
 
+@pytest.mark.parametrize("token", ["CT_163", "CT_163,CT_94"])
+def test_load_boards_accepts_tiktok_city_codes(tmp_path, token):
+    path = _write(tmp_path, "tiktok_boards.toml", f'''
+        [[boards]]
+        token = "{token}"
+        firm = "TikTok"
+        company_type = "Consumer Comms/Social"
+    ''')
+    assert [board["token"] for board in load_boards(path)] == [token]
+
+
 def test_load_boards_rejects_unknown_fields(tmp_path):
     path = _write(
         tmp_path,
@@ -99,6 +110,10 @@ def test_load_boards_rejects_unknown_fields(tmp_path):
         ("apple_boards.toml", "SFTWR,"),
         ("apple_boards.toml", "STDNT/INTRN/X"),
         ("apple_boards.toml", "teamsAndSubTeams-SFTWR"),
+        ("tiktok_boards.toml", "Singapore"),
+        ("tiktok_boards.toml", "ct_163"),
+        ("tiktok_boards.toml", "CT_163, CT_94"),
+        ("tiktok_boards.toml", "CN_25"),
     ],
 )
 def test_load_boards_rejects_malformed_provider_tokens(tmp_path, filename, token):

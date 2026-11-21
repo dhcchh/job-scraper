@@ -210,6 +210,25 @@ def test_post_with_retries_sends_json_and_retries_like_get(monkeypatch):
     assert calls == [("https://x/jobs", {"page": 1}, 30)] * 2
 
 
+def test_post_with_retries_adds_headers_to_every_attempt(monkeypatch):
+    calls = []
+
+    def fake_post(url, json=None, timeout=None, headers=None):
+        calls.append(headers)
+        if len(calls) < 2:
+            return ErrorResponse(503)
+        return FakeResponse({"ok": True})
+
+    monkeypatch.setattr(http._session, "post", fake_post)
+    monkeypatch.setattr(http.time, "sleep", lambda seconds: None)
+
+    http.post_with_retries(
+        "tiktok", "CT_163", "https://x/jobs", json={}, headers={"website-path": "tiktok"}
+    )
+
+    assert calls == [{"website-path": "tiktok"}] * 2
+
+
 def test_post_with_retries_does_not_retry_a_client_error(monkeypatch):
     calls = []
 

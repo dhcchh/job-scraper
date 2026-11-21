@@ -14,6 +14,7 @@ def _set_boards(
     recruitee=(),
     amazon=(),
     apple=(),
+    tiktok=(),
 ):
     monkeypatch.setattr(supported_companies.config, "GREENHOUSE_BOARDS", list(greenhouse))
     monkeypatch.setattr(supported_companies.config, "LEVER_BOARDS", list(lever))
@@ -23,6 +24,7 @@ def _set_boards(
     monkeypatch.setattr(supported_companies.config, "RECRUITEE_BOARDS", list(recruitee))
     monkeypatch.setattr(supported_companies.config, "AMAZON_BOARDS", list(amazon))
     monkeypatch.setattr(supported_companies.config, "APPLE_BOARDS", list(apple))
+    monkeypatch.setattr(supported_companies.config, "TIKTOK_BOARDS", list(tiktok))
 
 
 def _board(token, firm, company_type):

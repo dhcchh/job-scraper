@@ -9,6 +9,7 @@ The scraper reads open postings from company career boards, keeps the roles it c
    - Eightfold also fetches its pages with up to 8 workers.
    - Amazon fetches its pages one at a time, each repeating the end of the last, so a posting added or closed mid-fetch can't shift another out of the snapshot.
    - Apple's pages can't overlap, and it reorders tied rows on every request. It fetches 4 pages at a time, refetches the pages around a repeated row, then rechecks the first page. A posting added or closed mid-fetch makes it fetch the whole board once more, then fail, rather than shift another out of the snapshot.
+   - TikTok returns a city's whole listing in one request, so nothing can shift mid-fetch.
 3. **Classify.** A title keyword picks one of five roles. A few fallbacks (generic senior titles, bare "research" or "analytics", Amazon's Software Development job family, Apple's software, machine-learning and student teams) cover titles without one, and the rest is noise. Drop it if every office is in an excluded country. The rest go to PAC or RoW. Role and region name one of ten tabs.
 4. **Plan.** Read every tab, check headers, find rows no longer listed, run the prune guard.
 5. **Write.** Append unseen postings. Re-read tabs that grew, since a saved sort can reorder rows. Delete closed rows. Held-back firms skip both.
