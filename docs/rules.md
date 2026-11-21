@@ -195,7 +195,11 @@ Lead, Senior, Mid, Junior, Intern, Graduate.
 ## Dates
 
 - Dates are written as `YYYY-MM-DD`.
-- A date is blank when the provider gives none. TikTok gives none.
+- A date is blank when the provider gives none.
+- TikTok gives none. Its first-published date is the UTC date its posting
+  ID encodes: the ID's top 32 bits are the creation time in Unix seconds.
+  On ByteDance's search, which shares the ID scheme and does give a publish
+  time, 197 of 200 IDs matched it within a day (2026-11-21).
 
 ## Descriptions
 

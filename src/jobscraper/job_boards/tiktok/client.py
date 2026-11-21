@@ -12,8 +12,9 @@ above any city's postings (1,823 rows in one response, checked 2026-11-21),
 so there is no paging for a posting added mid-fetch to shift. A list shorter
 than the response's `count` fails the board.
 
-Each posting names one city. The listing has no posting or update date, and
-its salary fields were empty on every Singapore posting checked.
+Each posting names one city. The listing has no date of its own, so the
+first-published date is the creation time the posting ID encodes. Its salary
+fields were empty on every Singapore posting checked.
 """
 
 import datetime
@@ -26,7 +27,7 @@ from jobscraper.job_boards.common.http import (
     require_job_list,
 )
 from jobscraper.job_boards.common.jobs import build_job, jobs_from
-from jobscraper.models import Job
+from jobscraper.models import Job, normalize_date
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,13 @@ _LIMIT = 3000
 
 # A city_info parent chain runs city -> state -> country.
 _COUNTRY_LEVEL = 1
+
+# A posting ID's top 32 bits are its creation time in Unix seconds. ByteDance's
+# own search shares the ID scheme and also returns `publish_time`: 197 of 200
+# of its IDs fell within a day of it, and all 200 within 5.2 days (2026-11-21).
+_ID_TIME_SHIFT = 32
+# ByteDance was founded in 2012, so an earlier date means the ID isn't one.
+_EARLIEST_ID_DATE = datetime.date(2012, 1, 1)
 
 
 def fetch_tiktok_jobs(
@@ -102,6 +110,7 @@ def _to_job(
         department=_name(raw.get("job_category")),
         location=_location(raw.get("city_info") or {}),
         url=_JOB_URL.format(id=raw["id"]),
+        first_published=_created_date(raw["id"], scraped_date),
         # "Intern", or "Regular" with a subject such as "Bachelor/Master
         # Graduate - 2027 Start": a seniority fallback for a title without one.
         employment_type=" ".join(
@@ -115,6 +124,18 @@ def _to_job(
             if text and text.strip()
         ),
     )
+
+
+def _created_date(post_id: object, scraped_date: datetime.date) -> str:
+    """The UTC date a posting ID encodes, or "" if it encodes no plausible one."""
+    try:
+        seconds = int(str(post_id)) >> _ID_TIME_SHIFT
+        created = datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc).date()
+    except (ValueError, OverflowError, OSError):
+        return ""
+    if not _EARLIEST_ID_DATE <= created <= scraped_date + datetime.timedelta(days=1):
+        return ""
+    return normalize_date(created)
 
 
 def _name(entry: object) -> str:

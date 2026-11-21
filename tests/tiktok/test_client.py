@@ -103,8 +103,10 @@ def test_fetch_tiktok_jobs_parses_a_posting(monkeypatch):
     assert job.source == "TikTok"
     assert job.company_type == "Consumer Comms/Social"
     assert job.scraped_date == _SCRAPED
-    # The listing has no dates and no description is kept for this firm.
-    assert (job.first_published, job.updated_at, job.description) == ("", "", "")
+    # 7670049572916267317 >> 32 is 1785822578, 2026-08-04 05:49:38 UTC.
+    assert job.first_published == "2026-08-04"
+    # The listing has no update date, and no description is kept for this firm.
+    assert (job.updated_at, job.description) == ("", "")
 
 
 def test_fetch_tiktok_jobs_requests_the_tokens_cities_in_one_page(monkeypatch):
@@ -118,6 +120,31 @@ def test_fetch_tiktok_jobs_requests_the_tokens_cities_in_one_page(monkeypatch):
     assert (body["offset"], body["limit"]) == (0, client._LIMIT)
     # Without this header the endpoint answers HTTP 400.
     assert headers == {"website-path": "tiktok"}
+
+
+@pytest.mark.parametrize(
+    "post_id",
+    [
+        "1",  # decodes to 1970, before ByteDance existed
+        str((int(datetime.datetime(2026, 11, 25, tzinfo=datetime.timezone.utc).timestamp()) << 32) + 5),
+        "R-7",
+    ],
+)
+def test_fetch_tiktok_jobs_leaves_an_implausible_id_date_blank(monkeypatch, post_id):
+    _serve(monkeypatch, [_row(post_id, "Data Engineer")])
+
+    [job] = _fetch()
+
+    assert job.first_published == ""
+
+
+def test_fetch_tiktok_jobs_accepts_an_id_created_on_the_scrape_date(monkeypatch):
+    created = datetime.datetime(2026, 11, 21, 23, 59, tzinfo=datetime.timezone.utc)
+    _serve(monkeypatch, [_row(str(int(created.timestamp()) << 32), "Data Engineer")])
+
+    [job] = _fetch()
+
+    assert job.first_published == "2026-11-21"
 
 
 def test_fetch_tiktok_jobs_names_a_city_with_its_country(monkeypatch):
