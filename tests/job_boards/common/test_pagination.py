@@ -1,248 +1,9 @@
-"""Tests for job_boards.http using fake integrations."""
+"""Tests for job_boards.common.pagination using fake integrations."""
 
 import pytest
 
-from jobscraper.job_boards import _http
-from tests.fakes import FakeResponse
-
-
-class _RespondingWith:
-    """A fake response that raises an HTTPError carrying the given status."""
-
-    def __init__(self, status_code, headers=None):
-        self._status_code = status_code
-        self.headers = headers or {}
-
-    @property
-    def status_code(self):
-        return self._status_code
-
-    def raise_for_status(self):
-        error = _http.requests.HTTPError(f"{self._status_code} error")
-        error.response = self
-        raise error
-
-
-@pytest.mark.parametrize("payload", [{}, {"jobs": None}, {"jobs": ["bad"]}])
-def test_require_job_list_rejects_malformed_board_payload(payload):
-    with pytest.raises(_http.IncompleteBoardResponse):
-        _http.require_job_list(payload, "greenhouse", "acme", key="jobs")
-
-
-def test_require_job_list_accepts_a_confirmed_empty_board():
-    assert _http.require_job_list({"jobs": []}, "greenhouse", "acme", key="jobs") == []
-
-
-def test_get_with_retries_returns_response_on_first_success(monkeypatch):
-    captured = {}
-
-    def fake_get(url, params=None, timeout=None):
-        captured["url"] = url
-        captured["params"] = params
-        captured["timeout"] = timeout
-        return FakeResponse({"ok": True})
-
-    monkeypatch.setattr(_http._session, "get", fake_get)
-
-    response = _http.get_with_retries(
-        "greenhouse", "acme", "https://x/jobs", params={"content": "true"}
-    )
-
-    assert response.json() == {"ok": True}
-    assert captured == {
-        "url": "https://x/jobs",
-        "params": {"content": "true"},
-        "timeout": 30,
-    }
-
-
-def test_get_with_retries_defaults_params_to_none(monkeypatch):
-    captured = {}
-
-    def fake_get(url, params=None, timeout=None):
-        captured["params"] = params
-        return FakeResponse()
-
-    monkeypatch.setattr(_http._session, "get", fake_get)
-
-    _http.get_with_retries("ashby", "acme", "https://x/jobs")
-
-    assert captured["params"] is None
-
-
-@pytest.mark.parametrize(
-    "exc_type",
-    [_http.requests.exceptions.ConnectionError, _http.requests.exceptions.Timeout],
-)
-def test_get_with_retries_retries_a_connection_error_or_timeout_then_succeeds(
-    monkeypatch, exc_type
-):
-    calls = []
-
-    def fake_get(url, params=None, timeout=None):
-        calls.append(url)
-        if len(calls) < 3:
-            raise exc_type("blip")
-        return FakeResponse({"ok": True})
-
-    monkeypatch.setattr(_http._session, "get", fake_get)
-    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
-
-    response = _http.get_with_retries("greenhouse", "acme", "https://x/jobs")
-
-    assert len(calls) == 3  # 2 failures + 1 success, within MAX_ATTEMPTS
-    assert response.json() == {"ok": True}
-
-
-@pytest.mark.parametrize("status_code", [500, 503, 429])
-def test_get_with_retries_retries_a_5xx_or_429_then_succeeds(monkeypatch, status_code):
-    calls = []
-
-    def fake_get(url, params=None, timeout=None):
-        calls.append(url)
-        if len(calls) < 2:
-            return _RespondingWith(status_code)
-        return FakeResponse({"ok": True})
-
-    monkeypatch.setattr(_http._session, "get", fake_get)
-    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
-
-    response = _http.get_with_retries("greenhouse", "acme", "https://x/jobs")
-
-    assert len(calls) == 2
-    assert response.json() == {"ok": True}
-
-
-@pytest.mark.parametrize("status_code, retry_after, expected", [
-    (429, "7", 7.0),
-    (429, "3600", _http.MAX_RETRY_AFTER_SECONDS),
-    (429, "Wed, 21 Oct 2026 07:28:00 GMT", _http.BACKOFF_SECONDS),
-    (429, "nan", _http.BACKOFF_SECONDS),
-    (503, "7", _http.BACKOFF_SECONDS),
-])
-def test_get_with_retries_honors_a_429_retry_after_in_seconds(
-    monkeypatch, status_code, retry_after, expected
-):
-    responses = [
-        _RespondingWith(status_code, {"Retry-After": retry_after}),
-        FakeResponse({"ok": True}),
-    ]
-    sleeps = []
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: responses.pop(0))
-    monkeypatch.setattr(_http.time, "sleep", sleeps.append)
-
-    _http.get_with_retries("greenhouse", "acme", "https://x/jobs")
-
-    assert sleeps == [expected]
-
-
-def test_board_requests_share_one_session_with_a_user_agent():
-    assert _http._session.headers["User-Agent"] == _http.USER_AGENT
-
-
-def test_get_with_retries_gives_up_after_max_attempts_on_5xx(monkeypatch):
-    calls = []
-
-    def fake_get(url, params=None, timeout=None):
-        calls.append(url)
-        return _RespondingWith(503)
-
-    monkeypatch.setattr(_http._session, "get", fake_get)
-    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
-
-    with pytest.raises(_http.requests.HTTPError):
-        _http.get_with_retries("greenhouse", "acme", "https://x/jobs")
-
-    assert len(calls) == _http.MAX_ATTEMPTS
-
-
-def test_get_with_retries_does_not_retry_a_client_error(monkeypatch):
-    calls = []
-
-    def fake_get(url, params=None, timeout=None):
-        calls.append(url)
-        return _RespondingWith(404)
-
-    monkeypatch.setattr(_http._session, "get", fake_get)
-    monkeypatch.setattr(
-        _http.time, "sleep", lambda seconds: pytest.fail("should not retry a 404")
-    )
-
-    with pytest.raises(_http.requests.HTTPError):
-        _http.get_with_retries("greenhouse", "acme", "https://x/jobs")
-
-    assert len(calls) == 1  # no retries -- a 404 won't fix itself
-
-
-def test_get_with_retries_backs_off_exponentially(monkeypatch):
-    def fake_get(url, params=None, timeout=None):
-        return _RespondingWith(503)
-
-    delays = []
-    monkeypatch.setattr(_http._session, "get", fake_get)
-    monkeypatch.setattr(_http.time, "sleep", lambda seconds: delays.append(seconds))
-
-    with pytest.raises(_http.requests.HTTPError):
-        _http.get_with_retries("greenhouse", "acme", "https://x/jobs")
-
-    # 2 retries within MAX_ATTEMPTS=3, doubling from BACKOFF_SECONDS.
-    assert delays == [_http.BACKOFF_SECONDS, _http.BACKOFF_SECONDS * 2]
-
-
-def test_get_with_retries_labels_the_retry_log_with_source_and_identifier(
-    monkeypatch, caplog
-):
-    calls = []
-
-    def fake_get(url, params=None, timeout=None):
-        calls.append(url)
-        if len(calls) < 2:
-            return _RespondingWith(503)
-        return FakeResponse()
-
-    monkeypatch.setattr(_http._session, "get", fake_get)
-    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
-
-    with caplog.at_level("WARNING"):
-        _http.get_with_retries("greenhouse", "wehrtyou", "https://x/jobs")
-
-    assert "greenhouse[wehrtyou]: attempt 1/3 failed" in caplog.text
-
-
-def test_post_with_retries_sends_json_and_retries_like_get(monkeypatch):
-    calls = []
-
-    def fake_post(url, json=None, timeout=None):
-        calls.append((url, json, timeout))
-        if len(calls) < 2:
-            return _RespondingWith(503)
-        return FakeResponse({"ok": True})
-
-    monkeypatch.setattr(_http._session, "post", fake_post)
-    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
-
-    response = _http.post_with_retries("apple", "SFTWR", "https://x/jobs", json={"page": 1})
-
-    assert response.json() == {"ok": True}
-    assert calls == [("https://x/jobs", {"page": 1}, 30)] * 2
-
-
-def test_post_with_retries_does_not_retry_a_client_error(monkeypatch):
-    calls = []
-
-    def fake_post(url, json=None, timeout=None):
-        calls.append(url)
-        return _RespondingWith(400)
-
-    monkeypatch.setattr(_http._session, "post", fake_post)
-    monkeypatch.setattr(
-        _http.time, "sleep", lambda seconds: pytest.fail("should not retry a 400")
-    )
-
-    with pytest.raises(_http.requests.HTTPError):
-        _http.post_with_retries("apple", "SFTWR", "https://x/jobs", json={})
-
-    assert len(calls) == 1
+from jobscraper.job_boards.common import http, pagination
+from tests.fakes import ErrorResponse, FakeResponse
 
 
 def test_paginate_with_retries_keeps_the_first_total_when_later_pages_report_zero(
@@ -261,9 +22,9 @@ def test_paginate_with_retries_keeps_the_first_total_when_later_pages_report_zer
         offsets.append(params["offset"])
         return FakeResponse(pages[params["offset"]])
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
-    items = _http.paginate_with_retries(
+    items = pagination.paginate_with_retries(
         "test", "acme", "https://x/jobs",
         cursor_param="offset", page_size_param="limit", page_size=2,
         total_key="total", items_key="items",
@@ -282,9 +43,9 @@ def test_paginate_with_retries_gets_cursor_as_query_params(monkeypatch):
             return FakeResponse({"totalFound": 3, "content": [{"id": 0}, {"id": 1}]})
         return FakeResponse({"totalFound": 3, "content": [{"id": 2}]})
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
-    items = _http.paginate_with_retries(
+    items = pagination.paginate_with_retries(
         "smartrecruiters",
         "Grab",
         "https://x/postings",
@@ -301,22 +62,22 @@ def test_paginate_with_retries_gets_cursor_as_query_params(monkeypatch):
 
 def _get_pages(monkeypatch, page_for_call):
     """Fake requests.get: page_for_call(offset, nth_call_for_that_offset)
-    returns the payload (or a _RespondingWith) for each request."""
+    returns the payload (or an ErrorResponse) for each request."""
     calls: dict[int, int] = {}
 
     def fake_get(url, params=None, timeout=None):
         offset = params["offset"]
         calls[offset] = calls.get(offset, 0) + 1
         result = page_for_call(offset, calls[offset])
-        return result if isinstance(result, _RespondingWith) else FakeResponse(result)
+        return result if isinstance(result, ErrorResponse) else FakeResponse(result)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
-    monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(http._session, "get", fake_get)
+    monkeypatch.setattr(http.time, "sleep", lambda seconds: None)
     return calls
 
 
 def _paginate(workers=1, page_size=2):
-    return _http.paginate_with_retries(
+    return pagination.paginate_with_retries(
         "test", "acme", "https://x/jobs",
         cursor_param="offset", page_size_param="limit", page_size=page_size,
         total_key="total", items_key="items", workers=workers,
@@ -345,8 +106,8 @@ def test_paginate_with_retries_in_parallel_falls_back_when_a_page_fails(
     # Offset 2 fails every attempt of the parallel pass (MAX_ATTEMPTS 503s),
     # then works when the one-page-at-a-time fallback asks again.
     def page_for_call(offset, nth):
-        if offset == 2 and nth <= _http.MAX_ATTEMPTS:
-            return _RespondingWith(503)
+        if offset == 2 and nth <= http.MAX_ATTEMPTS:
+            return ErrorResponse(503)
         return _full_page(offset)
 
     calls = _get_pages(monkeypatch, page_for_call)
@@ -404,7 +165,7 @@ def test_paginate_with_retries_retries_an_incomplete_sequential_snapshot(monkeyp
 def test_paginate_with_retries_rejects_a_missing_total(monkeypatch):
     calls = _get_pages(monkeypatch, lambda offset, nth: {"items": [{"id": 0}]})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="total"):
+    with pytest.raises(http.IncompleteBoardResponse, match="total"):
         _paginate()
 
     assert calls == {0: 2}
@@ -416,7 +177,7 @@ def test_paginate_rejects_duplicate_ids_even_when_totals_match(monkeypatch, work
         "total": 4,
         "items": [{"id": 1}, {"id": 2}] if offset == 0 else [{"id": 2}, {"id": 3}],
     })
-    with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
+    with pytest.raises(http.IncompleteBoardResponse, match="duplicate"):
         _paginate(workers=workers)
     assert calls[0] >= 2  # The whole snapshot was retried before rejecting it.
 
@@ -436,7 +197,7 @@ def test_paginate_rejects_an_item_without_an_id(monkeypatch):
         "total": 2, "items": [{"id": 1}, {"title": "Engineer"}],
     })
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="missing or invalid id"):
+    with pytest.raises(http.IncompleteBoardResponse, match="missing or invalid id"):
         _paginate()
 
 
@@ -444,7 +205,7 @@ def test_paginate_rejects_an_item_without_an_id(monkeypatch):
 def test_paginate_with_overlap_rejects_an_overlap_that_cant_advance(overlap):
     # A page must repeat at least one item and still move the cursor forward.
     with pytest.raises(ValueError, match="overlap"):
-        _http.paginate_with_overlap(
+        pagination.paginate_with_overlap(
             "test", "board", "https://x", cursor_param="offset",
             page_size_param="limit", page_size=4, overlap=overlap,
             total_key="total", items_key="items",
@@ -472,7 +233,7 @@ def _numbered_page(ids, total):
 
 
 def _paginate_numbered(listing, **kwargs):
-    return _http.paginate_numbered_pages(
+    return pagination.paginate_numbered_pages(
         "test", "board", listing, page_size=2, total_key="total", items_key="items",
         **kwargs,
     )
@@ -522,7 +283,7 @@ def test_paginate_numbered_pages_fails_when_repairs_never_reach_the_total():
         2: [_numbered_page("bd", 4)],
     })
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="3 distinct item"):
+    with pytest.raises(http.IncompleteBoardResponse, match="3 distinct item"):
         _paginate_numbered(listing, repair_rounds=2)
     # Two passes of the whole board, each with two rounds of repairs.
     assert len(listing.calls) == 2 * (2 + 2 * 2)
@@ -555,7 +316,7 @@ def test_paginate_numbered_pages_fails_a_total_that_keeps_changing():
         2: [_numbered_page("cd", 5)],
     })
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="total changed"):
+    with pytest.raises(http.IncompleteBoardResponse, match="total changed"):
         _paginate_numbered(listing)
 
 
@@ -578,7 +339,7 @@ def test_paginate_numbered_pages_fails_when_items_keep_being_added():
         2: [_numbered_page("cd", 4)],
     })
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="added during the fetch"):
+    with pytest.raises(http.IncompleteBoardResponse, match="added during the fetch"):
         _paginate_numbered(listing)
 
 
@@ -589,7 +350,7 @@ def test_paginate_numbered_pages_rejects_a_page_of_the_wrong_length(ids):
         2: [_numbered_page("cd", 4)],
     })
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="expected 2"):
+    with pytest.raises(http.IncompleteBoardResponse, match="expected 2"):
         _paginate_numbered(listing)
 
 
@@ -597,9 +358,9 @@ def test_paginate_numbered_pages_checks_the_first_page_before_any_other():
     listing = _NumberedListing({1: [_numbered_page("ab", 4)], 2: [_numbered_page("cd", 4)]})
 
     def reject(payload):
-        raise _http.IncompleteBoardResponse("rejected")
+        raise http.IncompleteBoardResponse("rejected")
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="rejected"):
+    with pytest.raises(http.IncompleteBoardResponse, match="rejected"):
         _paginate_numbered(listing, check_first_page=reject)
     assert listing.calls == [1, 1]  # once per pass, and never page 2
 
@@ -607,5 +368,5 @@ def test_paginate_numbered_pages_checks_the_first_page_before_any_other():
 def test_paginate_numbered_pages_rejects_a_duplicate_on_one_page():
     listing = _NumberedListing({1: [_numbered_page("aa", 2)]})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
+    with pytest.raises(http.IncompleteBoardResponse, match="duplicate"):
         _paginate_numbered(listing)

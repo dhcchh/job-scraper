@@ -65,5 +65,5 @@ Cheapest safe fix: before pushing the TOML change (a push triggers a scrape), re
 
 - `enrichment/classify_roles.py`, `classify_region.py`, `normalize_location.py`: role keywords, country sets, location cleanup.
 - `sheets/writer.py`: prune guard thresholds, Sheets retry waits, header check.
-- `job_boards/_http.py` and `fetchers.py`: board retries, pagination checks, worker counts.
+- `job_boards/common/http.py`, `common/pagination.py` and `fetchers.py`: board retries, pagination checks, worker counts.
 - `models.py` and `main.py`: `FIELDS`, the description allowlist, the daily run's order.

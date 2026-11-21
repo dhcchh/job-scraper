@@ -10,7 +10,8 @@ import json
 import pytest
 
 from jobscraper.enrichment.classify_region import classify_region, is_excluded
-from jobscraper.job_boards import _http, _jobs
+from jobscraper.job_boards.common import http
+from jobscraper.job_boards.common import jobs as common_jobs
 from jobscraper.job_boards.amazon import client
 from tests.fakes import FakeResponse
 
@@ -100,7 +101,7 @@ def _serve(monkeypatch, pages_by_offset, calls=None):
             calls.append((url, dict(params)))
         return FakeResponse(pages_by_offset[params["offset"]])
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
 
 class _Listing:
@@ -110,7 +111,7 @@ class _Listing:
         self.jobs = [dict(_SEATTLE_JOB, id_icims=str(job_id)) for job_id in ids]
         self.offsets = []
         self._after_call = after_call
-        monkeypatch.setattr(_http._session, "get", self._get)
+        monkeypatch.setattr(http._session, "get", self._get)
 
     def _get(self, url, params=None, timeout=None):
         offset, limit = params["offset"], params["result_limit"]
@@ -255,7 +256,7 @@ def test_fetch_amazon_jobs_fails_when_the_listing_keeps_shifting(monkeypatch):
 
     _Listing(monkeypatch, range(20), close_the_top_two)
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="shifted"):
+    with pytest.raises(http.IncompleteBoardResponse, match="shifted"):
         _fetch()
 
 
@@ -265,7 +266,7 @@ def test_fetch_amazon_jobs_rejects_a_reordered_overlap(monkeypatch):
     a, b, c, d, e = (dict(_SEATTLE_JOB, id_icims=job_id) for job_id in "abcde")
     _serve(monkeypatch, {0: _page([a, b, c, d], hits=6), 2: _page([c, d, b, e], hits=6)})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
+    with pytest.raises(http.IncompleteBoardResponse, match="duplicate"):
         _fetch()
 
 
@@ -286,7 +287,7 @@ def test_fetch_amazon_jobs_accepts_a_known_category_with_no_postings(monkeypatch
 def test_fetch_amazon_jobs_rejects_an_unrecognised_empty_category(monkeypatch, payload):
     _serve(monkeypatch, {0: payload})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="recognise"):
+    with pytest.raises(http.IncompleteBoardResponse, match="recognise"):
         _fetch("applied-sciencex")
 
 
@@ -295,7 +296,7 @@ def test_fetch_amazon_jobs_rejects_a_category_at_the_hit_cap_before_paging(monke
     calls = []
     _serve(monkeypatch, {0: _page([_SINGAPORE_JOB], hits=500)}, calls)
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="cap"):
+    with pytest.raises(http.IncompleteBoardResponse, match="cap"):
         _fetch()
     assert {params["offset"] for _url, params in calls} == {0}
 
@@ -303,14 +304,14 @@ def test_fetch_amazon_jobs_rejects_a_category_at_the_hit_cap_before_paging(monke
 def test_fetch_amazon_jobs_rejects_a_short_page_before_hits(monkeypatch):
     _serve(monkeypatch, {0: _page([_SINGAPORE_JOB], hits=3)})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="short page"):
+    with pytest.raises(http.IncompleteBoardResponse, match="short page"):
         _fetch()
 
 
 def test_fetch_amazon_jobs_rejects_a_page_longer_than_hits(monkeypatch):
     _serve(monkeypatch, {0: _page([_SINGAPORE_JOB, _SEATTLE_JOB], hits=1)})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="past its total"):
+    with pytest.raises(http.IncompleteBoardResponse, match="past its total"):
         _fetch()
 
 
@@ -319,7 +320,7 @@ def test_fetch_amazon_jobs_rejects_an_empty_later_page(monkeypatch):
     first = [dict(_SEATTLE_JOB, id_icims=str(n)) for n in range(4)]
     _serve(monkeypatch, {0: _page(first, hits=6), 2: _page([], hits=6)})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="shifted"):
+    with pytest.raises(http.IncompleteBoardResponse, match="shifted"):
         _fetch()
 
 
@@ -327,7 +328,7 @@ def test_fetch_amazon_jobs_rejects_a_missing_jobs_list(monkeypatch):
     # Past the cap the endpoint returns "jobs": null.
     _serve(monkeypatch, {0: {"error": None, "hits": 1, "jobs": None}})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="invalid jobs list"):
+    with pytest.raises(http.IncompleteBoardResponse, match="invalid jobs list"):
         _fetch()
 
 
@@ -335,14 +336,14 @@ def test_fetch_amazon_jobs_rejects_a_job_missing_id(monkeypatch):
     job = {key: value for key, value in _SEATTLE_JOB.items() if key != "id_icims"}
     _serve(monkeypatch, {0: _page([_SINGAPORE_JOB, job])})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="id_icims"):
+    with pytest.raises(http.IncompleteBoardResponse, match="id_icims"):
         _fetch()
 
 
 def test_fetch_amazon_jobs_rejects_a_duplicate_id_on_a_page(monkeypatch):
     _serve(monkeypatch, {0: _page([_SINGAPORE_JOB, _SINGAPORE_JOB])})
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
+    with pytest.raises(http.IncompleteBoardResponse, match="duplicate"):
         _fetch()
 
 
@@ -365,16 +366,16 @@ def test_fetch_amazon_jobs_skips_a_malformed_location_entry(monkeypatch, locatio
 def test_fetch_amazon_jobs_raises_on_http_error(monkeypatch):
     class _FailingResponse:
         def raise_for_status(self):
-            raise _http.requests.HTTPError("boom")
+            raise http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(_http.requests.HTTPError):
+    with pytest.raises(http.requests.HTTPError):
         _fetch()
 
 
 def test_description_combines_description_and_qualifications_for_allowlisted_firm(monkeypatch):
-    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Amazon"}))
+    monkeypatch.setattr(common_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Amazon"}))
 
     job = client._to_job(_SINGAPORE_JOB, "Amazon", "Consumer/Marketplace", datetime.date(2026, 11, 8))
 

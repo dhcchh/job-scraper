@@ -220,8 +220,8 @@ page of them. A real row, with the summary shortened:
 
 ### Pagination helper
 
-The offset helpers didn't fit, so `paginate_numbered_pages` in `_http.py` was
-added for Apple.
+The offset helpers didn't fit, so `paginate_numbered_pages` in
+`pagination.py` was added for Apple.
 
 - `paginate_with_retries` and `paginate_with_overlap` send an offset and a
   page size. Apple takes a page number in a JSON body and no size.

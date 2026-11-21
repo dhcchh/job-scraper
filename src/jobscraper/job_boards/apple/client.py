@@ -18,13 +18,13 @@ import urllib.parse
 
 from jobscraper.enrichment.classify_region import names_a_country
 from jobscraper.enrichment.normalize_location import normalize_locations, normalize_office
-from jobscraper.job_boards._http import (
+from jobscraper.job_boards.common.http import (
     IncompleteBoardResponse,
     get_with_retries,
-    paginate_numbered_pages,
     post_with_retries,
 )
-from jobscraper.job_boards._jobs import build_job, jobs_from
+from jobscraper.job_boards.common.jobs import build_job, jobs_from
+from jobscraper.job_boards.common.pagination import paginate_numbered_pages
 from jobscraper.models import Job, normalize_job_id
 
 logger = logging.getLogger(__name__)

@@ -14,8 +14,9 @@ import urllib.parse
 
 from jobscraper.enrichment.classify_region import names_a_country
 from jobscraper.enrichment.normalize_location import normalize_locations, normalize_office
-from jobscraper.job_boards._http import IncompleteBoardResponse, paginate_with_overlap
-from jobscraper.job_boards._jobs import build_job, html_sections, jobs_from
+from jobscraper.job_boards.common.http import IncompleteBoardResponse
+from jobscraper.job_boards.common.jobs import build_job, html_sections, jobs_from
+from jobscraper.job_boards.common.pagination import paginate_with_overlap
 from jobscraper.models import Job, normalize_job_id
 
 logger = logging.getLogger(__name__)

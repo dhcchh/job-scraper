@@ -4,7 +4,8 @@ import datetime
 
 import pytest
 
-from jobscraper.job_boards import _http, _jobs
+from jobscraper.job_boards.common import http
+from jobscraper.job_boards.common import jobs as common_jobs
 from jobscraper.job_boards.lever import client
 from tests.fakes import FakeResponse
 
@@ -45,7 +46,7 @@ def test_fetch_lever_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
     jobs = client.fetch_lever_jobs(
         "acme", "Acme Corp", "Big Tech", scraped_date=datetime.date(2026, 9, 12)
@@ -80,7 +81,7 @@ def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
 ):
     # No live Lever board is in FIRMS_NEEDING_DESCRIPTION today -- monkeypatch
     # it onto the client's own binding to exercise the gating regardless.
-    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Acme Corp"}))
+    monkeypatch.setattr(common_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Acme Corp"}))
     response = [
         {
             "id": "1",
@@ -91,7 +92,7 @@ def test_fetch_lever_jobs_populates_description_only_for_a_firm_needing_it(
             "openingPlain": "Do the thing.",
         }
     ]
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: FakeResponse(response))
 
     (needed,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
     (not_needed,) = client.fetch_lever_jobs("beta", "Beta Inc", "Big Tech")
@@ -115,10 +116,10 @@ def test_fetch_lever_jobs_rejects_a_job_missing_id(monkeypatch):
         },
     ]
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: FakeResponse(response)
+        http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
-    with pytest.raises(_http.IncompleteBoardResponse):
+    with pytest.raises(http.IncompleteBoardResponse):
         client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
 
 
@@ -135,7 +136,7 @@ def test_fetch_lever_jobs_builds_location_from_all_locations_and_dedupes(monkeyp
         }
     ]
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: FakeResponse(response)
+        http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
@@ -155,7 +156,7 @@ def test_fetch_lever_jobs_falls_back_to_categories_location_when_all_locations_m
         }
     ]
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: FakeResponse(response)
+        http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
@@ -175,7 +176,7 @@ def test_fetch_lever_jobs_falls_back_to_team_when_department_is_missing(monkeypa
         }
     ]
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: FakeResponse(response)
+        http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
@@ -186,15 +187,15 @@ def test_fetch_lever_jobs_falls_back_to_team_when_department_is_missing(monkeypa
 def test_fetch_lever_jobs_raises_on_http_error(monkeypatch):
     # A persistent failure must propagate out of fetch_lever_jobs -- main.py
     # is what decides that means "skip this board", not this client. The
-    # retry/backoff policy itself is job_boards._http.get_with_retries' own
+    # retry/backoff policy itself is job_boards.common.http.get_with_retries' own
     # behavior -- see tests/job_boards/test_http.py, not duplicated here.
     class _FailingResponse:
         def raise_for_status(self):
-            raise _http.requests.HTTPError("boom")
+            raise http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(_http.requests.HTTPError):
+    with pytest.raises(http.requests.HTTPError):
         client.fetch_lever_jobs("acme", "Acme Corp", "Big Tech")
 
 

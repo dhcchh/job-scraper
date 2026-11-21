@@ -9,7 +9,8 @@ import datetime
 import pytest
 
 from jobscraper.enrichment.classify_region import classify_region, is_excluded
-from jobscraper.job_boards import _http, _jobs
+from jobscraper.job_boards.common import http
+from jobscraper.job_boards.common import jobs as common_jobs
 from jobscraper.job_boards.apple import client
 from tests.fakes import FakeResponse
 
@@ -103,8 +104,8 @@ class _Site:
         self.bodies = []
         self.get_urls = []
         monkeypatch.setattr(client, "_PAGE_WORKERS", 1)
-        monkeypatch.setattr(_http._session, "get", self._get)
-        monkeypatch.setattr(_http._session, "post", self._post)
+        monkeypatch.setattr(http._session, "get", self._get)
+        monkeypatch.setattr(http._session, "post", self._post)
 
     def _get(self, url, params=None, timeout=None):
         self.get_urls.append(url)
@@ -215,7 +216,7 @@ def test_fetch_apple_jobs_repairs_offices_split_across_a_page_boundary(monkeypat
             site.rows = orders[0]
         return _Site._post(site, url, json=json, timeout=timeout)
 
-    monkeypatch.setattr(_http._session, "post", shuffle_ties)
+    monkeypatch.setattr(http._session, "post", shuffle_ties)
 
     jobs = {job.job_id: job for job in _fetch()}
 
@@ -237,7 +238,7 @@ def test_fetch_apple_jobs_rejects_a_team_the_site_doesnt_list(monkeypatch, token
     # drop its postings from a combined search.
     site = _Site(monkeypatch, [_SINGAPORE], teams=teams)
 
-    with pytest.raises(_http.IncompleteBoardResponse, match=f"no team {unknown}$"):
+    with pytest.raises(http.IncompleteBoardResponse, match=f"no team {unknown}$"):
         _fetch(token)
     assert site.bodies == []
 
@@ -247,7 +248,7 @@ def test_fetch_apple_jobs_rejects_an_unreadable_team_list(monkeypatch, payload):
     site = _Site(monkeypatch, [_SINGAPORE])
     site.teams = payload
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="unreadable team list"):
+    with pytest.raises(http.IncompleteBoardResponse, match="unreadable team list"):
         _fetch()
 
 
@@ -255,7 +256,7 @@ def test_fetch_apple_jobs_rejects_an_empty_search(monkeypatch):
     # A body the endpoint can't read (no "format") also returns no rows.
     site = _Site(monkeypatch, [])
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="no rows"):
+    with pytest.raises(http.IncompleteBoardResponse, match="no rows"):
         _fetch()
     assert site.pages == [1, 1]  # the whole board is fetched twice
 
@@ -263,16 +264,16 @@ def test_fetch_apple_jobs_rejects_an_empty_search(monkeypatch):
 @pytest.mark.parametrize("payload", [{}, {"res": None}, [], {"res": {"totalRecords": 1}}])
 def test_fetch_apple_jobs_rejects_a_malformed_search_response(monkeypatch, payload):
     _Site(monkeypatch, [_SINGAPORE])
-    monkeypatch.setattr(_http._session, "post", lambda *a, **k: FakeResponse(payload))
+    monkeypatch.setattr(http._session, "post", lambda *a, **k: FakeResponse(payload))
 
-    with pytest.raises(_http.IncompleteBoardResponse):
+    with pytest.raises(http.IncompleteBoardResponse):
         _fetch()
 
 
 def test_fetch_apple_jobs_rejects_a_short_page(monkeypatch):
     _Site(monkeypatch, [_SINGAPORE], total=2)
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="expected 2"):
+    with pytest.raises(http.IncompleteBoardResponse, match="expected 2"):
         _fetch()
 
 
@@ -281,31 +282,31 @@ def test_fetch_apple_jobs_rejects_a_row_missing_an_id(monkeypatch, field):
     row = {key: value for key, value in _SINGAPORE.items() if key != field}
     _Site(monkeypatch, [row, _INTERN])
 
-    with pytest.raises(_http.IncompleteBoardResponse, match=field):
+    with pytest.raises(http.IncompleteBoardResponse, match=field):
         _fetch()
 
 
 def test_fetch_apple_jobs_rejects_a_repeated_row_on_one_page(monkeypatch):
     _Site(monkeypatch, [_SINGAPORE, _SINGAPORE])
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
+    with pytest.raises(http.IncompleteBoardResponse, match="duplicate"):
         _fetch()
 
 
 def test_fetch_apple_jobs_raises_on_http_error(monkeypatch):
     class _FailingResponse:
         def raise_for_status(self):
-            raise _http.requests.HTTPError("boom")
+            raise http.requests.HTTPError("boom")
 
     _Site(monkeypatch, [_SINGAPORE])
-    monkeypatch.setattr(_http._session, "post", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(http._session, "post", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(_http.requests.HTTPError):
+    with pytest.raises(http.requests.HTTPError):
         _fetch()
 
 
 def test_description_is_the_job_summary_for_an_allowlisted_firm(monkeypatch):
-    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Apple"}))
+    monkeypatch.setattr(common_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Apple"}))
 
     job = client._to_job(
         {"positionId": "200694689", "rows": [_SINGAPORE]},

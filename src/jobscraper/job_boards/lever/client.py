@@ -6,8 +6,8 @@ from jobscraper.enrichment.normalize_location import (
     normalize_location,
     normalize_locations,
 )
-from jobscraper.job_boards._http import get_with_retries, require_job_list
-from jobscraper.job_boards._jobs import build_job, jobs_from
+from jobscraper.job_boards.common.http import get_with_retries, require_job_list
+from jobscraper.job_boards.common.jobs import build_job, jobs_from
 from jobscraper.models import Job, normalize_date, strip_html
 
 BASE_URL = "https://api.lever.co/v0/postings"

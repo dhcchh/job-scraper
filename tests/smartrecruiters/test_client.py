@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from jobscraper.job_boards import _http
+from jobscraper.job_boards.common import http
 from jobscraper.job_boards.smartrecruiters import client
 from tests.fakes import FakeResponse
 
@@ -47,7 +47,7 @@ def test_fetch_smartrecruiters_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
     jobs = client.fetch_smartrecruiters_jobs(
         "Acme", "Acme Corp", "Big Tech", scraped_date=datetime.date(2026, 9, 12)
@@ -98,7 +98,7 @@ def test_fetch_smartrecruiters_jobs_paginates_until_total_found_is_reached(
         calls.append(dict(params))
         return FakeResponse(page1 if params["offset"] == 0 else page2)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
     jobs = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
@@ -123,9 +123,9 @@ def test_fetch_smartrecruiters_jobs_rejects_an_empty_page_before_total(monkeypat
         calls.append(dict(params))
         return FakeResponse(page1 if params["offset"] == 0 else empty_page)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="empty page"):
+    with pytest.raises(http.IncompleteBoardResponse, match="empty page"):
         client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
     assert [call["offset"] for call in calls] == [0, 1, 0, 1]
@@ -140,9 +140,9 @@ def test_fetch_smartrecruiters_jobs_rejects_a_job_missing_id(
             {"id": "real-id", "name": "Software Engineer", "company": {"identifier": "Acme"}},
         ]
     )
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: FakeResponse(response))
 
-    with pytest.raises(_http.IncompleteBoardResponse):
+    with pytest.raises(http.IncompleteBoardResponse):
         client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
 
@@ -152,7 +152,7 @@ def test_fetch_smartrecruiters_jobs_falls_back_to_empty_department_when_function
     response = _page(
         [{"id": "1", "name": "Administrative Business Partner", "company": {"identifier": "Acme"}}]
     )
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: FakeResponse(response))
 
     (job,) = client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
@@ -163,15 +163,15 @@ def test_fetch_smartrecruiters_jobs_raises_on_http_error(monkeypatch):
     # A persistent failure must propagate out of fetch_smartrecruiters_jobs
     # -- main.py is what decides that means "skip this board", not this
     # client. The retry/backoff policy itself is
-    # job_boards._http.get_with_retries' own behavior -- see
+    # job_boards.common.http.get_with_retries' own behavior -- see
     # tests/job_boards/test_http.py, not duplicated here.
     class _FailingResponse:
         def raise_for_status(self):
-            raise _http.requests.HTTPError("boom")
+            raise http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(_http.requests.HTTPError):
+    with pytest.raises(http.requests.HTTPError):
         client.fetch_smartrecruiters_jobs("Acme", "Acme Corp", "Big Tech")
 
 

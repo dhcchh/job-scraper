@@ -3,8 +3,8 @@
 import datetime
 
 from jobscraper.enrichment.normalize_location import normalize_office
-from jobscraper.job_boards._http import paginate_with_retries
-from jobscraper.job_boards._jobs import build_job, jobs_from
+from jobscraper.job_boards.common.pagination import paginate_with_retries
+from jobscraper.job_boards.common.jobs import build_job, jobs_from
 from jobscraper.models import Job, normalize_date
 
 BASE_URL = "https://api.smartrecruiters.com/v1/companies"

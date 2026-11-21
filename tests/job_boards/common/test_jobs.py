@@ -4,14 +4,14 @@ import datetime
 
 import pytest
 
-from jobscraper.job_boards import _jobs
+from jobscraper.job_boards.common import jobs
 
 _DATE = datetime.date(2026, 11, 15)
 
 
 def _build(firm="Acme", **fields):
     values = {"job_id": 7, "title": "Senior Data Engineer", "location": "Singapore", "url": "https://x"}
-    return _jobs.build_job("greenhouse", firm, "Tech", _DATE, **{**values, **fields})
+    return jobs.build_job("greenhouse", firm, "Tech", _DATE, **{**values, **fields})
 
 
 def test_build_job_derives_identity_source_and_seniority():
@@ -34,7 +34,7 @@ def test_build_job_rejects_a_missing_job_id():
 
 
 def test_build_job_reads_a_description_only_for_a_firm_needing_one(monkeypatch):
-    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Listed"}))
+    monkeypatch.setattr(jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Listed"}))
     calls = []
 
     def describe():
@@ -49,13 +49,13 @@ def test_build_job_reads_a_description_only_for_a_firm_needing_one(monkeypatch):
 
 def test_jobs_from_dates_jobs_today_unless_given_a_date():
     def to_job(raw, firm, company_type, scraped_date):
-        return _jobs.build_job(
+        return jobs.build_job(
             "lever", firm, company_type, scraped_date,
             job_id=raw["id"], title="Engineer", location="", url="",
         )
 
     today, given = (
-        _jobs.jobs_from("lever", "acme", [{"id": "a"}, {"id": "b"}], to_job, "Acme", "Tech", date)
+        jobs.jobs_from("lever", "acme", [{"id": "a"}, {"id": "b"}], to_job, "Acme", "Tech", date)
         for date in (None, _DATE)
     )
 
@@ -67,4 +67,4 @@ def test_jobs_from_dates_jobs_today_unless_given_a_date():
 def test_html_sections_joins_non_empty_fields_as_plain_text():
     raw = {"a": "<p>First</p>", "b": "", "c": None, "d": "<ul><li>Second</li></ul>"}
 
-    assert _jobs.html_sections(raw, ("a", "b", "c", "d", "missing")) == "First\n\n- Second"
+    assert jobs.html_sections(raw, ("a", "b", "c", "d", "missing")) == "First\n\n- Second"

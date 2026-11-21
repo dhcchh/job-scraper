@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from jobscraper.job_boards import _http
+from jobscraper.job_boards.common import http
 from jobscraper.job_boards.eightfold import client
 from tests.fakes import FakeResponse
 
@@ -46,7 +46,7 @@ def test_fetch_eightfold_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
     jobs = client.fetch_eightfold_jobs(
         "mlp", "Millennium", "Prop Trading/Hedge Fund", scraped_date=datetime.date(2026, 9, 16)
@@ -145,7 +145,7 @@ def test_fetch_eightfold_jobs_pages_in_fixed_strides_regardless_of_count(monkeyp
             return FakeResponse(page2)
         return FakeResponse(page3)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
     jobs = client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
@@ -166,9 +166,9 @@ def test_fetch_eightfold_jobs_rejects_an_empty_page_before_total(monkeypatch):
         calls.append(dict(params))
         return FakeResponse(page1 if params["start"] == 0 else empty_page)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
-    with pytest.raises(_http.IncompleteBoardResponse, match="empty page"):
+    with pytest.raises(http.IncompleteBoardResponse, match="empty page"):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
     # A short parallel fetch falls back to paging one at a time, twice.
@@ -185,9 +185,9 @@ def test_fetch_eightfold_jobs_rejects_a_job_missing_id(monkeypatch):
             {"id": "real-id", "name": "Software Engineer", "t_create": 0, "t_update": 0},
         ]
     )
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: FakeResponse(response))
 
-    with pytest.raises(_http.IncompleteBoardResponse):
+    with pytest.raises(http.IncompleteBoardResponse):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
 
@@ -205,9 +205,9 @@ def test_fetch_eightfold_jobs_rejects_a_duplicate_id_across_pages(monkeypatch):
         calls["n"] += 1
         return FakeResponse(page1 if calls["n"] == 1 else page2)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
-    with pytest.raises(_http.IncompleteBoardResponse):
+    with pytest.raises(http.IncompleteBoardResponse):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
 
@@ -226,15 +226,15 @@ def test_fetch_eightfold_jobs_raises_on_http_error(monkeypatch):
     # A persistent failure must propagate out of fetch_eightfold_jobs --
     # main.py is what decides that means "skip this board", not this
     # client. The retry/backoff policy itself is
-    # job_boards._http.get_with_retries' own behavior -- see
+    # job_boards.common.http.get_with_retries' own behavior -- see
     # tests/job_boards/test_http.py, not duplicated here.
     class _FailingResponse:
         def raise_for_status(self):
-            raise _http.requests.HTTPError("boom")
+            raise http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(_http.requests.HTTPError):
+    with pytest.raises(http.requests.HTTPError):
         client.fetch_eightfold_jobs("mlp", "Millennium", "Prop Trading/Hedge Fund")
 
 

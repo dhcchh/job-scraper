@@ -4,7 +4,7 @@ import dataclasses
 import re
 
 from jobscraper.board_config import PROVIDER_LABELS
-from jobscraper.enrichment._keywords import contains_keyword
+from jobscraper.enrichment.keywords import contains_keyword
 
 from jobscraper.models import Job
 

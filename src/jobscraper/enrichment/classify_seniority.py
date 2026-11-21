@@ -1,6 +1,6 @@
 """Classify job seniority from title and optional employment type."""
 
-from jobscraper.enrichment._keywords import contains_keyword
+from jobscraper.enrichment.keywords import contains_keyword
 
 LEVELS: list[tuple[str, tuple[str, ...]]] = [
     (

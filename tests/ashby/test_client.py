@@ -4,7 +4,8 @@ import datetime
 
 import pytest
 
-from jobscraper.job_boards import _http, _jobs
+from jobscraper.job_boards.common import http
+from jobscraper.job_boards.common import jobs as common_jobs
 from jobscraper.job_boards.ashby import client
 from tests.fakes import FakeResponse
 
@@ -48,7 +49,7 @@ def test_fetch_ashby_jobs_parses_response(monkeypatch):
         captured["params"] = params
         return FakeResponse(_SAMPLE_RESPONSE)
 
-    monkeypatch.setattr(_http._session, "get", fake_get)
+    monkeypatch.setattr(http._session, "get", fake_get)
 
     jobs = client.fetch_ashby_jobs(
         "acme", "Acme Corp", "Big Tech", scraped_date=datetime.date(2026, 9, 12)
@@ -85,7 +86,7 @@ def test_fetch_ashby_jobs_populates_description_only_for_a_firm_needing_it(
 ):
     # No live Ashby board is in FIRMS_NEEDING_DESCRIPTION today -- monkeypatch
     # it onto the client's own binding to exercise the gating regardless.
-    monkeypatch.setattr(_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Acme Corp"}))
+    monkeypatch.setattr(common_jobs, "FIRMS_NEEDING_DESCRIPTION", frozenset({"Acme Corp"}))
     response = {
         "jobs": [
             {
@@ -96,7 +97,7 @@ def test_fetch_ashby_jobs_populates_description_only_for_a_firm_needing_it(
             }
         ]
     }
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: FakeResponse(response))
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: FakeResponse(response))
 
     (needed,) = client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
     (not_needed,) = client.fetch_ashby_jobs("beta", "Beta Inc", "Big Tech")
@@ -122,10 +123,10 @@ def test_fetch_ashby_jobs_rejects_a_job_missing_id(monkeypatch):
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: FakeResponse(response)
+        http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
-    with pytest.raises(_http.IncompleteBoardResponse):
+    with pytest.raises(http.IncompleteBoardResponse):
         client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
 
 
@@ -147,7 +148,7 @@ def test_fetch_ashby_jobs_builds_location_from_primary_and_secondary_and_dedupes
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: FakeResponse(response)
+        http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
@@ -168,7 +169,7 @@ def test_fetch_ashby_jobs_falls_back_to_team_when_department_is_missing(monkeypa
         ]
     }
     monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: FakeResponse(response)
+        http._session, "get", lambda *a, **k: FakeResponse(response)
     )
 
     (job,) = client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
@@ -179,13 +180,13 @@ def test_fetch_ashby_jobs_falls_back_to_team_when_department_is_missing(monkeypa
 def test_fetch_ashby_jobs_raises_on_http_error(monkeypatch):
     # A persistent failure must propagate out of fetch_ashby_jobs -- main.py
     # is what decides that means "skip this board", not this client. The
-    # retry/backoff policy itself is job_boards._http.get_with_retries' own
+    # retry/backoff policy itself is job_boards.common.http.get_with_retries' own
     # behavior -- see tests/job_boards/test_http.py, not duplicated here.
     class _FailingResponse:
         def raise_for_status(self):
-            raise _http.requests.HTTPError("boom")
+            raise http.requests.HTTPError("boom")
 
-    monkeypatch.setattr(_http._session, "get", lambda *a, **k: _FailingResponse())
+    monkeypatch.setattr(http._session, "get", lambda *a, **k: _FailingResponse())
 
-    with pytest.raises(_http.requests.HTTPError):
+    with pytest.raises(http.requests.HTTPError):
         client.fetch_ashby_jobs("acme", "Acme Corp", "Big Tech")
