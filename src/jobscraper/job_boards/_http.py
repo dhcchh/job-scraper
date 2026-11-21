@@ -3,7 +3,6 @@
 import dataclasses
 import logging
 import math
-import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -38,54 +37,6 @@ _session = _new_session()
 
 class IncompleteBoardResponse(ValueError):
     """A successful HTTP response did not contain a complete jobs snapshot."""
-
-
-class Pacing:
-    """Spacing and rate-limit backoff shared by one provider's requests.
-
-    For a provider that rate-limits by client address, every request in
-    the run counts, so all its boards and threads share one Pacing:
-
-    - Each request starts at least `interval` seconds after the previous one.
-    - A 429 without a usable Retry-After waits `rate_limited_backoff`
-      seconds, doubling per attempt, instead of the default backoff.
-    - A 429 holds back every request sharing this Pacing for that wait, not
-      only the one that will retry.
-    - Those 429 waits share `rate_limited_budget` seconds. Once it is
-      spent, a 429 fails its request at once, so a provider that keeps
-      throttling can't stretch a run without bound.
-    """
-
-    def __init__(
-        self, interval: float, rate_limited_backoff: float, rate_limited_budget: float
-    ) -> None:
-        self.interval = interval
-        self.rate_limited_backoff = rate_limited_backoff
-        self._lock = threading.Lock()
-        self._next_start = 0.0  # time.monotonic() before which none may start
-        self._budget_left = rate_limited_budget
-
-    def wait(self) -> None:
-        """Block until a request may start, and reserve its slot."""
-        with self._lock:
-            now = time.monotonic()
-            start = max(now, self._next_start)
-            self._next_start = start + self.interval
-        if start > now:
-            time.sleep(start - now)
-
-    def hold(self, seconds: float) -> bool:
-        """Let no request sharing this Pacing start for `seconds` from now.
-
-        Returns False, holding nothing, if the wait would exceed what is
-        left of the rate-limit budget.
-        """
-        with self._lock:
-            if seconds > self._budget_left:
-                return False
-            self._budget_left -= seconds
-            self._next_start = max(self._next_start, time.monotonic() + seconds)
-            return True
 
 
 def require_job_list(
@@ -127,40 +78,29 @@ def _validate_ids(
 
 
 def get_with_retries(
-    source: str, identifier: str, url: str, *,
-    params: dict | None = None,
-    pacing: Pacing | None = None,
+    source: str, identifier: str, url: str, *, params: dict | None = None
 ) -> requests.Response:
     """GET a URL using the shared transient-error retry policy."""
     return _send_with_retries(
-        source, identifier, lambda: _session.get(url, params=params, timeout=30),
-        pacing,
+        source, identifier, lambda: _session.get(url, params=params, timeout=30)
     )
 
 
 def post_with_retries(
-    source: str, identifier: str, url: str, *,
-    json: dict,
-    pacing: Pacing | None = None,
+    source: str, identifier: str, url: str, *, json: dict
 ) -> requests.Response:
     """POST JSON using the shared transient-error retry policy."""
     return _send_with_retries(
-        source, identifier, lambda: _session.post(url, json=json, timeout=30),
-        pacing,
+        source, identifier, lambda: _session.post(url, json=json, timeout=30)
     )
 
 
 def _send_with_retries(
-    source: str,
-    identifier: str,
-    send: Callable[[], requests.Response],
-    pacing: Pacing | None = None,
+    source: str, identifier: str, send: Callable[[], requests.Response]
 ) -> requests.Response:
     """Send a request with exponential backoff for transient failures."""
     attempt = 1
     while True:
-        if pacing is not None:
-            pacing.wait()
         try:
             response = send()
             response.raise_for_status()
@@ -172,17 +112,7 @@ def _send_with_retries(
         ) as exc:
             if attempt >= MAX_ATTEMPTS or not _is_retryable(exc):
                 raise
-            delay = _retry_delay(exc, attempt, pacing)
-            paced = pacing is not None and _is_rate_limited(exc)
-            if paced and not pacing.hold(delay):
-                logger.warning(
-                    "%s[%s]: rate-limited (%s), not retrying: this run's "
-                    "rate-limit wait budget is spent",
-                    source,
-                    identifier,
-                    exc,
-                )
-                raise
+            delay = _retry_after(exc) or BACKOFF_SECONDS * (2 ** (attempt - 1))
             logger.warning(
                 "%s[%s]: attempt %d/%d failed (%s), retrying in %.0fs",
                 source,
@@ -192,22 +122,8 @@ def _send_with_retries(
                 exc,
                 delay,
             )
-            if not paced:
-                time.sleep(delay)  # a paced 429's wait is slept in pacing.wait()
+            time.sleep(delay)
             attempt += 1
-
-
-def _retry_delay(exc: Exception, attempt: int, pacing: Pacing | None) -> float:
-    """Seconds before the next attempt: Retry-After, else doubling backoff."""
-    retry_after = _retry_after(exc)
-    if retry_after is not None:
-        return retry_after
-    backoff = (
-        pacing.rate_limited_backoff
-        if pacing is not None and _is_rate_limited(exc)
-        else BACKOFF_SECONDS
-    )
-    return backoff * (2 ** (attempt - 1))
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -271,7 +187,6 @@ def paginate_with_retries(
     method: str = "GET",
     body: dict | None = None,
     workers: int = 1,
-    pacing: Pacing | None = None,
 ) -> list[dict]:
     """Fetch every page, optionally in parallel after the first.
 
@@ -284,13 +199,10 @@ def paginate_with_retries(
         page_args = {cursor_param: cursor, page_size_param: page_size}
         if method == "POST":
             response = post_with_retries(
-                source, identifier, url, json={**(body or {}), **page_args},
-                pacing=pacing,
+                source, identifier, url, json={**(body or {}), **page_args}
             )
         else:
-            response = get_with_retries(
-                source, identifier, url, params=page_args, pacing=pacing
-            )
+            response = get_with_retries(source, identifier, url, params=page_args)
         return response.json()
 
     if workers > 1:
@@ -579,16 +491,11 @@ def _pages_with_repeated_ids(
     })
 
 
-def _is_rate_limited(exc: Exception) -> bool:
-    response = getattr(exc, "response", None)
-    return response is not None and response.status_code == 429
-
-
 def _retry_after(exc: Exception) -> float | None:
     """Read a 429 response's Retry-After seconds, capped; ignore HTTP dates."""
-    if not _is_rate_limited(exc):
+    response = getattr(exc, "response", None)
+    if response is None or response.status_code != 429:
         return None
-    response = exc.response
     try:
         seconds = float((getattr(response, "headers", None) or {}).get("Retry-After", ""))
     except (TypeError, ValueError):

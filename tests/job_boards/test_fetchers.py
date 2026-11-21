@@ -41,26 +41,6 @@ def test_fetch_boards_runs_boards_concurrently():
     assert all(r.error is None for r in results)
 
 
-def test_fetch_boards_runs_workday_boards_one_at_a_time():
-    # Workday rate-limits by client address across all its tenants.
-    lock = threading.Lock()
-    in_flight = []
-    most = []
-
-    def fetch(token, firm, company_type):
-        with lock:
-            in_flight.append(firm)
-            most.append(len(in_flight))
-        time.sleep(0.02)
-        with lock:
-            in_flight.remove(firm)
-        return []
-
-    fetchers.fetch_boards([("workday", [_board("A"), _board("B"), _board("C")], fetch)])
-
-    assert max(most) == 1
-
-
 def test_fetch_boards_reports_each_failure_without_failing_other_boards():
     error = RuntimeError("boom")
 

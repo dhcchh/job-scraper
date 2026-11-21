@@ -4,6 +4,7 @@ import dataclasses
 import datetime
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from requests.exceptions import HTTPError
 
@@ -14,7 +15,6 @@ from jobscraper.enrichment.normalize_location import (
 )
 from jobscraper.job_boards._http import (
     IncompleteBoardResponse,
-    Pacing,
     get_with_retries,
     paginate_with_retries,
 )
@@ -25,13 +25,7 @@ logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 20
 
-# Workday's Cloudflare front end rate-limits by client address across every
-# tenant (HTTP 429 with no Retry-After). It throttled GitHub's runners daily
-# from 2026-11-16, when up to 32 requests were in flight at once, so every
-# Workday request in a run now goes one at a time through this one pacing.
-# Its 429 waits are capped at 5 minutes per run; after that a 429 fails the
-# board at once, as it did before pacing.
-_PACING = Pacing(interval=1.0, rate_limited_backoff=15.0, rate_limited_budget=300.0)
+_WORKERS = 8
 
 # A few placeholders per board are normal; beyond this the listing itself
 # looks degraded, and skipping them would prune real postings.
@@ -69,7 +63,7 @@ def fetch_workday_jobs(
         items_key="jobPostings",
         id_key="externalPath",
         is_placeholder=_is_placeholder,
-        pacing=_PACING,
+        workers=_WORKERS,
     )
     placeholders = sum(1 for raw in raw_jobs if _is_placeholder(raw))
     if placeholders > max(_MAX_PLACEHOLDERS, _MAX_PLACEHOLDER_FRACTION * len(raw_jobs)):
@@ -158,7 +152,10 @@ def _location_in_scope(location: str, scope: str) -> bool:
 
 def _fetch_details(token: str, api: str, paths: list[str]) -> dict[str, dict | None]:
     """Fetch details; only confirmed 404/410 postings may be omitted."""
-    first_try = [_fetch_detail(token, api, path) for path in paths]
+    if not paths:
+        return {}
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        first_try = list(pool.map(lambda path: _fetch_detail(token, api, path), paths))
     details: dict[str, dict | None] = {}
     for path, (info, _error) in zip(paths, first_try):
         if info is None:
@@ -187,7 +184,7 @@ def _posting_is_gone(error: Exception | None) -> bool:
 
 def _fetch_detail(token: str, api: str, path: str) -> tuple[dict | None, Exception | None]:
     try:
-        response = get_with_retries("workday", token, f"{api}{path}", pacing=_PACING)
+        response = get_with_retries("workday", token, f"{api}{path}")
         payload = response.json()
         info = payload.get("jobPostingInfo") if isinstance(payload, dict) else None
         if not isinstance(info, dict) or not info:
