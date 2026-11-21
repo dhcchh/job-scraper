@@ -62,7 +62,7 @@ See them in the sheet
 - Ashby
 - SmartRecruiters
 - Eightfold
-- Workday
+- Workday (no boards configured)
 - Recruitee
 - Amazon (amazon.jobs)
 - Apple (jobs.apple.com)
@@ -186,7 +186,10 @@ company_type = "Fintech"
 
 - Take the token from the firm's real careers site.
 - A firm in two files must use the same spelling and `company_type`.
-- **Workday:** tokens look like `"<tenant>.<wdN>/<site>"`. Every Workday board sets `location_scope = "Singapore"`.
+- **Workday:** no boards are configured.
+  - From 2026-11-16, Workday's Cloudflare front end returned HTTP 429 to GitHub's runners on most daily runs, failing a different set of boards each day.
+  - Sending requests one at a time, a second apart, didn't help, so the boards were removed on 2026-11-21.
+  - The client remains. Tokens look like `"<tenant>.<wdN>/<site>"`, and every Workday board sets `location_scope = "Singapore"`.
   - The scope is sent as Workday's search text, and only postings with a matching office are kept.
   - Workday rate-limits whole boards (HTTP 429), so a scoped search's few pages fail far less often than a full listing.
 - **Amazon:** tokens are amazon.jobs category slugs, such as `"software-development"`, all under the firm `Amazon`.

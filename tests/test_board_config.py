@@ -17,7 +17,11 @@ def test_checked_in_board_configuration_is_valid():
     boards_by_provider = load_all_boards()
 
     assert tuple(boards_by_provider) == PROVIDERS
-    assert all(boards_by_provider.values())
+    # Workday's boards were removed on 2026-11-21: it rate-limits GitHub's
+    # runners. Every other provider must still have boards.
+    assert {
+        provider for provider, boards in boards_by_provider.items() if not boards
+    } == {"workday"}
 
 
 def test_load_boards_rejects_duplicate_tokens_ignoring_case(tmp_path):
