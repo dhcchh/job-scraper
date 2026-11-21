@@ -13,6 +13,12 @@ _SCRAPED = datetime.date(2026, 9, 26)
 _API = "https://visa.wd5.myworkdayjobs.com/wday/cxs/visa/Visa"
 
 
+@pytest.fixture(autouse=True)
+def unpaced(monkeypatch):
+    """Send fake requests without the live one-second spacing."""
+    monkeypatch.setattr(client, "_PACING", _http.Pacing(interval=0, rate_limited_backoff=0, rate_limited_budget=0))
+
+
 class _NotFound:
     status_code = 404
 
@@ -263,12 +269,9 @@ def test_fetch_workday_jobs_keeps_paging_past_a_zero_total(monkeypatch):
     assert [job.job_id for job in jobs] == ["R-1", "R-2", "R-3"]
 
 
-@pytest.mark.parametrize("workers", [client._WORKERS, 1])
 def test_fetch_workday_jobs_fetches_detail_for_a_multi_office_category_posting(
-    monkeypatch, workers
+    monkeypatch,
 ):
-    # workers=1 is the one-request-at-a-time setting kept as a fallback.
-    monkeypatch.setattr(client, "_WORKERS", workers)
     path = "/job/US---Foster-City-CA/Software-Engineer_REF2"
     _posts, gets = _serve(
         monkeypatch,
@@ -287,6 +290,40 @@ def test_fetch_workday_jobs_fetches_detail_for_a_multi_office_category_posting(
     assert gets == [f"{_API}{path}"]
     assert job.location == "Foster City, CA | Singapore"
     assert job.first_published == "2026-08-01"  # exact, from startDate
+
+
+def test_fetch_workday_jobs_spaces_its_requests_and_waits_out_a_429(monkeypatch):
+    # Workday's 429s carry no Retry-After and count every request from this
+    # address: requests go one at a time, a second apart, and a 429 waits
+    # 15 s before the retry.
+    now = [1000.0]
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    class _TooManyRequests:
+        status_code = 429
+        headers = {}
+
+        def raise_for_status(self):
+            error = _http.requests.HTTPError("429")
+            error.response = self
+            raise error
+
+    path = "/job/x/Software-Engineer_R-7"
+    _serve(monkeypatch, [_posting(path, locations_text="2 Locations")])
+    details = [_TooManyRequests(), FakeResponse({"jobPostingInfo": {"location": "SG - Singapore"}})]
+    monkeypatch.setattr(_http._session, "get", lambda *a, **k: details.pop(0))
+    monkeypatch.setattr(_http.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(_http.time, "sleep", sleep)
+    monkeypatch.setattr(client, "_PACING", _http.Pacing(interval=1.0, rate_limited_backoff=15.0, rate_limited_budget=300.0))
+
+    [job] = client.fetch_workday_jobs("visa.wd5/Visa", "Visa", "Fintech", scraped_date=_SCRAPED)
+
+    assert job.location == "Singapore"
+    assert sleeps == [1.0, 15.0]  # list page at once, detail 1 s later, retry 15 s later
 
 
 def test_fetch_workday_jobs_fetches_detail_for_a_posting_with_no_location(monkeypatch):
@@ -357,8 +394,8 @@ def test_fetch_workday_jobs_drops_only_the_posting_whose_detail_fails(monkeypatc
 def test_fetch_workday_jobs_retries_a_failed_detail_call_once_more_before_dropping(
     monkeypatch,
 ):
-    # The parallel pass's detail call keeps getting 503s (every retry), but
-    # the one-at-a-time retry afterward works -- the posting is kept.
+    # The first pass's detail call keeps getting 503s (every retry), but the
+    # second pass after every other detail works -- the posting is kept.
     path = "/job/x/Software-Engineer_R-7"
     attempts = []
 

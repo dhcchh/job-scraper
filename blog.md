@@ -5,8 +5,9 @@ The scraper reads open postings from company career boards, keeps the roles it c
 ## The daily run
 
 1. **Open the sheet.** Stop if its title differs from `GOOGLE_SHEET_TITLE` (when set). Add newly configured firms to the Supported companies tab and announce them.
-2. **Fetch every board.** Boards are fetched concurrently (8 workers, with Workday in its own pool of 4). A failed board is fetched once more after 60 seconds.
-   - Workday and Eightfold also fetch their pages, and Workday its detail records, with up to 8 workers.
+2. **Fetch every board.** Boards are fetched concurrently (8 workers). Workday boards run one at a time, in a pool of their own. A failed board is fetched once more after 3 minutes.
+   - Eightfold also fetches its pages with up to 8 workers.
+   - Workday rate-limits by client address across all its tenants, so every Workday request in a run goes one at a time, at least a second after the last.
    - Amazon fetches its pages one at a time, each repeating the end of the last, so a posting added or closed mid-fetch can't shift another out of the snapshot.
    - Apple's pages can't overlap, and it reorders tied rows on every request. It fetches 4 pages at a time, refetches the pages around a repeated row, then rechecks the first page. A posting added or closed mid-fetch makes it fetch the whole board once more, then fail, rather than shift another out of the snapshot.
 3. **Classify.** A title keyword picks one of five roles. A few fallbacks (generic senior titles, bare "research" or "analytics", Amazon's Software Development job family, Apple's software, machine-learning and student teams) cover titles without one, and the rest is noise. Drop it if every office is in an excluded country. The rest go to PAC or RoW. Role and region name one of ten tabs.
@@ -36,8 +37,8 @@ The scraper reads open postings from company career boards, keeps the roles it c
 
 | Situation | What happens |
 | --- | --- |
-| Timeout, connection error, 5xx or 429 from a board | Up to 3 attempts, waiting 2 s then 4 s. A 429's `Retry-After` seconds replace the wait (max 60 s). Requests time out at 30 s. Other 4xx fail at once. |
-| A board still fails | Failed boards are refetched once, 60 s later (Daily Scrape only). If it fails again, the firm's rows stay and the run ends red after everything else finishes. Backfill and Full Refresh keep those rows' stored data. |
+| Timeout, connection error, 5xx or 429 from a board | Up to 3 attempts, waiting 2 s then 4 s. A 429's `Retry-After` seconds replace the wait (max 60 s). Workday's 429s have none: they wait 15 s then 30 s, and no other Workday request starts meanwhile. Those waits stop at 5 minutes per run; later Workday 429s fail at once. Requests time out at 30 s. Other 4xx fail at once. |
+| A board still fails | Failed boards are refetched once, 3 minutes later (Daily Scrape only). If it fails again, the firm's rows stay and the run ends red after everything else finishes. Backfill and Full Refresh keep those rows' stored data. |
 | Malformed data, missing or duplicate IDs | The board fails. A paged feed short of its total is retried whole once; parallel page fetches fall back to one at a time. |
 | A firm has several boards, one fails | Nothing of that firm is pruned. Boards that worked still append. |
 | Empty feed or mass drop | The prune guard holds the firm: no appends, no prunes, red run. It trips if the feed returned 0 postings (before role filtering) while rows are tracked, or if at least 5 rows and more than half of the firm's tracked rows (all tabs) would go. Exactly half passes. To proceed, rerun Daily Scrape with `force_prune_firms` (comma-separated), or set `FORCE_PRUNE_FIRMS` locally. A board stuck at 0 may have changed provider, which changes every ID: probe other providers, then run Full Refresh before scraping. |
@@ -66,5 +67,5 @@ Cheapest safe fix: before pushing the TOML change (a push triggers a scrape), re
 
 - `enrichment/classify_roles.py`, `classify_region.py`, `normalize_location.py`: role keywords, country sets, location cleanup.
 - `sheets/writer.py`: prune guard thresholds, Sheets retry waits, header check.
-- `job_boards/_http.py` and `fetchers.py`: board retries, pagination checks, worker counts.
+- `job_boards/_http.py` and `fetchers.py`: board retries, request pacing, pagination checks, worker counts.
 - `models.py` and `main.py`: `FIELDS`, the description allowlist, the daily run's order.

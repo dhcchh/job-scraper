@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 # Pause before refetching the boards that failed. Millennium's Eightfold
 # duplicate-ID failure on 2026-10-17 cleared on a run three minutes later.
-BOARD_RETRY_DELAY_SECONDS = 60
+# Workday's 429s outlasted a 60-second pause on 2026-11-21.
+BOARD_RETRY_DELAY_SECONDS = 180
 
 
 def run() -> None:

@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 Fetcher = Callable[..., list[Job]]
 
 BOARD_WORKERS = 8
-# Each Workday board already runs its own page and detail workers, so fewer
-# Workday boards run at once, in a pool of their own.
-WORKDAY_BOARD_WORKERS = 4
+# Workday rate-limits by client address across all its tenants, so Workday
+# boards run one at a time, in a pool of their own, beside the other boards.
+WORKDAY_BOARD_WORKERS = 1
 
 
 def fetcher_for(source: str) -> Fetcher:
