@@ -331,7 +331,6 @@ def test_refresh_all_refreshes_every_category_region_tab(monkeypatch):
     monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "SMARTRECRUITERS_BOARDS", [])
     monkeypatch.setattr(backfill.config, "EIGHTFOLD_BOARDS", [])
-    monkeypatch.setattr(backfill.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
     monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
     monkeypatch.setattr(backfill.config, "APPLE_BOARDS", [])
@@ -361,7 +360,6 @@ def test_fetch_overrides_keys_by_board_and_job_id(monkeypatch):
     monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "SMARTRECRUITERS_BOARDS", [])
     monkeypatch.setattr(backfill.config, "EIGHTFOLD_BOARDS", [])
-    monkeypatch.setattr(backfill.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
     monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
     monkeypatch.setattr(backfill.config, "APPLE_BOARDS", [])
@@ -389,7 +387,6 @@ def test_fetch_overrides_skips_a_board_that_fails(monkeypatch):
     monkeypatch.setattr(backfill.config, "ASHBY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "SMARTRECRUITERS_BOARDS", [])
     monkeypatch.setattr(backfill.config, "EIGHTFOLD_BOARDS", [])
-    monkeypatch.setattr(backfill.config, "WORKDAY_BOARDS", [])
     monkeypatch.setattr(backfill.config, "RECRUITEE_BOARDS", [])
     monkeypatch.setattr(backfill.config, "AMAZON_BOARDS", [])
     monkeypatch.setattr(backfill.config, "APPLE_BOARDS", [])
@@ -409,9 +406,9 @@ def test_fetch_overrides_skips_a_board_that_fails(monkeypatch):
 
 
 def test_fetch_overrides_merges_every_board_type(monkeypatch):
-    # backfill.py predates Lever/Ashby/SmartRecruiters/Eightfold/Workday/
-    # Recruitee support and only ever re-fetched GREENHOUSE_BOARDS -- a row
-    # sourced from any of the other six must get the same fresh-data override a
+    # backfill.py predates Lever/Ashby/SmartRecruiters/Eightfold/Recruitee
+    # support and only ever re-fetched GREENHOUSE_BOARDS -- a row sourced
+    # from any other provider must get the same fresh-data override a
     # Greenhouse-sourced row already did.
     monkeypatch.setattr(
         backfill.config,
@@ -440,18 +437,6 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
     )
     monkeypatch.setattr(
         backfill.config,
-        "WORKDAY_BOARDS",
-        [
-            {
-                "token": "wd.wd1/Site",
-                "firm": "WorkdayCo",
-                "company_type": "Big Tech",
-                "location_scope": "Singapore",
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        backfill.config,
         "RECRUITEE_BOARDS",
         [{"token": "rc", "firm": "RecruiteeCo", "company_type": "Big Tech"}],
     )
@@ -471,7 +456,6 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
     ashby_job = _job_stub("AshbyCo", "3", "Sydney, Australia")
     smartrecruiters_job = _job_stub("SmartRecruitersCo", "4", "Beijing, China")
     eightfold_job = _job_stub("EightfoldCo", "5", "Tokyo, Japan")
-    workday_job = _job_stub("WorkdayCo", "R-6", "Seoul, South Korea")
     recruitee_job = _job_stub("RecruiteeCo", "7", "Singapore")
     amazon_job = _job_stub("AmazonCo", "8", "Seattle, United States")
     apple_job = _job_stub("AppleCo", "9", "Cupertino, United States")
@@ -493,13 +477,6 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         "fetch_eightfold_jobs",
         lambda token, firm, company_type: [eightfold_job],
     )
-    workday_scopes = []
-
-    def fake_fetch_workday_jobs(token, firm, company_type, *, location_scope=None):
-        workday_scopes.append(location_scope)
-        return [workday_job]
-
-    monkeypatch.setattr(backfill.fetchers, "fetch_workday_jobs", fake_fetch_workday_jobs)
     monkeypatch.setattr(
         backfill.fetchers,
         "fetch_recruitee_jobs",
@@ -524,12 +501,10 @@ def test_fetch_overrides_merges_every_board_type(monkeypatch):
         ("AshbyCo", "3"): ashby_job,
         ("SmartRecruitersCo", "4"): smartrecruiters_job,
         ("EightfoldCo", "5"): eightfold_job,
-        ("WorkdayCo", "R-6"): workday_job,
         ("RecruiteeCo", "7"): recruitee_job,
         ("AmazonCo", "8"): amazon_job,
         ("AppleCo", "9"): apple_job,
     }
-    assert workday_scopes == ["Singapore"]
 
 
 def test_refresh_prefers_a_location_override_over_best_effort_renormalization():

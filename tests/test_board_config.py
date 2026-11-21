@@ -17,11 +17,7 @@ def test_checked_in_board_configuration_is_valid():
     boards_by_provider = load_all_boards()
 
     assert tuple(boards_by_provider) == PROVIDERS
-    # Workday's boards were removed on 2026-11-21: it rate-limits GitHub's
-    # runners. Every other provider must still have boards.
-    assert {
-        provider for provider, boards in boards_by_provider.items() if not boards
-    } == {"workday"}
+    assert all(boards_by_provider.values())
 
 
 def test_load_boards_rejects_duplicate_tokens_ignoring_case(tmp_path):
@@ -83,51 +79,11 @@ def test_load_boards_rejects_unknown_fields(tmp_path):
         token = "acme"
         firm = "Acme"
         company_type = "Startup"
-        location_scope = "Singapore"
+        notes = "hiring in Singapore"
         """,
     )
 
-    with pytest.raises(ValueError, match="unsupported field.*location_scope"):
-        load_boards(path)
-
-
-def test_load_boards_accepts_workday_location_scope(tmp_path):
-    path = _write(
-        tmp_path,
-        "workday_boards.toml",
-        """
-        [[boards]]
-        token = "acme.wd5/External_Careers"
-        firm = "Acme"
-        company_type = "Startup"
-        location_scope = "Singapore"
-        """,
-    )
-
-    assert load_boards(path) == [
-        {
-            "token": "acme.wd5/External_Careers",
-            "firm": "Acme",
-            "company_type": "Startup",
-            "location_scope": "Singapore",
-        }
-    ]
-
-
-def test_load_boards_rejects_blank_workday_location_scope(tmp_path):
-    path = _write(
-        tmp_path,
-        "workday_boards.toml",
-        """
-        [[boards]]
-        token = "acme.wd5/External_Careers"
-        firm = "Acme"
-        company_type = "Startup"
-        location_scope = " "
-        """,
-    )
-
-    with pytest.raises(ValueError, match="non-blank string field.*location_scope"):
+    with pytest.raises(ValueError, match="unsupported field.*notes"):
         load_boards(path)
 
 
@@ -135,7 +91,6 @@ def test_load_boards_rejects_blank_workday_location_scope(tmp_path):
     ("filename", "token"),
     [
         ("greenhouse_boards.toml", "not a slug"),
-        ("workday_boards.toml", "acme/External_Careers"),
         ("amazon_boards.toml", "Software-Development"),
         ("amazon_boards.toml", "software_development"),
         ("amazon_boards.toml", "software-development-"),

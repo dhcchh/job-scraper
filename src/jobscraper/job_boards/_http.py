@@ -43,7 +43,6 @@ def require_job_list(
     payload: object, source: str, identifier: str, *,
     key: str | None = None,
     id_key: str = "id",
-    is_placeholder: Callable[[dict], bool] | None = None,
 ) -> list[dict]:
     """Reject a changed or malformed API response instead of treating it as empty."""
     if key is not None:
@@ -52,22 +51,14 @@ def require_job_list(
         payload = payload[key]
     if not isinstance(payload, list) or any(not isinstance(item, dict) for item in payload):
         raise IncompleteBoardResponse(f"{source}[{identifier}]: invalid jobs list")
-    _validate_ids(payload, id_key, is_placeholder)
+    _validate_ids(payload, id_key)
     return payload
 
 
-def _validate_ids(
-    items: list[dict], id_key: str, is_placeholder: Callable[[dict], bool] | None = None
-) -> None:
-    """Missing or repeated identities make a snapshot unsafe for pruning.
-
-    `is_placeholder` marks provider items that count toward the reported
-    total but are not postings; they carry no identity to validate.
-    """
+def _validate_ids(items: list[dict], id_key: str) -> None:
+    """Missing or repeated identities make a snapshot unsafe for pruning."""
     seen = set()
     for item in items:
-        if is_placeholder is not None and is_placeholder(item):
-            continue
         try:
             job_id = normalize_job_id(item.get(id_key))
         except ValueError as exc:
@@ -133,7 +124,6 @@ class _PageFormat:
     total_key: str
     items_key: str
     id_key: str = "id"
-    is_placeholder: Callable[[dict], bool] | None = None
 
     def total(self, payload: object) -> int:
         if not isinstance(payload, dict):
@@ -148,11 +138,11 @@ class _PageFormat:
     def items(self, payload: object, cursor: int) -> list[dict]:
         return require_job_list(
             payload, "pagination", str(cursor), key=self.items_key,
-            id_key=self.id_key, is_placeholder=self.is_placeholder,
+            id_key=self.id_key,
         )
 
     def validate_ids(self, items: list[dict]) -> None:
-        _validate_ids(items, self.id_key, self.is_placeholder)
+        _validate_ids(items, self.id_key)
 
 
 def _fetch_twice(
@@ -183,26 +173,16 @@ def paginate_with_retries(
     total_key: str,
     items_key: str,
     id_key: str = "id",
-    is_placeholder: Callable[[dict], bool] | None = None,
-    method: str = "GET",
-    body: dict | None = None,
     workers: int = 1,
 ) -> list[dict]:
-    """Fetch every page, optionally in parallel after the first.
-
-    Placeholders are returned with the postings, so page counts still match
-    the reported total; the caller drops them.
-    """
-    pages = _PageFormat(total_key, items_key, id_key, is_placeholder)
+    """Fetch every page, optionally in parallel after the first."""
+    pages = _PageFormat(total_key, items_key, id_key)
 
     def fetch_page(cursor: int) -> dict:
-        page_args = {cursor_param: cursor, page_size_param: page_size}
-        if method == "POST":
-            response = post_with_retries(
-                source, identifier, url, json={**(body or {}), **page_args}
-            )
-        else:
-            response = get_with_retries(source, identifier, url, params=page_args)
+        response = get_with_retries(
+            source, identifier, url,
+            params={cursor_param: cursor, page_size_param: page_size},
+        )
         return response.json()
 
     if workers > 1:

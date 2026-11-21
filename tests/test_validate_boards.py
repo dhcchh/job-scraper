@@ -51,24 +51,6 @@ def test_validate_live_reports_a_success(monkeypatch):
     ]
 
 
-def test_validate_live_passes_workday_location_scope(monkeypatch):
-    received = {}
-
-    def fetch(token, firm, company_type, **kwargs):
-        received.update(kwargs)
-        return [_job()]
-
-    monkeypatch.setattr(fetchers, "fetch_workday_jobs", fetch)
-
-    failures = validate_boards.validate_live(
-        [("workday", _board(token="acme.wd5/jobs", location_scope="Singapore"))],
-        output=lambda _message: None,
-    )
-
-    assert failures == 0
-    assert received == {"location_scope": "Singapore"}
-
-
 def test_validate_live_rejects_empty_board_by_default(monkeypatch):
     monkeypatch.setattr(
         fetchers,

@@ -62,7 +62,6 @@ See them in the sheet
 - Ashby
 - SmartRecruiters
 - Eightfold
-- Workday (no boards configured)
 - Recruitee
 - Amazon (amazon.jobs)
 - Apple (jobs.apple.com)
@@ -175,7 +174,7 @@ For the DM:
 
 ## Adding or changing a board
 
-Add an entry to `company_toml/<provider>_boards.toml`. The provider is one of Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Workday, Recruitee, Amazon or Apple.
+Add an entry to `company_toml/<provider>_boards.toml`. The provider is one of Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Recruitee, Amazon or Apple.
 
 ```toml
 [[boards]]
@@ -186,12 +185,6 @@ company_type = "Fintech"
 
 - Take the token from the firm's real careers site.
 - A firm in two files must use the same spelling and `company_type`.
-- **Workday:** no boards are configured.
-  - From 2026-11-16, Workday's Cloudflare front end returned HTTP 429 to GitHub's runners on most daily runs, failing a different set of boards each day.
-  - Sending requests one at a time, a second apart, didn't help, so the boards were removed on 2026-11-21.
-  - The client remains. Tokens look like `"<tenant>.<wdN>/<site>"`, and every Workday board sets `location_scope = "Singapore"`.
-  - The scope is sent as Workday's search text, and only postings with a matching office are kept.
-  - Workday rate-limits whole boards (HTTP 429), so a scoped search's few pages fail far less often than a full listing.
 - **Amazon:** tokens are amazon.jobs category slugs, such as `"software-development"`, all under the firm `Amazon`.
   - A slug the site doesn't recognise fails the board.
   - A recognised category may be empty.
@@ -200,7 +193,7 @@ company_type = "Fintech"
   - Keep all of Apple in one board. A posting listed under two teams comes back once; two boards would fetch it twice under one ID.
   - A team or sub-team the site doesn't list fails the board, and so does an empty search.
   - The codes are listed at `https://jobs.apple.com/api/v1/refData/teamsofinterest`.
-- **Eightfold, Workday, Amazon and Apple:** the endpoints are undocumented. Validate each tenant, category or team first.
+- **Eightfold, Amazon and Apple:** the endpoints are undocumented. Validate each tenant, category or team first.
 
 Then check it:
 

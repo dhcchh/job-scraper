@@ -317,7 +317,7 @@ _METADATA_RESPONSE = {
                 {"name": "Employment Type", "value": "Summer Internship"},
                 # A field whose value would match a LEVELS keyword but
                 # isn't an employment type -- must be ignored entirely.
-                {"name": "Workday Job Profile", "value": "Technical Program Manager"},
+                {"name": "Job Profile", "value": "Technical Program Manager"},
             ],
         },
         {

@@ -221,12 +221,10 @@ def test_post_with_retries_sends_json_and_retries_like_get(monkeypatch):
     monkeypatch.setattr(_http._session, "post", fake_post)
     monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
 
-    response = _http.post_with_retries(
-        "workday", "visa.wd5/Visa", "https://x/jobs", json={"limit": 20}
-    )
+    response = _http.post_with_retries("apple", "SFTWR", "https://x/jobs", json={"page": 1})
 
     assert response.json() == {"ok": True}
-    assert calls == [("https://x/jobs", {"limit": 20}, 30)] * 2
+    assert calls == [("https://x/jobs", {"page": 1}, 30)] * 2
 
 
 def test_post_with_retries_does_not_retry_a_client_error(monkeypatch):
@@ -242,51 +240,40 @@ def test_post_with_retries_does_not_retry_a_client_error(monkeypatch):
     )
 
     with pytest.raises(_http.requests.HTTPError):
-        _http.post_with_retries("workday", "visa.wd5/Visa", "https://x/jobs", json={})
+        _http.post_with_retries("apple", "SFTWR", "https://x/jobs", json={})
 
     assert len(calls) == 1
 
 
-def test_paginate_with_retries_posts_cursor_in_the_body_and_keeps_the_first_total(
+def test_paginate_with_retries_keeps_the_first_total_when_later_pages_report_zero(
     monkeypatch,
 ):
-    # Workday's shape: `total` is only real on the first page and 0 on every
-    # page after it -- the loop must keep going on the first page's total.
+    # A listing may report its real total only on the first page and 0 on
+    # every page after it -- the loop must keep going on the first total.
     pages = {
-        0: {"total": 5, "jobPostings": [{"id": 0}, {"id": 1}]},
-        2: {"total": 0, "jobPostings": [{"id": 2}, {"id": 3}]},
-        4: {"total": 0, "jobPostings": [{"id": 4}]},
+        0: {"total": 5, "items": [{"id": 0}, {"id": 1}]},
+        2: {"total": 0, "items": [{"id": 2}, {"id": 3}]},
+        4: {"total": 0, "items": [{"id": 4}]},
     }
-    bodies = []
+    offsets = []
 
-    def fake_post(url, json=None, timeout=None):
-        bodies.append(json)
-        return FakeResponse(pages[json["offset"]])
+    def fake_get(url, params=None, timeout=None):
+        offsets.append(params["offset"])
+        return FakeResponse(pages[params["offset"]])
 
-    monkeypatch.setattr(_http._session, "post", fake_post)
-    monkeypatch.setattr(
-        _http._session, "get", lambda *a, **k: pytest.fail("should POST, not GET")
-    )
+    monkeypatch.setattr(_http._session, "get", fake_get)
 
     items = _http.paginate_with_retries(
-        "workday",
-        "visa.wd5/Visa",
-        "https://x/jobs",
-        method="POST",
-        body={"appliedFacets": {}, "searchText": ""},
-        cursor_param="offset",
-        page_size_param="limit",
-        page_size=2,
-        total_key="total",
-        items_key="jobPostings",
+        "test", "acme", "https://x/jobs",
+        cursor_param="offset", page_size_param="limit", page_size=2,
+        total_key="total", items_key="items",
     )
 
     assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
-    assert bodies[0] == {"appliedFacets": {}, "searchText": "", "offset": 0, "limit": 2}
-    assert [body["offset"] for body in bodies] == [0, 2, 4]
+    assert offsets == [0, 2, 4]
 
 
-def test_paginate_with_retries_gets_cursor_as_query_params_by_default(monkeypatch):
+def test_paginate_with_retries_gets_cursor_as_query_params(monkeypatch):
     params_seen = []
 
     def fake_get(url, params=None, timeout=None):
@@ -312,49 +299,41 @@ def test_paginate_with_retries_gets_cursor_as_query_params_by_default(monkeypatc
     assert params_seen == [{"offset": 0, "limit": 2}, {"offset": 2, "limit": 2}]
 
 
-def _post_pages(monkeypatch, page_for_call):
-    """Fake requests.post: page_for_call(offset, nth_call_for_that_offset)
+def _get_pages(monkeypatch, page_for_call):
+    """Fake requests.get: page_for_call(offset, nth_call_for_that_offset)
     returns the payload (or a _RespondingWith) for each request."""
     calls: dict[int, int] = {}
 
-    def fake_post(url, json=None, timeout=None):
-        offset = json["offset"]
+    def fake_get(url, params=None, timeout=None):
+        offset = params["offset"]
         calls[offset] = calls.get(offset, 0) + 1
         result = page_for_call(offset, calls[offset])
         return result if isinstance(result, _RespondingWith) else FakeResponse(result)
 
-    monkeypatch.setattr(_http._session, "post", fake_post)
+    monkeypatch.setattr(_http._session, "get", fake_get)
     monkeypatch.setattr(_http.time, "sleep", lambda seconds: None)
     return calls
 
 
-def _paginate_in_parallel(page_size=2):
+def _paginate(workers=1, page_size=2):
     return _http.paginate_with_retries(
-        "workday",
-        "visa.wd5/Visa",
-        "https://x/jobs",
-        method="POST",
-        body={},
-        cursor_param="offset",
-        page_size_param="limit",
-        page_size=page_size,
-        total_key="total",
-        items_key="jobPostings",
-        workers=4,
+        "test", "acme", "https://x/jobs",
+        cursor_param="offset", page_size_param="limit", page_size=page_size,
+        total_key="total", items_key="items", workers=workers,
     )
 
 
 def _full_page(offset, total=5, size=2):
     return {
-        "total": total if offset == 0 else 0,
-        "jobPostings": [{"id": n} for n in range(offset, min(offset + size, total))],
+        "total": total,
+        "items": [{"id": n} for n in range(offset, min(offset + size, total))],
     }
 
 
 def test_paginate_with_retries_in_parallel_fetches_every_page_once_in_order(monkeypatch):
-    calls = _post_pages(monkeypatch, lambda offset, nth: _full_page(offset))
+    calls = _get_pages(monkeypatch, lambda offset, nth: _full_page(offset))
 
-    items = _paginate_in_parallel()
+    items = _paginate(workers=4)
 
     assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert calls == {0: 1, 2: 1, 4: 1}
@@ -370,10 +349,10 @@ def test_paginate_with_retries_in_parallel_falls_back_when_a_page_fails(
             return _RespondingWith(503)
         return _full_page(offset)
 
-    calls = _post_pages(monkeypatch, page_for_call)
+    calls = _get_pages(monkeypatch, page_for_call)
 
     with caplog.at_level("WARNING"):
-        items = _paginate_in_parallel()
+        items = _paginate(workers=4)
 
     assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert "parallel page fetch failed" in caplog.text
@@ -388,22 +367,22 @@ def test_paginate_with_retries_in_parallel_falls_back_when_pages_come_back_short
     def page_for_call(offset, nth):
         page = _full_page(offset)
         if offset == 2 and nth == 1:
-            page["jobPostings"] = page["jobPostings"][:1]
+            page["items"] = page["items"][:1]
         return page
 
-    _post_pages(monkeypatch, page_for_call)
+    _get_pages(monkeypatch, page_for_call)
 
     with caplog.at_level("WARNING"):
-        items = _paginate_in_parallel()
+        items = _paginate(workers=4)
 
     assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert "different number of items" in caplog.text
 
 
 def test_paginate_with_retries_in_parallel_stops_after_a_single_full_page(monkeypatch):
-    calls = _post_pages(monkeypatch, lambda offset, nth: _full_page(offset, total=2))
+    calls = _get_pages(monkeypatch, lambda offset, nth: _full_page(offset, total=2))
 
-    items = _paginate_in_parallel()
+    items = _paginate(workers=4)
 
     assert [item["id"] for item in items] == [0, 1]
     assert calls == {0: 1}
@@ -412,94 +391,53 @@ def test_paginate_with_retries_in_parallel_stops_after_a_single_full_page(monkey
 def test_paginate_with_retries_retries_an_incomplete_sequential_snapshot(monkeypatch):
     def page_for_call(offset, nth):
         if offset == 2 and nth == 1:
-            return {"total": 5, "jobPostings": []}
+            return {"total": 5, "items": []}
         return _full_page(offset)
 
-    calls = _post_pages(monkeypatch, page_for_call)
-    items = _http.paginate_with_retries(
-        "workday", "visa.wd5/Visa", "https://x/jobs", method="POST",
-        cursor_param="offset", page_size_param="limit", page_size=2,
-        total_key="total", items_key="jobPostings",
-    )
+    calls = _get_pages(monkeypatch, page_for_call)
+    items = _paginate()
 
     assert [item["id"] for item in items] == [0, 1, 2, 3, 4]
     assert calls == {0: 2, 2: 2, 4: 1}
 
 
 def test_paginate_with_retries_rejects_a_missing_total(monkeypatch):
-    calls = _post_pages(
-        monkeypatch,
-        lambda offset, nth: {"jobPostings": [{"id": 0}]},
-    )
+    calls = _get_pages(monkeypatch, lambda offset, nth: {"items": [{"id": 0}]})
 
     with pytest.raises(_http.IncompleteBoardResponse, match="total"):
-        _http.paginate_with_retries(
-            "workday", "visa.wd5/Visa", "https://x/jobs", method="POST",
-            cursor_param="offset", page_size_param="limit", page_size=2,
-            total_key="total", items_key="jobPostings",
-        )
+        _paginate()
 
     assert calls == {0: 2}
 
 
 @pytest.mark.parametrize("workers", [1, 4])
 def test_paginate_rejects_duplicate_ids_even_when_totals_match(monkeypatch, workers):
-    calls = _post_pages(monkeypatch, lambda offset, nth: {
+    calls = _get_pages(monkeypatch, lambda offset, nth: {
         "total": 4,
-        "jobPostings": [{"id": 1}, {"id": 2}] if offset == 0 else [{"id": 2}, {"id": 3}],
+        "items": [{"id": 1}, {"id": 2}] if offset == 0 else [{"id": 2}, {"id": 3}],
     })
     with pytest.raises(_http.IncompleteBoardResponse, match="duplicate"):
-        _http.paginate_with_retries(
-            "workday", "acme", "https://example.test/jobs", method="POST",
-            cursor_param="offset", page_size_param="limit", page_size=2,
-            total_key="total", items_key="jobPostings", workers=workers,
-        )
+        _paginate(workers=workers)
     assert calls[0] >= 2  # The whole snapshot was retried before rejecting it.
 
 
 def test_paginate_recovers_when_retry_has_unique_ids(monkeypatch):
     def page(offset, nth):
         ids = [1, 2] if offset == 0 else ([2, 3] if nth == 1 else [3, 4])
-        return {"total": 4, "jobPostings": [{"id": value} for value in ids]}
+        return {"total": 4, "items": [{"id": value} for value in ids]}
 
-    _post_pages(monkeypatch, page)
-    items = _http.paginate_with_retries(
-        "test", "acme", "https://example.test/jobs", method="POST",
-        cursor_param="offset", page_size_param="limit", page_size=2,
-        total_key="total", items_key="jobPostings",
-    )
+    _get_pages(monkeypatch, page)
+    items = _paginate()
     assert [item["id"] for item in items] == [1, 2, 3, 4]
 
 
-@pytest.mark.parametrize("workers", [1, 4])
-def test_paginate_counts_placeholders_without_validating_their_ids(monkeypatch, workers):
-    placeholder = {"bulletFields": ["REF1"]}
-    _post_pages(monkeypatch, lambda offset, nth: {
-        "total": 4,
-        "jobPostings": [{"id": 1}, placeholder] if offset == 0 else [placeholder, {"id": 2}],
-    })
-
-    items = _http.paginate_with_retries(
-        "workday", "acme", "https://example.test/jobs", method="POST",
-        cursor_param="offset", page_size_param="limit", page_size=2,
-        total_key="total", items_key="jobPostings", workers=workers,
-        is_placeholder=lambda item: "id" not in item,
-    )
-
-    assert items == [{"id": 1}, placeholder, placeholder, {"id": 2}]
-
-
-def test_paginate_still_rejects_a_missing_id_without_a_placeholder_rule(monkeypatch):
-    _post_pages(monkeypatch, lambda offset, nth: {
-        "total": 2, "jobPostings": [{"id": 1}, {"bulletFields": ["REF1"]}],
+def test_paginate_rejects_an_item_without_an_id(monkeypatch):
+    _get_pages(monkeypatch, lambda offset, nth: {
+        "total": 2, "items": [{"id": 1}, {"title": "Engineer"}],
     })
 
     with pytest.raises(_http.IncompleteBoardResponse, match="missing or invalid id"):
-        _http.paginate_with_retries(
-            "workday", "acme", "https://example.test/jobs", method="POST",
-            cursor_param="offset", page_size_param="limit", page_size=2,
-            total_key="total", items_key="jobPostings",
-        )
+        _paginate()
 
 
 @pytest.mark.parametrize("overlap", [0, -1, 4, 5])

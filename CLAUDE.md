@@ -73,9 +73,7 @@ live writes.
   created automatically.
 - Posting identity is `(firm, job_id)`. Validate external IDs before using
   them. Missing or duplicate IDs invalidate a board snapshot; silently
-  skipping them would allow false closures. The one exception is Workday
-  list items with neither a title nor a link: they count toward the total
-  but aren't postings, so they're skipped, up to a small per-board allowance.
+  skipping them would allow false closures.
   A multi-token firm is eligible for pruning only when every token succeeds.
   Apple reorders tied rows across its pages, so a row repeated on two pages
   is repaired by refetching them, not rejected. The distinct rows must still

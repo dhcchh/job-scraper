@@ -15,7 +15,6 @@ from jobscraper.job_boards.greenhouse.client import fetch_greenhouse_jobs
 from jobscraper.job_boards.lever.client import fetch_lever_jobs
 from jobscraper.job_boards.recruitee.client import fetch_recruitee_jobs
 from jobscraper.job_boards.smartrecruiters.client import fetch_smartrecruiters_jobs
-from jobscraper.job_boards.workday.client import fetch_workday_jobs
 from jobscraper.models import Job
 
 logger = logging.getLogger(__name__)
@@ -23,9 +22,6 @@ logger = logging.getLogger(__name__)
 Fetcher = Callable[..., list[Job]]
 
 BOARD_WORKERS = 8
-# Each Workday board already runs its own page and detail workers, so fewer
-# Workday boards run at once, in a pool of their own.
-WORKDAY_BOARD_WORKERS = 4
 
 
 def fetcher_for(source: str) -> Fetcher:
@@ -105,27 +101,17 @@ def describe_error(error: Exception, limit: int = 300) -> str:
 
 
 def _fetch_all(tasks: list[tuple[str, dict, Fetcher]]) -> list[BoardFetch]:
-    with (
-        ThreadPoolExecutor(BOARD_WORKERS, thread_name_prefix="board") as shared,
-        ThreadPoolExecutor(WORKDAY_BOARD_WORKERS, thread_name_prefix="workday") as workday,
-    ):
+    with ThreadPoolExecutor(BOARD_WORKERS, thread_name_prefix="board") as pool:
         futures = [
-            (workday if source == "workday" else shared).submit(
-                _fetch_one, source, board, fetch
-            )
+            pool.submit(_fetch_one, source, board, fetch)
             for source, board, fetch in tasks
         ]
         return [future.result() for future in futures]
 
 
 def _fetch_one(source: str, board: dict, fetch: Fetcher) -> BoardFetch:
-    kwargs = (
-        {"location_scope": board["location_scope"]}
-        if source == "workday" and board.get("location_scope")
-        else {}
-    )
     try:
-        jobs = fetch(board["token"], board["firm"], board["company_type"], **kwargs)
+        jobs = fetch(board["token"], board["firm"], board["company_type"])
     except Exception as exc:
         return BoardFetch(source, board, [], exc)
     return BoardFetch(source, board, jobs)

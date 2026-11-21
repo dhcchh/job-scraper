@@ -11,7 +11,6 @@ def _set_boards(
     ashby=(),
     smartrecruiters=(),
     eightfold=(),
-    workday=(),
     recruitee=(),
     amazon=(),
     apple=(),
@@ -21,7 +20,6 @@ def _set_boards(
     monkeypatch.setattr(supported_companies.config, "ASHBY_BOARDS", list(ashby))
     monkeypatch.setattr(supported_companies.config, "SMARTRECRUITERS_BOARDS", list(smartrecruiters))
     monkeypatch.setattr(supported_companies.config, "EIGHTFOLD_BOARDS", list(eightfold))
-    monkeypatch.setattr(supported_companies.config, "WORKDAY_BOARDS", list(workday))
     monkeypatch.setattr(supported_companies.config, "RECRUITEE_BOARDS", list(recruitee))
     monkeypatch.setattr(supported_companies.config, "AMAZON_BOARDS", list(amazon))
     monkeypatch.setattr(supported_companies.config, "APPLE_BOARDS", list(apple))
@@ -60,7 +58,7 @@ def test_build_columns_groups_and_sorts_within_and_across_categories(monkeypatch
         ashby=[_board("cohere", "Cohere", "AI Lab")],
         smartrecruiters=[_board("Grab", "Grab", "Consumer/Marketplace")],
         eightfold=[_board("mlp", "Millennium", "Prop Trading/Hedge Fund")],
-        workday=[_board("visa.wd5/Visa", "Visa", "Fintech")],
+        recruitee=[_board("visa", "Visa", "Fintech")],
     )
 
     assert supported_companies.build_columns() == {
@@ -259,7 +257,7 @@ def test_sync_supported_companies_returns_firms_the_tab_did_not_list_yet(monkeyp
             _board("optiverneurips", "Optiver", "Prop Trading/Hedge Fund"),
             _board("optiverprivate", "Optiver", "Prop Trading/Hedge Fund"),
         ],
-        workday=[_board("visa.wd5/Visa", "Visa", "Fintech")],
+        recruitee=[_board("visa", "Visa", "Fintech")],
     )
     worksheet = _FakeWorksheet(
         "Supported companies",
@@ -321,7 +319,7 @@ def test_sync_and_announce_counts_every_configured_firm_at_send_time(monkeypatch
             _board("optiverneurips", "Optiver", "Prop Trading/Hedge Fund"),
             _board("optiverprivate", "Optiver", "Prop Trading/Hedge Fund"),
         ],
-        workday=[_board("visa.wd5/Visa", "Visa", "Fintech")],
+        recruitee=[_board("visa", "Visa", "Fintech")],
     )
     worksheet = _FakeWorksheet("Supported companies", [["ai_lab"], ["Anthropic"]])
     spreadsheet = _FakeSpreadsheet([worksheet])

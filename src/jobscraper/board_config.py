@@ -3,7 +3,7 @@
 import re
 import tomllib
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 
 
 # Each provider's name in the sheet's source column. Clients stamp it on
@@ -15,7 +15,6 @@ PROVIDER_LABELS: dict[str, str] = {
     "ashby": "Ashby",
     "smartrecruiters": "SmartRecruiters",
     "eightfold": "Eightfold",
-    "workday": "Workday",
     "recruitee": "Recruitee",
     "amazon": "Amazon",
     "apple": "Apple",
@@ -32,13 +31,8 @@ DEFAULT_BOARD_DIR = (
 
 _REQUIRED_FIELDS = ("token", "firm", "company_type")
 _COMMON_FIELDS = frozenset(_REQUIRED_FIELDS)
-_ALLOWED_FIELDS = {
-    provider: _COMMON_FIELDS | ({"location_scope"} if provider == "workday" else set())
-    for provider in PROVIDERS
-}
 
 _SLUG_TOKEN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
-_WORKDAY_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]+\.wd\d+/[^/\s]+$")
 # An amazon.jobs category slug, such as "software-development".
 _AMAZON_TOKEN_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # jobs.apple.com team codes, each optionally narrowed to one sub-team, such
@@ -50,7 +44,6 @@ class BoardConfig(TypedDict):
     token: str
     firm: str
     company_type: str
-    location_scope: NotRequired[str]
 
 
 def load_boards(path: Path, provider: str | None = None) -> list[BoardConfig]:
@@ -80,19 +73,16 @@ def load_boards(path: Path, provider: str | None = None) -> list[BoardConfig]:
             raise ValueError(f"{path.name}: [[boards]] entry #{index} must be a table")
 
         identifier = raw.get("firm") or raw.get("token") or f"#{index}"
-        unknown = sorted(set(raw) - _ALLOWED_FIELDS[provider])
+        unknown = sorted(set(raw) - _COMMON_FIELDS)
         if unknown:
             raise ValueError(
                 f"{path.name}: [[boards]] entry {identifier!r} has unsupported "
                 f"field(s): {', '.join(unknown)}"
             )
 
-        string_fields = [*_REQUIRED_FIELDS]
-        if "location_scope" in raw:
-            string_fields.append("location_scope")
         missing = [
             field
-            for field in string_fields
+            for field in _REQUIRED_FIELDS
             if not isinstance(raw.get(field), str) or not raw[field].strip()
         ]
         if missing:
@@ -101,7 +91,7 @@ def load_boards(path: Path, provider: str | None = None) -> list[BoardConfig]:
                 f"required non-blank string field(s): {', '.join(missing)}"
             )
 
-        for field in string_fields:
+        for field in _REQUIRED_FIELDS:
             value = raw[field]
             if value != value.strip():
                 raise ValueError(
@@ -124,8 +114,6 @@ def load_boards(path: Path, provider: str | None = None) -> list[BoardConfig]:
             "firm": raw["firm"],
             "company_type": raw["company_type"],
         }
-        if "location_scope" in raw:
-            board["location_scope"] = raw["location_scope"]
         boards.append(board)
 
     return boards
@@ -178,7 +166,6 @@ def _validate_token(
     path: Path, provider: str, identifier: object, token: str
 ) -> None:
     pattern, expected = {
-        "workday": (_WORKDAY_TOKEN_RE, "'<tenant>.wd<number>/<site>'"),
         "amazon": (
             _AMAZON_TOKEN_RE,
             "an amazon.jobs category slug such as 'software-development'",

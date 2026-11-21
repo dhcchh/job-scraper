@@ -246,8 +246,8 @@ def test_normalize_location_strips_trailing_locations_suffix():
     ],
 )
 def test_normalize_location_drops_iso_code_prefix_before_a_full_location(raw, expected):
-    # Visa's live Workday board prefixes every location with an ISO code
-    # that only repeats the country already named after it.
+    # Some boards prefix every location with an ISO code that only repeats
+    # the country already named after it.
     assert normalize_location(raw) == expected
 
 
@@ -271,9 +271,9 @@ def test_normalize_location_keeps_iso_code_prefix_before_a_bare_city():
     ],
 )
 def test_normalize_location_strips_a_building_suffix_after_city_and_country(raw, expected):
-    # Mastercard's live Workday board appends a building/acquired-company
-    # name -- unstripped, classify_region reads "Indonesia (6th Floor)" as
-    # the country and is_excluded misses it.
+    # Some boards append a building or acquired-company name -- unstripped,
+    # classify_region reads "Indonesia (6th Floor)" as the country and
+    # is_excluded misses it.
     assert normalize_location(raw) == expected
 
 
@@ -294,9 +294,9 @@ def test_normalize_location_leaves_a_paren_with_no_comma_before_it():
         "Singapore - Singapore",
     ],
 )
-def test_normalize_location_maps_workday_singapore_offices(raw):
-    # These Workday tenants append a building name in a shape the generic
-    # suffix rules cannot strip. Without exact mappings these real Singapore
+def test_normalize_location_maps_singapore_building_offices(raw):
+    # Some boards append a building name in a shape the generic suffix rules
+    # cannot strip. Without exact mappings these real Singapore
     # roles land in RoW and fail a strict Singapore location scope.
     assert normalize_location(raw) == "Singapore"
 
@@ -392,7 +392,7 @@ def test_normalize_location_resolves_alpha3_country_prefixes(raw, expected):
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        # Autodesk's Workday alpha-3 country suffixes
+        # alpha-3 country suffixes
         ("Singapore, SGP", "Singapore"),
         ("Tokyo, JPN", "Tokyo, Japan"),
         ("North Sydney, AUS", "North Sydney, Australia"),
@@ -410,7 +410,7 @@ def test_normalize_location_resolves_alpha3_country_suffixes(raw, expected):
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        # Workday's (the company) dotted alpha-3 office names
+        # dotted alpha-3 office names
         ("IND.Pune", "Pune, India"),
         ("VNM.Da Nang", "Da Nang, Vietnam"),
         ("JPN.Osaka", "Osaka, Japan"),
@@ -429,7 +429,7 @@ def test_normalize_location_resolves_dotted_alpha3_prefixes(raw, expected):
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        # Workday's (the company) country-first offices
+        # country-first offices
         ("Australia, NSW, North Sydney", "North Sydney, Australia"),
         ("Australia, VIC, Melbourne", "Melbourne, Australia"),
         ("Korea, Seoul", "Seoul, South Korea"),
@@ -450,7 +450,7 @@ def test_normalize_location_maps_pac_and_excluded_office_labels(raw, expected):
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        # Autodesk's Workday detail site names
+        # region-first site names
         ("APAC - Korea - Seoul - ASEM Tower", "Seoul, South Korea"),
         ("APAC - Australia - NSW - North Sydney - 1 Denison", "Australia"),
         ("APAC - Hong Kong - The Executive Centre", "Hong Kong"),
@@ -610,7 +610,7 @@ def test_normalize_locations_deduplicates_offices_split_from_a_list():
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        # Workday's own Workday board: "<Country>, [<State>,] <City>".
+        # "<Country>, [<State>,] <City>".
         ("Australia, QLD, Brisbane", "Brisbane, Australia"),
         ("Canada, BC, Vancouver", "Vancouver, Canada"),
         ("USA, CA, Pleasanton", "Pleasanton, CA"),

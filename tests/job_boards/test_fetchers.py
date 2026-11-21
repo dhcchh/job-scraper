@@ -57,18 +57,6 @@ def test_fetch_boards_reports_each_failure_without_failing_other_boards():
     ]
 
 
-def test_fetch_boards_passes_workday_location_scope():
-    calls = []
-
-    def fetch(token, firm, company_type, **kwargs):
-        calls.append(kwargs)
-        return []
-
-    fetchers.fetch_boards([("workday", [_board("W", location_scope="Singapore")], fetch)])
-
-    assert calls == [{"location_scope": "Singapore"}]
-
-
 def _flaky_fetch(failures_by_firm):
     """A fetch that fails each firm's first N calls, then returns [firm]."""
     calls = []

@@ -194,14 +194,11 @@ Lead, Senior, Mid, Junior, Intern, Graduate.
 
 - Dates are written as `YYYY-MM-DD`.
 - A date is blank when the provider gives none.
-- Workday gives relative dates. They count back from one posting's exact
-  start date, or from the scrape date if no posting has one.
-- Workday's "30+ days" stays blank unless a detail page gives a date.
 
 ## Descriptions
 
 - Only firms in `FIRMS_NEEDING_DESCRIPTION` get one: QRT and Squarepoint.
-- Never from SmartRecruiters or Workday.
+- Never from SmartRecruiters.
 - Apple's is the search result's summary, not the full posting.
 
 ## Salary

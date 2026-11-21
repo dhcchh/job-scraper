@@ -5,8 +5,8 @@ The scraper reads open postings from company career boards, keeps the roles it c
 ## The daily run
 
 1. **Open the sheet.** Stop if its title differs from `GOOGLE_SHEET_TITLE` (when set). Add newly configured firms to the Supported companies tab and announce them.
-2. **Fetch every board.** Boards are fetched concurrently (8 workers, with Workday in its own pool of 4). A failed board is fetched once more after 60 seconds.
-   - Workday and Eightfold also fetch their pages, and Workday its detail records, with up to 8 workers.
+2. **Fetch every board.** Boards are fetched concurrently (8 workers). A failed board is fetched once more after 60 seconds.
+   - Eightfold also fetches its pages with up to 8 workers.
    - Amazon fetches its pages one at a time, each repeating the end of the last, so a posting added or closed mid-fetch can't shift another out of the snapshot.
    - Apple's pages can't overlap, and it reorders tied rows on every request. It fetches 4 pages at a time, refetches the pages around a repeated row, then rechecks the first page. A posting added or closed mid-fetch makes it fetch the whole board once more, then fail, rather than shift another out of the snapshot.
 3. **Classify.** A title keyword picks one of five roles. A few fallbacks (generic senior titles, bare "research" or "analytics", Amazon's Software Development job family, Apple's software, machine-learning and student teams) cover titles without one, and the rest is noise. Drop it if every office is in an excluded country. The rest go to PAC or RoW. Role and region name one of ten tabs.
@@ -49,7 +49,6 @@ The scraper reads open postings from company career boards, keeps the roles it c
 | Header or tab mismatch | Each tab must exist and start with the current `FIELDS`, else the run stops before any append or prune (the Supported companies sync may already have run). Extra trailing columns are fine. Push the matching code, or rerun Backfill from a pushed checkout. |
 | Full Refresh fails while formatting | The data is already committed; some tabs may lack date format, frozen header or filter. Rerun. Filter criteria and sort are kept; if unreadable, the update fails instead. |
 | Telegram fails | Logged, never retried, run not failed. A failed chunk skips the rest of its message. A lost company announcement is not repeated: the tab already lists the firm. |
-| Workday placeholders | Items with no title and no link count toward the total but are skipped. More than 3, and more than 5% of the listing, fails the board. A detail request (for multi-office postings) is retried; a 404 or 410 means the posting closed and it is omitted; any other failure fails the board. |
 
 ## Known gap: renaming a firm
 

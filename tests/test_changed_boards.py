@@ -8,14 +8,13 @@ from jobscraper.changed_boards import changed_firms
 
 @pytest.mark.parametrize("changes", [
     {"token": "corrected-token"},
-    {"location_scope": "Singapore"},
     {"company_type": "Fintech"},
     {"firm": "Renamed"},
 ])
 def test_changed_firms_detects_edits_without_an_added_firm_line(changes):
     board = {"token": "old", "firm": "Acme", "company_type": "Tech"}
     updated = {**board, **changes}
-    assert changed_firms({"workday": [board]}, {"workday": [updated]}) == [updated["firm"]]
+    assert changed_firms({"greenhouse": [board]}, {"greenhouse": [updated]}) == [updated["firm"]]
 
 
 def test_changed_firms_ignores_order_and_removals_and_dedupes_firms():
@@ -42,7 +41,7 @@ def test_changed_boards_cli_reads_committed_toml(tmp_path):
     git("config", "user.email", "test@example.com")
     boards = tmp_path / "company_toml"
     boards.mkdir()
-    path = boards / "workday_boards.toml"
+    path = boards / "greenhouse_boards.toml"
     path.write_text('[[boards]]\nfirm="Acme"\ntoken="old"\ncompany_type="Tech"\n')
     git("add", ".")
     git("commit", "-qm", "base")
